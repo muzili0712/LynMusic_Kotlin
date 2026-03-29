@@ -261,7 +261,11 @@ private class JvmImportSourceGateway(
             if (isDirectory) {
                 collectSambaTracks(share, baseDirectory, childRelative, sourceId, sink)
             } else if (isSupportedAudio(name)) {
-                sink += ImportedCandidateFactory.fromRemotePath(sourceId, childRelative)
+                sink += ImportedCandidateFactory.fromRemotePath(
+                    sourceId = sourceId,
+                    relativePath = childRelative,
+                    sizeBytes = runCatching { fileInfo.endOfFile }.getOrDefault(0L),
+                )
             }
         }
     }
@@ -677,12 +681,17 @@ private object ImportedCandidateFactory {
         return JvmAudioTagReader.read(path, relativePath, logger)
     }
 
-    fun fromRemotePath(sourceId: String, relativePath: String): top.iwesley.lyn.music.core.model.ImportedTrackCandidate {
+    fun fromRemotePath(
+        sourceId: String,
+        relativePath: String,
+        sizeBytes: Long = 0L,
+    ): top.iwesley.lyn.music.core.model.ImportedTrackCandidate {
         val name = relativePath.substringAfterLast('/').substringBeforeLast('.')
         return top.iwesley.lyn.music.core.model.ImportedTrackCandidate(
             title = name,
             mediaLocator = buildSambaLocator(sourceId, relativePath),
             relativePath = relativePath,
+            sizeBytes = sizeBytes,
         )
     }
 }

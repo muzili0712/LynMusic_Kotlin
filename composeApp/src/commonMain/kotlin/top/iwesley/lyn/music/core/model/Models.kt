@@ -57,6 +57,7 @@ data class Track(
     val mediaLocator: String,
     val relativePath: String,
     val artworkLocator: String? = null,
+    val sizeBytes: Long = 0L,
     val modifiedAt: Long = 0L,
 )
 
@@ -120,6 +121,7 @@ data class ImportedTrackCandidate(
     val relativePath: String,
     val artworkLocator: String? = null,
     val embeddedLyrics: String? = null,
+    val sizeBytes: Long = 0L,
     val modifiedAt: Long = 0L,
 )
 

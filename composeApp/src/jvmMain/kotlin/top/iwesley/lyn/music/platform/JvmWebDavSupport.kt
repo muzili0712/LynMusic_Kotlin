@@ -262,6 +262,7 @@ private fun collectJvmWebDavTracks(
                     title = fileName.substringBeforeLast('.'),
                     mediaLocator = buildWebDavLocator(sourceId, relativePath),
                     relativePath = relativePath,
+                    sizeBytes = resource.contentLength ?: 0L,
                     modifiedAt = resource.modified?.time ?: 0L,
                 )
             }

@@ -342,6 +342,7 @@ class RoomImportSourceRepository(
                 mediaLocator = candidate.mediaLocator,
                 relativePath = candidate.relativePath,
                 artworkLocator = candidate.artworkLocator,
+                sizeBytes = candidate.sizeBytes,
                 modifiedAt = candidate.modifiedAt,
             )
         }
@@ -1212,6 +1213,7 @@ private fun TrackEntity.toDomain(): Track {
         mediaLocator = mediaLocator,
         relativePath = relativePath,
         artworkLocator = artworkLocator,
+        sizeBytes = sizeBytes,
         modifiedAt = modifiedAt,
     )
 }

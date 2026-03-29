@@ -70,6 +70,7 @@ data class TrackEntity(
     val mediaLocator: String,
     val relativePath: String,
     val artworkLocator: String?,
+    val sizeBytes: Long,
     val modifiedAt: Long,
 )
 
@@ -271,7 +272,7 @@ interface LyricsCacheDao {
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 3,
+    version = 4,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -297,6 +298,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .setQueryCoroutineContext(Dispatchers.Default)
         .addMigrations(MIGRATION_1_2)
         .addMigrations(MIGRATION_2_3)
+        .addMigrations(MIGRATION_3_4)
         .fallbackToDestructiveMigration(true)
         .build()
 }
@@ -323,6 +325,17 @@ val MIGRATION_2_3: Migration = object : Migration(2, 3) {
                 enabled INTEGER NOT NULL,
                 rawJson TEXT NOT NULL
             )
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            ALTER TABLE track
+            ADD COLUMN sizeBytes INTEGER NOT NULL DEFAULT 0
             """.trimIndent(),
         )
     }

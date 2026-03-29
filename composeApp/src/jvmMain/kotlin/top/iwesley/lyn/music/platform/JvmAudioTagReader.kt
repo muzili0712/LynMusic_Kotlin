@@ -76,6 +76,7 @@ internal object JvmAudioTagReader {
                 title = fallbackTitle,
                 mediaLocator = path.pathString,
                 relativePath = relativePath,
+                sizeBytes = runCatching { Files.size(path) }.getOrDefault(0L),
                 modifiedAt = Files.getLastModifiedTime(path).toMillis(),
             )
         }
@@ -146,6 +147,7 @@ internal object JvmAudioTagReader {
                 storeArtwork(path, bytes)
             },
             embeddedLyrics = tag.firstLyrics(),
+            sizeBytes = runCatching { Files.size(path) }.getOrDefault(0L),
             modifiedAt = Files.getLastModifiedTime(path).toMillis(),
         )
     }

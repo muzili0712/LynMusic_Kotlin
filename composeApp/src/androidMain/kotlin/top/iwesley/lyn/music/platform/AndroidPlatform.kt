@@ -339,6 +339,7 @@ private class AndroidImportSourceGateway(
                 artworkLocator = retriever.embeddedPicture
                     ?.takeIf { it.isNotEmpty() }
                     ?.let { bytes -> storeAndroidArtwork(relativePath, bytes) },
+                sizeBytes = file.length(),
                 modifiedAt = file.lastModified(),
             )
         }.onSuccess { candidate ->
@@ -356,6 +357,7 @@ private class AndroidImportSourceGateway(
                 title = file.name?.substringBeforeLast('.') ?: "未知曲目",
                 mediaLocator = file.uri.toString(),
                 relativePath = relativePath,
+                sizeBytes = file.length(),
                 modifiedAt = file.lastModified(),
             )
         }.also {
@@ -399,6 +401,7 @@ private class AndroidImportSourceGateway(
                     title = name.substringBeforeLast('.'),
                     mediaLocator = buildSambaLocator(sourceId, childRelative),
                     relativePath = childRelative,
+                    sizeBytes = runCatching { info.endOfFile }.getOrDefault(0L),
                 )
             }
         }

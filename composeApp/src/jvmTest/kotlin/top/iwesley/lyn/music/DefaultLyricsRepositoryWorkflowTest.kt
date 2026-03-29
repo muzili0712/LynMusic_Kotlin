@@ -92,6 +92,7 @@ class DefaultLyricsRepositoryWorkflowTest {
                     mediaLocator = track.mediaLocator,
                     relativePath = track.relativePath,
                     artworkLocator = null,
+                    sizeBytes = 0L,
                     modifiedAt = 0L,
                 ),
             ),

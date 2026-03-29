@@ -128,6 +128,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppTab
@@ -1202,6 +1203,12 @@ private fun PlayerLyricsPane(
                     track.relativePath,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f),
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "格式：${trackDisplayFormat(track)}    大小：${formatTrackSize(track.sizeBytes)}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.70f),
+                    maxLines = if (compact) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -2533,4 +2540,32 @@ private fun formatDuration(durationMs: Long): String {
     val minutesPart = seconds / 60
     val secondsPart = seconds % 60
     return minutesPart.toString().padStart(2, '0') + ":" + secondsPart.toString().padStart(2, '0')
+}
+
+private fun trackDisplayFormat(track: Track): String {
+    return track.relativePath
+        .substringAfterLast('.', "")
+        .takeIf { it.isNotBlank() }
+        ?.uppercase()
+        ?: "未知"
+}
+
+private fun formatTrackSize(sizeBytes: Long): String {
+    if (sizeBytes <= 0L) return "未知"
+    val kb = 1024.0
+    val mb = kb * 1024.0
+    val gb = mb * 1024.0
+    return when {
+        sizeBytes >= gb -> "${roundTo((sizeBytes / gb), 2)} GB"
+        sizeBytes >= mb -> "${roundTo((sizeBytes / mb), 1)} MB"
+        sizeBytes >= kb -> "${roundTo((sizeBytes / kb), 0)} KB"
+        else -> "$sizeBytes B"
+    }
+}
+
+private fun roundTo(value: Double, decimals: Int): String {
+    if (decimals <= 0) return value.roundToInt().toString()
+    val factor = 10.0.pow(decimals)
+    val rounded = (value * factor).roundToInt() / factor
+    return rounded.toString()
 }

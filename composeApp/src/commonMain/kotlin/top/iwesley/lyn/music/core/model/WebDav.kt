@@ -17,6 +17,7 @@ data class WebDavPropfindEntry(
     val href: String,
     val isDirectory: Boolean,
     val lastModified: String?,
+    val contentLength: Long?,
 )
 
 fun buildWebDavLocator(sourceId: String, relativePath: String): String {
@@ -118,6 +119,10 @@ fun parseWebDavMultistatus(payload: String): List<WebDavPropfindEntry> {
                 href = decodeXmlText(href).trim(),
                 isDirectory = COLLECTION_TAG_REGEX.containsMatchIn(block),
                 lastModified = extractFirstTag(block, "getlastmodified")?.let(::decodeXmlText)?.trim(),
+                contentLength = extractFirstTag(block, "getcontentlength")
+                    ?.let(::decodeXmlText)
+                    ?.trim()
+                    ?.toLongOrNull(),
             )
         }
         .toList()

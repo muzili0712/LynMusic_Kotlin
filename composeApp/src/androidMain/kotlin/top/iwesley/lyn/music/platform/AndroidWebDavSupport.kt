@@ -163,6 +163,7 @@ private fun collectAndroidWebDavTracks(
                     title = relativePath.substringAfterLast('/').substringBeforeLast('.'),
                     mediaLocator = buildWebDavLocator(sourceId, relativePath),
                     relativePath = relativePath,
+                    sizeBytes = entry.contentLength ?: 0L,
                     modifiedAt = parseWebDavLastModified(entry.lastModified),
                 )
             }
