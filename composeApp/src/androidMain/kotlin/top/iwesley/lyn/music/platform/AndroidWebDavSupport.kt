@@ -198,7 +198,7 @@ private fun parseWebDavLastModified(value: String?): Long {
 private fun String.ensureTrailingSlash(): String = if (endsWith("/")) this else "$this/"
 
 private fun isSupportedWebDavAudio(fileName: String): Boolean {
-    return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav")
+    return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac")
 }
 
 private object AlwaysTrueHostnameVerifier : HostnameVerifier {

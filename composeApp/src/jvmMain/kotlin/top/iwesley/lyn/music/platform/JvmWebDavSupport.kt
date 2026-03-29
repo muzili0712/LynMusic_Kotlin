@@ -520,7 +520,7 @@ private val insecureHostnameVerifier: HostnameVerifier = HostnameVerifier { _, _
 private fun String.ensureTrailingSlash(): String = if (endsWith("/")) this else "$this/"
 
 private fun isSupportedJvmWebDavAudio(fileName: String): Boolean {
-    return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav")
+    return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac", "ape")
 }
 
 private const val WEBDAV_LOG_TAG = "WebDav"

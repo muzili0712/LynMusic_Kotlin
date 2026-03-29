@@ -714,7 +714,7 @@ internal const val SAMBA_LOG_TAG = "Samba"
 private const val VLC_LOG_TAG = "VLC"
 
 private fun isSupportedAudio(fileName: String): Boolean {
-    return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav")
+    return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac", "ape")
 }
 
 private fun buildVlcMetadataLogMessage(
