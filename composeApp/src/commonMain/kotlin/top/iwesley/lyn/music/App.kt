@@ -67,6 +67,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -1118,117 +1119,148 @@ private fun PlayerBottomControls(
     onPlayerIntent: (PlayerIntent) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    Card(
-        shape = RoundedCornerShape(28.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.08f)),
-    ) {
-        Box(
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.16f),
-                            colors.heroGlow.copy(alpha = 0.12f),
-                            colors.surface.copy(alpha = 0.08f),
-                        ),
-                    ),
-                ),
+                .padding(top = 10.dp),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.08f)),
         ) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.16f),
+                                colors.heroGlow.copy(alpha = 0.12f),
+                                colors.surface.copy(alpha = 0.08f),
+                            ),
+                        ),
+                    ),
             ) {
-                PlaybackProgress(snapshot, onPlayerIntent)
-                if (wide) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 5.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Text(
-                            buildString {
-                                append(snapshot.currentDisplayTitle)
-                                append("  ")
-                                append(snapshot.currentDisplayArtistName ?: "未知艺人")
-                                append("  ")
-                                append(track.sourceId.substringBefore('-').uppercase())
-                            },
-                            modifier = Modifier.weight(0.30f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White.copy(alpha = 0.9f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            formatDuration(snapshot.positionMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
                         )
+                        Text(
+                            formatDuration(snapshot.durationMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                        )
+                    }
+                    if (wide) {
                         Row(
-                            modifier = Modifier.weight(0.40f),
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                buildString {
+                                    append(snapshot.currentDisplayTitle)
+                                    append("  ")
+                                    append(snapshot.currentDisplayArtistName ?: "未知艺人")
+                                    append("  ")
+                                    append(track.sourceId.substringBefore('-').uppercase())
+                                },
+                                modifier = Modifier.weight(0.30f),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Row(
+                                modifier = Modifier.weight(0.40f),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(28.dp)) {
+                                    Icon(
+                                        if (snapshot.mode == PlaybackMode.SHUFFLE) Icons.Rounded.Shuffle else Icons.Rounded.Repeat,
+                                        null,
+                                        modifier = Modifier.size(15.dp),
+                                        tint = Color.White.copy(alpha = 0.92f),
+                                    )
+                                }
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(30.dp)) {
+                                    Icon(Icons.Rounded.SkipPrevious, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
+                                }
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(40.dp)) {
+                                    Icon(
+                                        if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                                        null,
+                                        modifier = Modifier.size(28.dp),
+                                        tint = Color.White.copy(alpha = 0.96f),
+                                    )
+                                }
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(30.dp)) {
+                                    Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
+                                }
+                            }
+                            Box(modifier = Modifier.weight(0.30f)) {
+                                PlaybackVolume(snapshot, onPlayerIntent, sliderWidthFraction = 0.5f)
+                            }
+                        }
+                    } else {
+                        PlaybackVolume(snapshot, onPlayerIntent)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(32.dp)) {
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(28.dp)) {
                                 Icon(
                                     if (snapshot.mode == PlaybackMode.SHUFFLE) Icons.Rounded.Shuffle else Icons.Rounded.Repeat,
                                     null,
-                                    modifier = Modifier.size(18.dp),
+                                    modifier = Modifier.size(15.dp),
                                     tint = Color.White.copy(alpha = 0.92f),
                                 )
                             }
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(34.dp)) {
-                                Icon(Icons.Rounded.SkipPrevious, null, modifier = Modifier.size(22.dp), tint = Color.White.copy(alpha = 0.92f))
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.SkipPrevious, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
                             }
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(48.dp)) {
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(40.dp)) {
                                 Icon(
                                     if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
                                     null,
-                                    modifier = Modifier.size(36.dp),
+                                    modifier = Modifier.size(28.dp),
                                     tint = Color.White.copy(alpha = 0.96f),
                                 )
                             }
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(34.dp)) {
-                                Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(22.dp), tint = Color.White.copy(alpha = 0.92f))
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
                             }
-                        }
-                        Box(modifier = Modifier.weight(0.30f)) {
-                            PlaybackVolume(snapshot, onPlayerIntent)
-                        }
-                    }
-                } else {
-                    PlaybackVolume(snapshot, onPlayerIntent)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(32.dp)) {
-                            Icon(
-                                if (snapshot.mode == PlaybackMode.SHUFFLE) Icons.Rounded.Shuffle else Icons.Rounded.Repeat,
-                                null,
-                                modifier = Modifier.size(18.dp),
-                                tint = Color.White.copy(alpha = 0.92f),
-                            )
-                        }
-                        IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(34.dp)) {
-                            Icon(Icons.Rounded.SkipPrevious, null, modifier = Modifier.size(22.dp), tint = Color.White.copy(alpha = 0.92f))
-                        }
-                        IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(48.dp)) {
-                            Icon(
-                                if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
-                                null,
-                                modifier = Modifier.size(36.dp),
-                                tint = Color.White.copy(alpha = 0.96f),
-                            )
-                        }
-                        IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(34.dp)) {
-                            Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(22.dp), tint = Color.White.copy(alpha = 0.92f))
                         }
                     }
                 }
             }
         }
+        PlaybackProgress(
+            snapshot = snapshot,
+            onPlayerIntent = onPlayerIntent,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = 5.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            showTimeLabels = false,
+            floating = true,
+        )
     }
 }
 
@@ -1308,6 +1340,9 @@ private fun TurntableArmDecoration(
 private fun PlaybackProgress(
     snapshot: PlaybackSnapshot,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+    showTimeLabels: Boolean = true,
+    floating: Boolean = false,
 ) {
     val duration = snapshot.durationMs.coerceAtLeast(1L)
     val progressFraction = (snapshot.positionMs.coerceIn(0L, duration).toFloat() / duration.toFloat()).coerceIn(0f, 1f)
@@ -1351,17 +1386,20 @@ private fun PlaybackProgress(
             }
         }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(28.dp),
+                .height(if (floating) 12.dp else 22.dp),
         ) {
-            val thumbInsetPx = with(LocalDensity.current) { 10.dp.toPx() }
+            val thumbInsetPx = with(LocalDensity.current) { if (floating) 6.dp.toPx() else 8.dp.toPx() }
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(bottom = 6.dp),
+                    .padding(bottom = if (floating) 0.dp else 4.dp),
             ) {
                 particles.forEach { particle ->
                     drawProgressFlowerParticle(
@@ -1373,18 +1411,21 @@ private fun PlaybackProgress(
             }
             Slider(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    .align(if (floating) Alignment.Center else Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(12.dp)
-                    .graphicsLayer(scaleY = 0.56f),
+                    .height(8.dp)
+                    .graphicsLayer(scaleY = if (floating) 0.36f else 0.44f),
+                colors = playerSliderColors(),
                 value = snapshot.positionMs.coerceIn(0L, duration).toFloat(),
                 onValueChange = { onPlayerIntent(PlayerIntent.SeekTo(it.toLong())) },
                 valueRange = 0f..duration.toFloat(),
             )
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatDuration(snapshot.positionMs), style = MaterialTheme.typography.bodySmall)
-            Text(formatDuration(snapshot.durationMs), style = MaterialTheme.typography.bodySmall)
+        if (showTimeLabels) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(formatDuration(snapshot.positionMs), style = MaterialTheme.typography.labelSmall, color = Color.White)
+                Text(formatDuration(snapshot.durationMs), style = MaterialTheme.typography.labelSmall, color = Color.White)
+            }
         }
     }
 }
@@ -1393,6 +1434,7 @@ private fun PlaybackProgress(
 private fun PlaybackVolume(
     snapshot: PlaybackSnapshot,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    sliderWidthFraction: Float = 1f,
 ) {
     val volume = snapshot.volume.coerceIn(0f, 1f)
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
@@ -1402,25 +1444,40 @@ private fun PlaybackVolume(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Rounded.GraphicEq, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                Text("音量", style = MaterialTheme.typography.bodySmall)
+                Icon(Icons.Rounded.GraphicEq, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                Text("音量", style = MaterialTheme.typography.labelSmall, color = Color.White)
             }
-            Text("${(volume * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
+            Text("${(volume * 100).roundToInt()}%", style = MaterialTheme.typography.labelSmall, color = Color.White)
         }
-        Slider(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp)
-                .graphicsLayer(scaleY = 0.56f),
-            value = volume,
-            onValueChange = { onPlayerIntent(PlayerIntent.SetVolume(it)) },
-            valueRange = 0f..1f,
-        )
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Slider(
+                modifier = Modifier
+                    .fillMaxWidth(sliderWidthFraction.coerceIn(0.2f, 1f))
+                    .height(8.dp)
+                    .graphicsLayer(scaleY = 0.44f),
+                colors = playerSliderColors(),
+                value = volume,
+                onValueChange = { onPlayerIntent(PlayerIntent.SetVolume(it)) },
+                valueRange = 0f..1f,
+            )
+        }
     }
 }
+
+@Composable
+private fun playerSliderColors() = SliderDefaults.colors(
+    thumbColor = Color.White.copy(alpha = 0.98f),
+    activeTrackColor = Color.White.copy(alpha = 0.96f),
+    inactiveTrackColor = Color.White.copy(alpha = 0.24f),
+    activeTickColor = Color.White.copy(alpha = 0.96f),
+    inactiveTickColor = Color.White.copy(alpha = 0.24f),
+)
 
 private data class ProgressFlowerParticle(
     val progressFraction: Float,
