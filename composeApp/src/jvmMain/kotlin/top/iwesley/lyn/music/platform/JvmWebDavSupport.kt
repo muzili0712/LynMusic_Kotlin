@@ -21,6 +21,8 @@ import org.apache.http.conn.ssl.NoopHostnameVerifier
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory
 import org.apache.http.impl.client.HttpClientBuilder
 import org.apache.http.ssl.SSLContexts
+import uk.co.caprica.vlcj.media.callback.CallbackMedia
+import uk.co.caprica.vlcj.media.callback.seekable.SeekableCallbackMedia
 import top.iwesley.lyn.music.core.model.buildBasicAuthorizationHeader
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportScanReport
@@ -38,10 +40,9 @@ import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.resolveWebDavRelativePath
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
-import uk.co.caprica.vlcj.media.callback.nonseekable.NonSeekableInputStreamMedia
 
 internal data class JvmWebDavPlaybackTarget(
-    val media: NonSeekableInputStreamMedia,
+    val media: CallbackMedia,
     val requestUrl: String,
 )
 
@@ -100,35 +101,60 @@ internal suspend fun resolveJvmWebDavPlaybackTarget(
     val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
     val requestUrl = buildWebDavTrackUrl(source.rootReference, webDav.second)
     val authEnabled = source.username.orEmpty().isNotBlank()
+    val mediaSize = resolveJvmWebDavContentLength(
+        requestUrl = requestUrl,
+        username = source.username.orEmpty(),
+        password = password,
+        allowInsecureTls = source.allowInsecureTls,
+    )
     logger.info(WEBDAV_LOG_TAG) {
-        "play-start source=${webDav.first} url=$requestUrl auth=$authEnabled insecureTls=${source.allowInsecureTls} client=sardine"
+        "play-start source=${webDav.first} url=$requestUrl auth=$authEnabled insecureTls=${source.allowInsecureTls} size=$mediaSize client=http-range"
     }
     return JvmWebDavPlaybackTarget(
-        media = object : NonSeekableInputStreamMedia() {
-            private var currentSardine: Sardine? = null
+        media = object : SeekableCallbackMedia() {
+            private var currentStream: JvmWebDavOpenedStream? = null
 
-            override fun onGetSize(): Long = 0L
+            override fun onGetSize(): Long = mediaSize.coerceAtLeast(0L)
 
-            override fun onOpenStream(): InputStream {
-                val sardine = buildJvmSardine(
-                    rootUrl = source.rootReference,
+            override fun onOpen(): Boolean {
+                currentStream = openJvmWebDavStream(
+                    requestUrl = requestUrl,
                     username = source.username.orEmpty(),
                     password = password,
                     allowInsecureTls = source.allowInsecureTls,
+                    startByte = 0L,
                 )
-                return try {
-                    currentSardine = sardine
-                    sardine.get(requestUrl)
-                } catch (throwable: Throwable) {
-                    sardine.shutdownQuietly()
-                    throw throwable.asJvmWebDavIOException("播放", authEnabled)
+                return true
+            }
+
+            override fun onRead(buffer: ByteArray, bufferSize: Int): Int {
+                val stream = currentStream ?: return -1
+                return stream.inputStream.read(buffer, 0, bufferSize)
+            }
+
+            override fun onSeek(offset: Long): Boolean {
+                if (offset < 0L) return false
+                return runCatching {
+                    closeJvmWebDavStream(currentStream)
+                    currentStream = openJvmWebDavStream(
+                        requestUrl = requestUrl,
+                        username = source.username.orEmpty(),
+                        password = password,
+                        allowInsecureTls = source.allowInsecureTls,
+                        startByte = offset,
+                    )
+                    true
+                }.getOrElse { throwable ->
+                    logger.warn(WEBDAV_LOG_TAG) {
+                        "play-seek-failed source=${webDav.first} url=$requestUrl offset=$offset reason=${throwable.message.orEmpty()}"
+                    }
+                    false
                 }
             }
 
-            override fun onCloseStream(inputStream: InputStream) {
-                runCatching { inputStream.close() }
-                currentSardine.shutdownQuietly()
-                currentSardine = null
+            override fun onClose() {
+                closeJvmWebDavStream(currentStream)
+                currentStream = null
             }
         },
         requestUrl = requestUrl,
@@ -295,6 +321,88 @@ private fun Sardine?.shutdownQuietly() {
     runCatching { instance.shutdown() }
 }
 
+private data class JvmWebDavOpenedStream(
+    val connection: HttpURLConnection,
+    val inputStream: InputStream,
+)
+
+private fun closeJvmWebDavStream(stream: JvmWebDavOpenedStream?) {
+    val activeStream = stream ?: return
+    runCatching { activeStream.inputStream.close() }
+    activeStream.connection.disconnect()
+}
+
+private fun resolveJvmWebDavContentLength(
+    requestUrl: String,
+    username: String,
+    password: String,
+    allowInsecureTls: Boolean,
+): Long {
+    val connection = openJvmWebDavConnection(
+        requestUrl = requestUrl,
+        username = username,
+        password = password,
+        allowInsecureTls = allowInsecureTls,
+    )
+    return try {
+        connection.requestMethod = "GET"
+        connection.instanceFollowRedirects = true
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 10_000
+        connection.setRequestProperty("Range", "bytes=0-0")
+        connection.connect()
+        when (val statusCode = connection.responseCode) {
+            HttpURLConnection.HTTP_PARTIAL -> {
+                parseContentRangeTotalLength(connection.getHeaderField("Content-Range"))
+                    ?: connection.getHeaderFieldLong("Content-Length", 0L)
+            }
+
+            in 200..299 -> connection.getHeaderFieldLong("Content-Length", 0L)
+            else -> throw IOException("WebDAV content length probe failed with HTTP $statusCode")
+        }
+    } finally {
+        connection.inputStreamOrNull()?.close()
+        connection.disconnect()
+    }
+}
+
+private fun openJvmWebDavStream(
+    requestUrl: String,
+    username: String,
+    password: String,
+    allowInsecureTls: Boolean,
+    startByte: Long,
+): JvmWebDavOpenedStream {
+    val connection = openJvmWebDavConnection(
+        requestUrl = requestUrl,
+        username = username,
+        password = password,
+        allowInsecureTls = allowInsecureTls,
+    )
+    return try {
+        connection.requestMethod = "GET"
+        connection.instanceFollowRedirects = true
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 10_000
+        if (startByte > 0L) {
+            connection.setRequestProperty("Range", "bytes=$startByte-")
+        }
+        connection.connect()
+        val statusCode = connection.responseCode
+        if (statusCode !in 200..299) {
+            throw IOException("WebDAV playback stream failed with HTTP $statusCode")
+        }
+        val inputStream = connection.inputStream
+        if (startByte > 0L && statusCode == HttpURLConnection.HTTP_OK) {
+            skipJvmWebDavBytes(inputStream, startByte)
+        }
+        JvmWebDavOpenedStream(connection, inputStream)
+    } catch (throwable: Throwable) {
+        connection.disconnect()
+        throw throwable
+    }
+}
+
 fun downloadJvmWebDavHead(
     requestUrl: String,
     username: String,
@@ -331,6 +439,31 @@ fun downloadJvmWebDavHead(
     }
 }
 
+private fun parseContentRangeTotalLength(headerValue: String?): Long? {
+    val value = headerValue?.trim().orEmpty()
+    if (value.isEmpty()) return null
+    return CONTENT_RANGE_TOTAL_PATTERN.matchEntire(value)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toLongOrNull()
+}
+
+private fun skipJvmWebDavBytes(inputStream: InputStream, bytesToSkip: Long) {
+    var remaining = bytesToSkip
+    while (remaining > 0L) {
+        val skipped = inputStream.skip(remaining)
+        if (skipped > 0L) {
+            remaining -= skipped
+            continue
+        }
+        val nextByte = inputStream.read()
+        if (nextByte == -1) {
+            throw IOException("WebDAV stream ended before reaching requested offset $bytesToSkip")
+        }
+        remaining -= 1L
+    }
+}
+
 private fun openJvmWebDavConnection(
     requestUrl: String,
     username: String,
@@ -347,6 +480,10 @@ private fun openJvmWebDavConnection(
         connection.hostnameVerifier = insecureHostnameVerifier
     }
     return connection
+}
+
+private fun HttpURLConnection.inputStreamOrNull(): InputStream? {
+    return runCatching { inputStream }.getOrNull() ?: runCatching { errorStream }.getOrNull()
 }
 
 private fun ImportedTrackCandidate.hasMeaningfulMetadata(relativePath: String): Boolean {
@@ -388,3 +525,4 @@ private fun isSupportedJvmWebDavAudio(fileName: String): Boolean {
 private const val WEBDAV_LOG_TAG = "WebDav"
 const val WEBDAV_METADATA_RANGE_BYTES = 262_144L
 private const val WEBDAV_MAX_METADATA_RANGE_BYTES = 2_097_152L
+private val CONTENT_RANGE_TOTAL_PATTERN = Regex("""bytes\s+\d+-\d+/(\d+)""")

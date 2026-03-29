@@ -291,7 +291,9 @@ private class JvmPlaybackGateway(
     private var currentCallbackMedia: CallbackMedia? = null
     private val recentVlcLogs = ArrayDeque<String>(MAX_RECENT_VLC_LOGS)
     @Volatile
-    private var currentMrl: String? = null
+    private var currentPlaybackTarget: String? = null
+    @Volatile
+    private var currentSourceUrl: String? = null
     @Volatile
     private var currentTrackForMetadata: Track? = null
     private val nativeLogListener = object : LogEventListener {
@@ -357,7 +359,7 @@ private class JvmPlaybackGateway(
             override fun mediaPlayerReady(mediaPlayer: MediaPlayer?) {
                 val activePlayer = mediaPlayer ?: return
                 val track = currentTrackForMetadata
-                val mrl = currentMrl ?: return
+                val playbackTarget = currentPlaybackTarget ?: return
                 val isWebDavTrack = track?.mediaLocator?.let(::parseWebDavLocator) != null
                 val parseAccepted = activePlayer.media().parsing().parse(3_000)
                 val parseStatus = activePlayer.media().parsing().status()
@@ -389,7 +391,8 @@ private class JvmPlaybackGateway(
                 logger.info(VLC_LOG_TAG) {
                     buildVlcMetadataLogMessage(
                         track = track,
-                        mrl = mrl,
+                        playbackTarget = playbackTarget,
+                        sourceUrl = currentSourceUrl,
                         parseAccepted = parseAccepted,
                         parseStatus = parseStatus.name,
                         durationMs = info.duration(),
@@ -452,7 +455,7 @@ private class JvmPlaybackGateway(
 
             override fun error(mediaPlayer: MediaPlayer?) {
                 logger.error(VLC_LOG_TAG) {
-                    "playback-error currentMrl=${currentMrl.orEmpty()} recentLogs=${recentVlcLogSummary()}"
+                    "playback-error target=${currentPlaybackTarget.orEmpty()} sourceUrl=${currentSourceUrl.orEmpty()} recentLogs=${recentVlcLogSummary()}"
                 }
                 mutableState.update {
                     it.copy(errorMessage = "桌面播放器无法播放当前媒体。")
@@ -468,8 +471,13 @@ private class JvmPlaybackGateway(
             locator = track.mediaLocator,
             logger = logger,
         )
-        val mrl = webDavTarget?.requestUrl ?: resolveLocator(track.mediaLocator)
-        currentMrl = mrl
+        val sourceUrl = webDavTarget?.requestUrl ?: resolveLocator(track.mediaLocator)
+        val playbackTarget = when {
+            webDavTarget != null -> "webdav-callback://${track.id}"
+            else -> sourceUrl
+        }
+        currentPlaybackTarget = playbackTarget
+        currentSourceUrl = sourceUrl
         currentTrackForMetadata = track
         currentCallbackMedia = webDavTarget?.media
         mutableState.update {
@@ -487,24 +495,24 @@ private class JvmPlaybackGateway(
             if (webDavTarget != null) {
                 mediaPlayer.media().start(webDavTarget.media)
             } else {
-                mediaPlayer.media().start(mrl)
+                mediaPlayer.media().start(sourceUrl)
             }
         } else {
             if (webDavTarget != null) {
                 mediaPlayer.media().startPaused(webDavTarget.media)
             } else {
-                mediaPlayer.media().startPaused(mrl)
+                mediaPlayer.media().startPaused(sourceUrl)
             }
         }
         if (!started) {
             logger.error(VLC_LOG_TAG) {
-                "start-failed mrl=$mrl playWhenReady=$playWhenReady recentLogs=${recentVlcLogSummary()}"
+                "start-failed target=$playbackTarget sourceUrl=$sourceUrl playWhenReady=$playWhenReady recentLogs=${recentVlcLogSummary()}"
             }
         }
-        check(started) { "Unable to load media $mrl" }
+        check(started) { "Unable to load media $playbackTarget" }
         if (webDavTarget != null) {
             val expectedTrackId = track.id
-            val expectedMrl = mrl
+            val expectedSourceUrl = sourceUrl
             scope.launch {
                 val metadata = requestJvmWebDavMetadata(
                     database = database,
@@ -512,7 +520,7 @@ private class JvmPlaybackGateway(
                     locator = track.mediaLocator,
                     logger = logger,
                 ) ?: return@launch
-                if (currentTrackForMetadata?.id != expectedTrackId || currentMrl != expectedMrl) return@launch
+                if (currentTrackForMetadata?.id != expectedTrackId || currentSourceUrl != expectedSourceUrl) return@launch
                 mutableState.update {
                     it.copy(
                         metadataTitle = metadata.title.takeIf { value -> value.isNotBlank() } ?: it.metadataTitle,
@@ -702,7 +710,8 @@ private fun isSupportedAudio(fileName: String): Boolean {
 
 private fun buildVlcMetadataLogMessage(
     track: Track?,
-    mrl: String,
+    playbackTarget: String,
+    sourceUrl: String?,
     parseAccepted: Boolean,
     parseStatus: String,
     durationMs: Long,
@@ -711,8 +720,12 @@ private fun buildVlcMetadataLogMessage(
     return buildString {
         append("metadata track=")
         append(track?.id)
-        append(" mrl=")
-        append(mrl)
+        append(" target=")
+        append(playbackTarget)
+        sourceUrl?.takeIf { it.isNotBlank() }?.let {
+            append(" sourceUrl=")
+            append(it)
+        }
         append(" parseAccepted=")
         append(parseAccepted)
         append(" parseStatus=")
