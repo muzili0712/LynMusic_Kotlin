@@ -180,6 +180,12 @@ data class LyricsDocument(
     val isSynced: Boolean = lines.any { it.timestampMs != null }
 }
 
+data class LyricsSearchCandidate(
+    val sourceId: String,
+    val sourceName: String,
+    val document: LyricsDocument,
+)
+
 data class LyricsSourceConfig(
     val id: String,
     val name: String,

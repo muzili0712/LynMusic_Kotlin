@@ -1,0 +1,169 @@
+package top.iwesley.lyn.music
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.core.model.LyricsLine
+import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
+import top.iwesley.lyn.music.core.model.PlaybackSnapshot
+import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.data.repository.LyricsRepository
+import top.iwesley.lyn.music.data.repository.PlaybackRepository
+import top.iwesley.lyn.music.feature.player.PlayerIntent
+import top.iwesley.lyn.music.feature.player.PlayerStore
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class PlayerStoreManualLyricsSearchTest {
+
+    @Test
+    fun `opening manual lyrics search prefills current display values`() = runTest {
+        val track = sampleTrack()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+                metadataTitle = "显示标题",
+                metadataArtistName = "显示歌手",
+                metadataAlbumTitle = "显示专辑",
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository()
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertTrue(state.isManualLyricsSearchVisible)
+        assertEquals("显示标题", state.manualLyricsTitle)
+        assertEquals("显示歌手", state.manualLyricsArtistName)
+        assertEquals("显示专辑", state.manualLyricsAlbumTitle)
+        scope.cancel()
+    }
+
+    @Test
+    fun `manual search uses edited fields and applying result updates lyrics state`() = runTest {
+        val track = sampleTrack()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val candidate = LyricsSearchCandidate(
+            sourceId = "manual-source",
+            sourceName = "手动源",
+            document = LyricsDocument(
+                lines = listOf(
+                    LyricsLine(timestampMs = 1_000L, text = "第一句"),
+                    LyricsLine(timestampMs = 2_000L, text = "第二句"),
+                ),
+                sourceId = "manual-source",
+                rawPayload = "[00:01.00]第一句\n[00:02.00]第二句",
+            ),
+        )
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+                positionMs = 1_500L,
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository(
+            searchResults = listOf(candidate),
+            appliedDocument = candidate.document,
+        )
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.ManualLyricsTitleChanged("手动标题"))
+        store.dispatch(PlayerIntent.ManualLyricsArtistChanged("手动歌手"))
+        store.dispatch(PlayerIntent.ManualLyricsAlbumChanged("手动专辑"))
+        advanceUntilIdle()
+
+        store.dispatch(PlayerIntent.SearchManualLyrics)
+        advanceUntilIdle()
+
+        assertEquals("手动标题", lyricsRepository.lastSearchTrack?.title)
+        assertEquals("手动歌手", lyricsRepository.lastSearchTrack?.artistName)
+        assertEquals("手动专辑", lyricsRepository.lastSearchTrack?.albumTitle)
+        assertEquals(listOf(candidate), store.state.value.manualLyricsResults)
+
+        store.dispatch(PlayerIntent.ApplyManualLyricsCandidate(candidate))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(track.id, lyricsRepository.appliedTrackId)
+        assertEquals(candidate, lyricsRepository.appliedCandidate)
+        assertEquals(candidate.document, state.lyrics)
+        assertEquals(0, state.highlightedLineIndex)
+        assertFalse(state.isManualLyricsSearchVisible)
+        assertTrue(state.manualLyricsResults.isEmpty())
+        scope.cancel()
+    }
+
+    private fun sampleTrack(): Track {
+        return Track(
+            id = "track-1",
+            sourceId = "local-1",
+            title = "原始标题",
+            artistName = "原始歌手",
+            albumTitle = "原始专辑",
+            durationMs = 123_000L,
+            mediaLocator = "file:///music/song.mp3",
+            relativePath = "song.mp3",
+        )
+    }
+}
+
+private class FakePlaybackRepository(
+    initialSnapshot: PlaybackSnapshot,
+) : PlaybackRepository {
+    private val mutableSnapshot = MutableStateFlow(initialSnapshot)
+
+    override val snapshot: StateFlow<PlaybackSnapshot> = mutableSnapshot.asStateFlow()
+
+    override suspend fun playTracks(tracks: List<Track>, startIndex: Int) = Unit
+    override suspend fun togglePlayPause() = Unit
+    override suspend fun skipNext() = Unit
+    override suspend fun skipPrevious() = Unit
+    override suspend fun seekTo(positionMs: Long) = Unit
+    override suspend fun setVolume(volume: Float) = Unit
+    override suspend fun cycleMode() = Unit
+    override suspend fun close() = Unit
+}
+
+private class FakeLyricsRepository(
+    private val searchResults: List<LyricsSearchCandidate> = emptyList(),
+    private val appliedDocument: LyricsDocument? = null,
+) : LyricsRepository {
+    var lastSearchTrack: Track? = null
+        private set
+    var appliedTrackId: String? = null
+        private set
+    var appliedCandidate: LyricsSearchCandidate? = null
+        private set
+
+    override suspend fun getLyrics(track: Track): LyricsDocument? = null
+
+    override suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate> {
+        lastSearchTrack = track
+        return searchResults
+    }
+
+    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
+        appliedTrackId = trackId
+        appliedCandidate = candidate
+        return appliedDocument ?: candidate.document
+    }
+}

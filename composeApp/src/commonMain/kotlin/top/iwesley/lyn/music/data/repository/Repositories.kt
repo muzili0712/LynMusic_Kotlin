@@ -22,6 +22,7 @@ import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
+import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackGateway
@@ -88,6 +89,8 @@ interface PlaybackRepository {
 
 interface LyricsRepository {
     suspend fun getLyrics(track: Track): LyricsDocument?
+    suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate>
+    suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument
 }
 
 interface SettingsRepository {
@@ -480,53 +483,22 @@ class DefaultLyricsRepository(
                 return cached
             }
 
-        val configs = database.lyricsSourceConfigDao().getEnabled()
-            .map { it.toDomain() }
+        val configs = enabledLyricsConfigs()
         if (configs.isEmpty()) {
             logger.warn(LYRICS_LOG_TAG) { "no-enabled-sources track=$trackLabel" }
             return null
         }
 
         for (config in configs) {
-            val request = buildLyricsRequest(config, track)
-            logger.debug(LYRICS_LOG_TAG) {
-                "request track=$trackLabel source=${config.id} method=${request.method.name} " +
-                    "url=${request.url} headers=${request.headers.headerNames()} bodyLength=${request.body?.length ?: 0}"
-            }
-            val startedAt = now()
-            val response = httpClient.request(request).fold(
-                onSuccess = { it },
-                onFailure = { throwable ->
-                    logger.error(LYRICS_LOG_TAG, throwable) {
-                        "request-failed track=$trackLabel source=${config.id} " +
-                            "elapsedMs=${now() - startedAt} method=${request.method.name} url=${request.url}"
-                    }
-                    null
-                },
+            val document = requestLyricsDocument(
+                track = track,
+                config = config,
+                requestType = "auto",
             ) ?: continue
-            logger.debug(LYRICS_LOG_TAG) {
-                "response track=$trackLabel source=${config.id} status=${response.statusCode} " +
-                    "elapsedMs=${now() - startedAt} bodyPreview=${response.body.logPreview()}"
-            }
-            val document = parseLyricsPayload(config, response.body)
-            if (document == null) {
-                logger.warn(LYRICS_LOG_TAG) {
-                    "parse-miss track=$trackLabel source=${config.id} status=${response.statusCode} " +
-                        "extractor=${config.extractor}"
-                }
-                continue
-            }
-            database.lyricsCacheDao().upsert(
-                LyricsCacheEntity(
-                    trackId = track.id,
-                    sourceId = config.id,
-                    rawPayload = serializeLyricsDocument(document),
-                    updatedAt = now(),
-                ),
-            )
+            storeLyricsDocument(track.id, document)
             logger.info(LYRICS_LOG_TAG) {
                 "resolved track=$trackLabel source=${config.id} synced=${document.isSynced} " +
-                    "lines=${document.lines.size} status=${response.statusCode}"
+                    "lines=${document.lines.size}"
             }
             return document
         }
@@ -534,6 +506,101 @@ class DefaultLyricsRepository(
             "miss track=$trackLabel attempted=${configs.joinToString(",") { it.id }}"
         }
         return null
+    }
+
+    override suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate> {
+        val trackLabel = track.logIdentity()
+        val configs = enabledLyricsConfigs()
+        if (configs.isEmpty()) {
+            logger.warn(LYRICS_LOG_TAG) { "manual-no-enabled-sources track=$trackLabel" }
+            return emptyList()
+        }
+        return configs.mapNotNull { config ->
+            requestLyricsDocument(
+                track = track,
+                config = config,
+                requestType = "manual",
+            )?.let { document ->
+                LyricsSearchCandidate(
+                    sourceId = config.id,
+                    sourceName = config.name,
+                    document = document,
+                )
+            }
+        }
+    }
+
+    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
+        val cachedRawPayload = serializeLyricsDocument(candidate.document)
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = trackId,
+                sourceId = candidate.sourceId,
+                rawPayload = cachedRawPayload,
+                updatedAt = now(),
+            ),
+        )
+        logger.info(LYRICS_LOG_TAG) {
+            "manual-apply track=$trackId source=${candidate.sourceId} synced=${candidate.document.isSynced} " +
+                "lines=${candidate.document.lines.size}"
+        }
+        return parseCachedLyrics(candidate.sourceId, cachedRawPayload)
+            ?: candidate.document.copy(
+                sourceId = candidate.sourceId,
+                rawPayload = cachedRawPayload,
+            )
+    }
+
+    private suspend fun enabledLyricsConfigs(): List<LyricsSourceConfig> {
+        return database.lyricsSourceConfigDao().getEnabled()
+            .map { it.toDomain() }
+    }
+
+    private suspend fun requestLyricsDocument(
+        track: Track,
+        config: LyricsSourceConfig,
+        requestType: String,
+    ): LyricsDocument? {
+        val trackLabel = track.logIdentity()
+        val request = buildLyricsRequest(config, track)
+        logger.debug(LYRICS_LOG_TAG) {
+            "$requestType-request track=$trackLabel source=${config.id} method=${request.method.name} " +
+                "url=${request.url} headers=${request.headers.headerNames()} bodyLength=${request.body?.length ?: 0}"
+        }
+        val startedAt = now()
+        val response = httpClient.request(request).fold(
+            onSuccess = { it },
+            onFailure = { throwable ->
+                logger.error(LYRICS_LOG_TAG, throwable) {
+                    "$requestType-request-failed track=$trackLabel source=${config.id} " +
+                        "elapsedMs=${now() - startedAt} method=${request.method.name} url=${request.url}"
+                }
+                null
+            },
+        ) ?: return null
+        logger.debug(LYRICS_LOG_TAG) {
+            "$requestType-response track=$trackLabel source=${config.id} status=${response.statusCode} " +
+                "elapsedMs=${now() - startedAt} bodyPreview=${response.body.logPreview()}"
+        }
+        val document = parseLyricsPayload(config, response.body)
+        if (document == null) {
+            logger.warn(LYRICS_LOG_TAG) {
+                "$requestType-parse-miss track=$trackLabel source=${config.id} status=${response.statusCode} " +
+                    "extractor=${config.extractor}"
+            }
+        }
+        return document
+    }
+
+    private suspend fun storeLyricsDocument(trackId: String, document: LyricsDocument) {
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = trackId,
+                sourceId = document.sourceId,
+                rawPayload = serializeLyricsDocument(document),
+                updatedAt = now(),
+            ),
+        )
     }
 }
 

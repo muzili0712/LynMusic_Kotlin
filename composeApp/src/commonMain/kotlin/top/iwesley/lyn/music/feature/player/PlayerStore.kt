@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.feature.player
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.mvi.BaseStore
@@ -15,6 +16,14 @@ data class PlayerState(
     val isLyricsLoading: Boolean = false,
     val lyrics: LyricsDocument? = null,
     val highlightedLineIndex: Int = -1,
+    val isManualLyricsSearchVisible: Boolean = false,
+    val manualLyricsTitle: String = "",
+    val manualLyricsArtistName: String = "",
+    val manualLyricsAlbumTitle: String = "",
+    val isManualLyricsSearchLoading: Boolean = false,
+    val hasManualLyricsSearchResult: Boolean = false,
+    val manualLyricsResults: List<LyricsSearchCandidate> = emptyList(),
+    val manualLyricsError: String? = null,
 )
 
 sealed interface PlayerIntent {
@@ -26,6 +35,13 @@ sealed interface PlayerIntent {
     data class SetVolume(val value: Float) : PlayerIntent
     data object CycleMode : PlayerIntent
     data class ExpandedChanged(val value: Boolean) : PlayerIntent
+    data object OpenManualLyricsSearch : PlayerIntent
+    data object DismissManualLyricsSearch : PlayerIntent
+    data class ManualLyricsTitleChanged(val value: String) : PlayerIntent
+    data class ManualLyricsArtistChanged(val value: String) : PlayerIntent
+    data class ManualLyricsAlbumChanged(val value: String) : PlayerIntent
+    data object SearchManualLyrics : PlayerIntent
+    data class ApplyManualLyricsCandidate(val candidate: LyricsSearchCandidate) : PlayerIntent
 }
 
 sealed interface PlayerEffect
@@ -44,6 +60,8 @@ class PlayerStore(
     init {
         scope.launch {
             playbackRepository.snapshot.collect { snapshot ->
+                val previousTrackId = state.value.snapshot.currentTrack?.id
+                val trackChanged = previousTrackId != snapshot.currentTrack?.id
                 updateState { current ->
                     current.copy(
                         snapshot = snapshot,
@@ -51,6 +69,14 @@ class PlayerStore(
                             lyrics = current.lyrics,
                             positionMs = snapshot.positionMs,
                         ),
+                        isManualLyricsSearchVisible = if (trackChanged) false else current.isManualLyricsSearchVisible,
+                        manualLyricsTitle = if (trackChanged) "" else current.manualLyricsTitle,
+                        manualLyricsArtistName = if (trackChanged) "" else current.manualLyricsArtistName,
+                        manualLyricsAlbumTitle = if (trackChanged) "" else current.manualLyricsAlbumTitle,
+                        isManualLyricsSearchLoading = if (trackChanged) false else current.isManualLyricsSearchLoading,
+                        hasManualLyricsSearchResult = if (trackChanged) false else current.hasManualLyricsSearchResult,
+                        manualLyricsResults = if (trackChanged) emptyList() else current.manualLyricsResults,
+                        manualLyricsError = if (trackChanged) null else current.manualLyricsError,
                     )
                 }
                 val track = snapshot.currentTrack
@@ -87,6 +113,114 @@ class PlayerStore(
             is PlayerIntent.SetVolume -> playbackRepository.setVolume(intent.value)
             PlayerIntent.CycleMode -> playbackRepository.cycleMode()
             is PlayerIntent.ExpandedChanged -> updateState { it.copy(isExpanded = intent.value) }
+            PlayerIntent.OpenManualLyricsSearch -> openManualLyricsSearch()
+            PlayerIntent.DismissManualLyricsSearch -> dismissManualLyricsSearch()
+            is PlayerIntent.ManualLyricsTitleChanged -> updateManualLyricsForm(title = intent.value)
+            is PlayerIntent.ManualLyricsArtistChanged -> updateManualLyricsForm(artistName = intent.value)
+            is PlayerIntent.ManualLyricsAlbumChanged -> updateManualLyricsForm(albumTitle = intent.value)
+            PlayerIntent.SearchManualLyrics -> searchManualLyrics()
+            is PlayerIntent.ApplyManualLyricsCandidate -> applyManualLyricsCandidate(intent.candidate)
+        }
+    }
+
+    private fun openManualLyricsSearch() {
+        val track = state.value.snapshot.currentTrack ?: return
+        val lookupTrack = state.value.snapshot.toLyricsLookupTrack() ?: track
+        updateState {
+            it.copy(
+                isManualLyricsSearchVisible = true,
+                manualLyricsTitle = lookupTrack.title,
+                manualLyricsArtistName = lookupTrack.artistName.orEmpty(),
+                manualLyricsAlbumTitle = lookupTrack.albumTitle.orEmpty(),
+                isManualLyricsSearchLoading = false,
+                hasManualLyricsSearchResult = false,
+                manualLyricsResults = emptyList(),
+                manualLyricsError = null,
+            )
+        }
+    }
+
+    private fun dismissManualLyricsSearch() {
+        updateState {
+            it.copy(
+                isManualLyricsSearchVisible = false,
+                isManualLyricsSearchLoading = false,
+                hasManualLyricsSearchResult = false,
+                manualLyricsResults = emptyList(),
+                manualLyricsError = null,
+            )
+        }
+    }
+
+    private fun updateManualLyricsForm(
+        title: String? = null,
+        artistName: String? = null,
+        albumTitle: String? = null,
+    ) {
+        updateState {
+            it.copy(
+                manualLyricsTitle = title ?: it.manualLyricsTitle,
+                manualLyricsArtistName = artistName ?: it.manualLyricsArtistName,
+                manualLyricsAlbumTitle = albumTitle ?: it.manualLyricsAlbumTitle,
+                hasManualLyricsSearchResult = false,
+                manualLyricsResults = emptyList(),
+                manualLyricsError = null,
+            )
+        }
+    }
+
+    private suspend fun searchManualLyrics() {
+        val currentTrack = state.value.snapshot.currentTrack ?: return
+        val title = state.value.manualLyricsTitle.trim()
+        if (title.isBlank()) {
+            updateState {
+                it.copy(
+                    isManualLyricsSearchLoading = false,
+                    hasManualLyricsSearchResult = false,
+                    manualLyricsResults = emptyList(),
+                    manualLyricsError = "标题不能为空",
+                )
+            }
+            return
+        }
+        val searchTrack = currentTrack.copy(
+            title = title,
+            artistName = state.value.manualLyricsArtistName.trim().ifBlank { null },
+            albumTitle = state.value.manualLyricsAlbumTitle.trim().ifBlank { null },
+        )
+        updateState {
+            it.copy(
+                isManualLyricsSearchLoading = true,
+                hasManualLyricsSearchResult = false,
+                manualLyricsResults = emptyList(),
+                manualLyricsError = null,
+            )
+        }
+        val result = runCatching { lyricsRepository.searchLyricsCandidates(searchTrack) }
+        updateState { current ->
+            current.copy(
+                isManualLyricsSearchLoading = false,
+                hasManualLyricsSearchResult = true,
+                manualLyricsResults = result.getOrDefault(emptyList()),
+                manualLyricsError = result.exceptionOrNull()?.message,
+            )
+        }
+    }
+
+    private suspend fun applyManualLyricsCandidate(candidate: LyricsSearchCandidate) {
+        val track = state.value.snapshot.currentTrack ?: return
+        val snapshot = state.value.snapshot
+        val document = lyricsRepository.applyLyricsCandidate(track.id, candidate)
+        updateState {
+            it.copy(
+                lyrics = document,
+                highlightedLineIndex = findHighlightedLine(document, snapshot.positionMs),
+                isManualLyricsSearchVisible = false,
+                isManualLyricsSearchLoading = false,
+                hasManualLyricsSearchResult = false,
+                manualLyricsResults = emptyList(),
+                manualLyricsError = null,
+            )
         }
     }
 
