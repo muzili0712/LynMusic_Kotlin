@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,17 +76,22 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -98,8 +104,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
+import kotlin.math.PI
+import kotlin.math.absoluteValue
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppTab
 import top.iwesley.lyn.music.core.model.ArtworkLoader
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -1300,16 +1310,78 @@ private fun PlaybackProgress(
     onPlayerIntent: (PlayerIntent) -> Unit,
 ) {
     val duration = snapshot.durationMs.coerceAtLeast(1L)
+    val progressFraction = (snapshot.positionMs.coerceIn(0L, duration).toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    val particles = remember { mutableStateListOf<ProgressFlowerParticle>() }
+    var lastEmissionFraction by remember { mutableStateOf(progressFraction) }
+    var lastEmissionNanos by remember { mutableStateOf(0L) }
+    var animationFrameNanos by remember { mutableStateOf(0L) }
+    LaunchedEffect(snapshot.positionMs, snapshot.isPlaying, duration) {
+        val currentFraction = progressFraction
+        if (currentFraction < lastEmissionFraction) {
+            lastEmissionFraction = currentFraction
+            lastEmissionNanos = 0L
+            return@LaunchedEffect
+        }
+        if (!snapshot.isPlaying || duration <= 1L || currentFraction <= 0f) {
+            lastEmissionFraction = currentFraction
+            return@LaunchedEffect
+        }
+        val now = withFrameNanos { it }
+        val movedEnough = currentFraction - lastEmissionFraction >= 0.018f
+        val throttled = lastEmissionNanos == 0L || now - lastEmissionNanos >= 240_000_000L
+        if (movedEnough && throttled) {
+            val seed = (now % Int.MAX_VALUE.toLong()).toInt().absoluteValue
+            repeat(3) { index ->
+                particles += buildProgressFlowerParticle(
+                    progressFraction = currentFraction,
+                    seed = seed + index * 97,
+                    bornAtNanos = now,
+                )
+            }
+            lastEmissionFraction = currentFraction
+            lastEmissionNanos = now
+        }
+    }
+    LaunchedEffect(particles.size) {
+        if (particles.isEmpty()) return@LaunchedEffect
+        while (particles.isNotEmpty()) {
+            withFrameNanos { now ->
+                animationFrameNanos = now
+                particles.removeAll { particle -> now - particle.bornAtNanos >= FLOWER_PARTICLE_LIFETIME_NANOS }
+            }
+        }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-        Slider(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(12.dp)
-                .graphicsLayer(scaleY = 0.56f),
-            value = snapshot.positionMs.coerceIn(0L, duration).toFloat(),
-            onValueChange = { onPlayerIntent(PlayerIntent.SeekTo(it.toLong())) },
-            valueRange = 0f..duration.toFloat(),
-        )
+                .height(28.dp),
+        ) {
+            val thumbInsetPx = with(LocalDensity.current) { 10.dp.toPx() }
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 6.dp),
+            ) {
+                particles.forEach { particle ->
+                    drawProgressFlowerParticle(
+                        particle = particle,
+                        nowNanos = animationFrameNanos,
+                        thumbInsetPx = thumbInsetPx,
+                    )
+                }
+            }
+            Slider(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(12.dp)
+                    .graphicsLayer(scaleY = 0.56f),
+                value = snapshot.positionMs.coerceIn(0L, duration).toFloat(),
+                onValueChange = { onPlayerIntent(PlayerIntent.SeekTo(it.toLong())) },
+                valueRange = 0f..duration.toFloat(),
+            )
+        }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatDuration(snapshot.positionMs), style = MaterialTheme.typography.bodySmall)
             Text(formatDuration(snapshot.durationMs), style = MaterialTheme.typography.bodySmall)
@@ -1349,6 +1421,84 @@ private fun PlaybackVolume(
         )
     }
 }
+
+private data class ProgressFlowerParticle(
+    val progressFraction: Float,
+    val bornAtNanos: Long,
+    val driftX: Float,
+    val liftY: Float,
+    val sway: Float,
+    val bloomRadius: Float,
+    val colorIndex: Int,
+    val rotationOffset: Float,
+)
+
+private fun buildProgressFlowerParticle(
+    progressFraction: Float,
+    seed: Int,
+    bornAtNanos: Long,
+): ProgressFlowerParticle {
+    val normalized = seed.absoluteValue
+    return ProgressFlowerParticle(
+        progressFraction = progressFraction,
+        bornAtNanos = bornAtNanos,
+        driftX = (((normalized % 24) - 12).toFloat()) * 2.1f,
+        liftY = 22f + (normalized % 32).toFloat(),
+        sway = 6f + (normalized % 9).toFloat(),
+        bloomRadius = 3.6f + ((normalized % 4).toFloat() * 0.8f),
+        colorIndex = normalized % FLOWER_PARTICLE_COLORS.size,
+        rotationOffset = (normalized % 360).toFloat() * (PI.toFloat() / 180f),
+    )
+}
+
+private fun DrawScope.drawProgressFlowerParticle(
+    particle: ProgressFlowerParticle,
+    nowNanos: Long,
+    thumbInsetPx: Float,
+) {
+    if (nowNanos <= particle.bornAtNanos) return
+    val age = ((nowNanos - particle.bornAtNanos).toFloat() / FLOWER_PARTICLE_LIFETIME_NANOS.toFloat()).coerceIn(0f, 1f)
+    if (age >= 1f) return
+    val easeOut = 1f - (1f - age) * (1f - age)
+    val usableWidth = (size.width - thumbInsetPx * 2f).coerceAtLeast(0f)
+    val baseX = thumbInsetPx + usableWidth * particle.progressFraction
+    val baseY = size.height - 8.dp.toPx()
+    val swayOffset = sin((age * 1.8f + particle.rotationOffset) * PI.toFloat()) * particle.sway
+    val center = Offset(
+        x = baseX + particle.driftX * easeOut + swayOffset,
+        y = baseY - particle.liftY * easeOut,
+    )
+    val petalColor = FLOWER_PARTICLE_COLORS[particle.colorIndex].copy(alpha = (1f - age) * 0.92f)
+    val petalOrbit = particle.bloomRadius * 1.55f
+    val rotation = particle.rotationOffset + age * 2.4f
+    repeat(5) { index ->
+        val angle = rotation + index * ((2f * PI.toFloat()) / 5f)
+        val petalCenter = Offset(
+            x = center.x + cos(angle) * petalOrbit,
+            y = center.y + sin(angle) * petalOrbit,
+        )
+        drawCircle(
+            color = petalColor,
+            radius = particle.bloomRadius,
+            center = petalCenter,
+        )
+    }
+    drawCircle(
+        color = Color(0xFFFFF2A8).copy(alpha = (1f - age) * 0.98f),
+        radius = particle.bloomRadius * 0.82f,
+        center = center,
+    )
+}
+
+private val FLOWER_PARTICLE_COLORS = listOf(
+    Color(0xFFFF5D9E),
+    Color(0xFFFFB341),
+    Color(0xFF7DFF93),
+    Color(0xFF68D5FF),
+    Color(0xFFC792FF),
+)
+
+private const val FLOWER_PARTICLE_LIFETIME_NANOS = 900_000_000L
 
 @Composable
 private fun TrackRow(
