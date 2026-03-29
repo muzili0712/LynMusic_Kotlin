@@ -3,6 +3,7 @@ package top.iwesley.lyn.music
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -874,39 +875,55 @@ private fun PlayerOverlay(
                         })
                     }
                     if (wide) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        PlayerGlassPanel(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
                         ) {
-                            PlayerInfoPane(
-                                snapshot = state.snapshot,
-                                track = track,
+                            Row(
                                 modifier = Modifier
-                                    .weight(0.42f)
-                                    .fillMaxHeight(),
-                            )
-                            PlayerLyricsPane(
-                                state = state,
-                                modifier = Modifier
-                                    .weight(0.58f)
-                                    .fillMaxHeight(),
-                            )
+                                    .fillMaxSize()
+                                    .padding(10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                            ) {
+                                PlayerInfoPane(
+                                    snapshot = state.snapshot,
+                                    track = track,
+                                    modifier = Modifier
+                                        .weight(0.42f)
+                                        .fillMaxHeight(),
+                                )
+                                PlayerLyricsPane(
+                                    state = state,
+                                    modifier = Modifier
+                                        .weight(0.58f)
+                                        .fillMaxHeight(),
+                                )
+                            }
                         }
                     } else {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                        PlayerGlassPanel(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
                         ) {
-                            PlayerInfoPane(
-                                snapshot = state.snapshot,
-                                track = track,
-                                modifier = Modifier.fillMaxWidth(),
-                                compact = true,
-                            )
-                            PlayerLyricsPane(
-                                state = state,
-                                modifier = Modifier.weight(1f),
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(18.dp),
+                            ) {
+                                PlayerInfoPane(
+                                    snapshot = state.snapshot,
+                                    track = track,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    compact = true,
+                                )
+                                PlayerLyricsPane(
+                                    state = state,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
                     }
                     PlayerBottomControls(
@@ -920,74 +937,99 @@ private fun PlayerOverlay(
 }
 
 @Composable
+private fun PlayerGlassPanel(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(34.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.26f)),
+        colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.54f)),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.18f),
+                            colors.heroGlow.copy(alpha = 0.16f),
+                            colors.secondary.copy(alpha = 0.12f),
+                            colors.surface.copy(alpha = 0.14f),
+                        ),
+                    ),
+                ),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
 private fun PlayerInfoPane(
     snapshot: PlaybackSnapshot,
     track: Track,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(30.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)),
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 22.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
+        VinylPlaceholder(
+            size = if (compact) 180.dp else 260.dp,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 22.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            VinylPlaceholder(
-                size = if (compact) 180.dp else 260.dp,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            )
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    snapshot.currentDisplayTitle,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    snapshot.currentDisplayArtistName ?: "未知艺人",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    snapshot.currentDisplayAlbumTitle ?: "本地曲目",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                AssistChip(
-                    onClick = {},
-                    label = { Text(formatDuration(snapshot.durationMs)) },
-                    leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
-                )
-                AssistChip(
-                    onClick = {},
-                    label = { Text(track.sourceId.substringBefore('-').uppercase()) },
-                    leadingIcon = { Icon(Icons.Rounded.Album, null) },
-                )
-            }
             Text(
-                track.relativePath,
+                snapshot.currentDisplayTitle,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                snapshot.currentDisplayArtistName ?: "未知艺人",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = if (compact) 2 else 3,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                snapshot.currentDisplayAlbumTitle ?: "本地曲目",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            AssistChip(
+                onClick = {},
+                label = { Text(formatDuration(snapshot.durationMs)) },
+                leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
+            )
+            AssistChip(
+                onClick = {},
+                label = { Text(track.sourceId.substringBefore('-').uppercase()) },
+                leadingIcon = { Icon(Icons.Rounded.Album, null) },
+            )
+        }
+        Text(
+            track.relativePath,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = if (compact) 2 else 3,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1014,80 +1056,74 @@ private fun PlayerLyricsPane(
             listState.scrollBy(delta)
         }
     }
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(30.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)),
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 22.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 22.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            SectionTitle(
-                title = "歌词",
-                subtitle = if (state.isLyricsLoading) "正在请求歌词..." else "支持 JSON、XML、LRC 与纯文本。",
-            )
-            if (state.lyrics == null) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    EmptyStateCard(
-                        title = "暂时没有歌词",
-                        body = "会先使用本地缓存与内嵌歌词，拿不到时再按当前标题和歌手请求。",
-                    )
-                }
-            } else {
-                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                    val centerPadding = (maxHeight / 2 - 28.dp).coerceAtLeast(72.dp)
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        state = listState,
-                        contentPadding = PaddingValues(vertical = centerPadding),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        itemsIndexed(state.lyrics.lines) { index, line ->
-                            val distance = if (state.highlightedLineIndex >= 0) {
-                                abs(index - state.highlightedLineIndex)
-                            } else {
-                                Int.MAX_VALUE
-                            }
-                            val targetAlpha = when {
-                                state.highlightedLineIndex < 0 -> 0.92f
-                                distance == 0 -> 1f
-                                distance == 1 -> 0.72f
-                                distance == 2 -> 0.5f
-                                else -> 0.34f
-                            }
-                            val targetScale = when {
-                                state.highlightedLineIndex < 0 -> 1f
-                                distance == 0 -> 1.08f
-                                distance == 1 -> 1.01f
-                                else -> 1f
-                            }
-                            val animatedAlpha by animateFloatAsState(targetValue = targetAlpha)
-                            val animatedScale by animateFloatAsState(targetValue = targetScale)
-                            val animatedColor by animateColorAsState(
-                                targetValue = if (index == state.highlightedLineIndex) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
-                            Text(
-                                text = line.text,
-                                style = if (index == state.highlightedLineIndex) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
-                                color = animatedColor,
-                                textAlign = TextAlign.Center,
-                                fontWeight = if (index == state.highlightedLineIndex) FontWeight.Bold else FontWeight.Normal,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .graphicsLayer(
-                                        alpha = animatedAlpha,
-                                        scaleX = animatedScale,
-                                        scaleY = animatedScale,
-                                    ),
-                            )
+        SectionTitle(
+            title = "歌词",
+            subtitle = if (state.isLyricsLoading) "正在请求歌词..." else "支持 JSON、XML、LRC 与纯文本。",
+        )
+        if (state.lyrics == null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyStateCard(
+                    title = "暂时没有歌词",
+                    body = "会先使用本地缓存与内嵌歌词，拿不到时再按当前标题和歌手请求。",
+                )
+            }
+        } else {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val centerPadding = (maxHeight / 2 - 28.dp).coerceAtLeast(72.dp)
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(vertical = centerPadding),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    itemsIndexed(state.lyrics.lines) { index, line ->
+                        val distance = if (state.highlightedLineIndex >= 0) {
+                            abs(index - state.highlightedLineIndex)
+                        } else {
+                            Int.MAX_VALUE
                         }
+                        val targetAlpha = when {
+                            state.highlightedLineIndex < 0 -> 0.92f
+                            distance == 0 -> 1f
+                            distance == 1 -> 0.72f
+                            distance == 2 -> 0.5f
+                            else -> 0.34f
+                        }
+                        val targetScale = when {
+                            state.highlightedLineIndex < 0 -> 1f
+                            distance == 0 -> 1.08f
+                            distance == 1 -> 1.01f
+                            else -> 1f
+                        }
+                        val animatedAlpha by animateFloatAsState(targetValue = targetAlpha)
+                        val animatedScale by animateFloatAsState(targetValue = targetScale)
+                        val animatedColor by animateColorAsState(
+                            targetValue = if (index == state.highlightedLineIndex) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                        Text(
+                            text = line.text,
+                            style = if (index == state.highlightedLineIndex) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
+                            color = animatedColor,
+                            textAlign = TextAlign.Center,
+                            fontWeight = if (index == state.highlightedLineIndex) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer(
+                                    alpha = animatedAlpha,
+                                    scaleX = animatedScale,
+                                    scaleY = animatedScale,
+                                ),
+                        )
                     }
                 }
             }
