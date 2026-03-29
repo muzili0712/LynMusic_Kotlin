@@ -12,6 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -34,6 +35,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -83,10 +85,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -102,12 +106,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -548,48 +555,138 @@ private fun LibraryTab(
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        item {
-            OutlinedTextField(
-                value = state.query,
-                onValueChange = { onLibraryIntent(LibraryIntent.SearchChanged(it)) },
-                label = { Text("搜索歌曲 / 艺人 / 专辑") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
-            )
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard(title = "歌曲", value = state.tracks.size.toString(), icon = Icons.Rounded.LibraryMusic, modifier = Modifier.weight(1f))
-                StatCard(title = "专辑", value = state.albums.size.toString(), icon = Icons.Rounded.Album, modifier = Modifier.weight(1f))
-                StatCard(title = "艺人", value = state.artists.size.toString(), icon = Icons.Rounded.Tune, modifier = Modifier.weight(1f))
-            }
-        }
-        item {
-            SectionTitle(title = "你的曲库", subtitle = "支持本地文件夹、Samba、WebDAV 与自定义歌词联动。")
-        }
-        if (state.filteredTracks.isEmpty()) {
+    val listState = rememberLazyListState()
+    Box(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 42.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
             item {
-                EmptyStateCard(
-                    title = "曲库还是空的",
-                    body = "先到“来源”页导入本地文件夹、Samba 或 WebDAV，扫描完成后会出现在这里。",
+                OutlinedTextField(
+                    value = state.query,
+                    onValueChange = { onLibraryIntent(LibraryIntent.SearchChanged(it)) },
+                    label = { Text("搜索歌曲 / 艺人 / 专辑") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
                 )
             }
-        } else {
-            itemsIndexed(state.filteredTracks, key = { _, item -> item.id }) { index, track ->
-                TrackRow(
-                    track = track,
-                    index = index,
-                    onClick = {
-                        onPlayerIntent(PlayerIntent.PlayTracks(state.filteredTracks, index))
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatCard(title = "歌曲", value = state.tracks.size.toString(), icon = Icons.Rounded.LibraryMusic, modifier = Modifier.weight(1f))
+                    StatCard(title = "专辑", value = state.albums.size.toString(), icon = Icons.Rounded.Album, modifier = Modifier.weight(1f))
+                    StatCard(title = "艺人", value = state.artists.size.toString(), icon = Icons.Rounded.Tune, modifier = Modifier.weight(1f))
+                }
+            }
+            item {
+                SectionTitle(title = "你的曲库", subtitle = "支持本地文件夹、Samba、WebDAV 与自定义歌词联动。")
+            }
+            if (state.filteredTracks.isEmpty()) {
+                item {
+                    EmptyStateCard(
+                        title = "曲库还是空的",
+                        body = "先到“来源”页导入本地文件夹、Samba 或 WebDAV，扫描完成后会出现在这里。",
+                    )
+                }
+            } else {
+                itemsIndexed(state.filteredTracks, key = { _, item -> item.id }) { index, track ->
+                    TrackRow(
+                        track = track,
+                        index = index,
+                        onClick = {
+                            onPlayerIntent(PlayerIntent.PlayTracks(state.filteredTracks, index))
+                        },
+                    )
+                }
+            }
+        }
+        LibraryFastScrollbar(
+            listState = listState,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .padding(end = 8.dp, top = 20.dp, bottom = 20.dp),
+        )
+    }
+}
+
+@Composable
+private fun LibraryFastScrollbar(
+    listState: LazyListState,
+    modifier: Modifier = Modifier,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var trackSize by remember { mutableStateOf(IntSize.Zero) }
+    val totalItemsCount by remember(listState) {
+        derivedStateOf { listState.layoutInfo.totalItemsCount }
+    }
+    val visibleItemsInfo by remember(listState) {
+        derivedStateOf { listState.layoutInfo.visibleItemsInfo }
+    }
+    if (totalItemsCount <= 0 || totalItemsCount <= visibleItemsInfo.size) return
+    val visibleFraction by remember(totalItemsCount, visibleItemsInfo) {
+        derivedStateOf {
+            (visibleItemsInfo.size.toFloat() / totalItemsCount.toFloat()).coerceIn(0.12f, 0.45f)
+        }
+    }
+    val scrollFraction by remember(listState, totalItemsCount, visibleItemsInfo) {
+        derivedStateOf {
+            if (totalItemsCount <= 1) {
+                0f
+            } else {
+                val firstVisibleSize = visibleItemsInfo.firstOrNull()?.size?.takeIf { it > 0 } ?: 1
+                val exactIndex = listState.firstVisibleItemIndex + (listState.firstVisibleItemScrollOffset / firstVisibleSize.toFloat())
+                (exactIndex / (totalItemsCount - 1).toFloat()).coerceIn(0f, 1f)
+            }
+        }
+    }
+    val thumbHeightPx = trackSize.height * visibleFraction
+    val thumbOffsetPx = (trackSize.height - thumbHeightPx).coerceAtLeast(0f) * scrollFraction
+    val thumbHeightDp = with(density) { thumbHeightPx.toDp() }
+    val thumbOffsetDp = with(density) { thumbOffsetPx.toDp() }
+
+    fun scrollToFraction(y: Float) {
+        if (trackSize.height <= 0 || totalItemsCount <= 1) return
+        val fraction = (y / trackSize.height.toFloat()).coerceIn(0f, 1f)
+        val targetIndex = (fraction * (totalItemsCount - 1)).roundToInt()
+        coroutineScope.launch {
+            listState.scrollToItem(targetIndex)
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .width(18.dp)
+            .onSizeChanged { trackSize = it }
+            .pointerInput(totalItemsCount, trackSize) {
+                detectVerticalDragGestures(
+                    onDragStart = { offset -> scrollToFraction(offset.y) },
+                    onVerticalDrag = { change, _ ->
+                        change.consume()
+                        scrollToFraction(change.position.y)
                     },
                 )
-            }
-        }
+            },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(4.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(Color.White.copy(alpha = 0.10f)),
+        )
+        Box(
+            modifier = Modifier
+                .offset(y = thumbOffsetDp)
+                .height(thumbHeightDp)
+                .width(8.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(Color.White.copy(alpha = 0.82f))
+                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)), RoundedCornerShape(999.dp)),
+        )
     }
 }
 
