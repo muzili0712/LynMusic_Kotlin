@@ -113,6 +113,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
         playerRuntimeServices = PlayerRuntimeServices(
             playbackGateway = ApplePlaybackGateway(platformLabel = "iOS"),
             playbackPreferencesStore = appPreferencesStore,
+            lyricsSharePlatformService = IosLyricsSharePlatformService(),
         ),
     )
 }

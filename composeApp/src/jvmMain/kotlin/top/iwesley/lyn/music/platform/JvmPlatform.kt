@@ -135,6 +135,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
         playerRuntimeServices = PlayerRuntimeServices(
             playbackGateway = playbackGateway,
             playbackPreferencesStore = appPreferencesStore,
+            lyricsSharePlatformService = JvmLyricsSharePlatformService(),
         ),
     )
 }

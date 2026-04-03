@@ -8,11 +8,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 import kotlin.time.Clock
+import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
 
@@ -263,6 +265,7 @@ class DefaultPlaybackRepository(
 data class PlayerRuntimeServices(
     val playbackGateway: PlaybackGateway,
     val playbackPreferencesStore: PlaybackPreferencesStore,
+    val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
 )
 
 private fun now(): Long = Clock.System.now().toEpochMilliseconds()

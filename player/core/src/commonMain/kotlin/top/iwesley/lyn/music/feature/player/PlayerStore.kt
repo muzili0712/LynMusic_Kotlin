@@ -3,11 +3,15 @@ package top.iwesley.lyn.music.feature.player
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
+import top.iwesley.lyn.music.core.model.buildLyricsShareSuggestedName
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
@@ -28,6 +32,15 @@ data class PlayerState(
     val manualLyricsResults: List<LyricsSearchCandidate> = emptyList(),
     val manualWorkflowSongResults: List<WorkflowSongCandidate> = emptyList(),
     val manualLyricsError: String? = null,
+    val isLyricsShareVisible: Boolean = false,
+    val selectedLyricsLineIndices: Set<Int> = emptySet(),
+    val shareCardModel: LyricsShareCardModel? = null,
+    val sharePreviewBytes: ByteArray? = null,
+    val sharePreviewError: String? = null,
+    val isShareRendering: Boolean = false,
+    val isShareSaving: Boolean = false,
+    val isShareCopying: Boolean = false,
+    val shareMessage: String? = null,
 )
 
 sealed interface PlayerIntent {
@@ -49,6 +62,14 @@ sealed interface PlayerIntent {
     data object SearchManualLyrics : PlayerIntent
     data class ApplyManualLyricsCandidate(val candidate: LyricsSearchCandidate) : PlayerIntent
     data class ApplyWorkflowSongCandidate(val candidate: WorkflowSongCandidate) : PlayerIntent
+    data object OpenLyricsShare : PlayerIntent
+    data object DismissLyricsShare : PlayerIntent
+    data class ToggleLyricsLineSelection(val index: Int) : PlayerIntent
+    data object ClearLyricsSelection : PlayerIntent
+    data object BuildLyricsSharePreview : PlayerIntent
+    data object SaveLyricsShareImage : PlayerIntent
+    data object CopyLyricsShareImage : PlayerIntent
+    data object ClearLyricsShareMessage : PlayerIntent
 }
 
 sealed interface PlayerEffect
@@ -56,19 +77,24 @@ sealed interface PlayerEffect
 class PlayerStore(
     private val playbackRepository: PlaybackRepository,
     private val lyricsRepository: LyricsRepository,
-    scope: CoroutineScope,
+    private val storeScope: CoroutineScope,
+    private val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
 ) : BaseStore<PlayerState, PlayerIntent, PlayerEffect>(
     initialState = PlayerState(),
-    scope = scope,
+    scope = storeScope,
 ) {
     private var currentLyricsTrackId: String? = null
     private var currentLyricsRequestKey: String? = null
+    private var currentSharePreviewRequestId: Long = 0L
 
     init {
-        scope.launch {
+        storeScope.launch {
             playbackRepository.snapshot.collect { snapshot ->
                 val previousTrackId = state.value.snapshot.currentTrack?.id
                 val trackChanged = previousTrackId != snapshot.currentTrack?.id
+                if (trackChanged || snapshot.currentTrack == null) {
+                    invalidateLyricsSharePreviewRequests()
+                }
                 updateState { current ->
                     current.copy(
                         snapshot = snapshot,
@@ -86,7 +112,13 @@ class PlayerStore(
                         manualLyricsResults = if (trackChanged) emptyList() else current.manualLyricsResults,
                         manualWorkflowSongResults = if (trackChanged) emptyList() else current.manualWorkflowSongResults,
                         manualLyricsError = if (trackChanged) null else current.manualLyricsError,
-                    )
+                    ).let { updated ->
+                        if (trackChanged || snapshot.currentTrack == null) {
+                            updated.clearLyricsShareState()
+                        } else {
+                            updated
+                        }
+                    }
                 }
                 val track = snapshot.currentTrack
                 val lookupTrack = snapshot.toLyricsLookupTrack()
@@ -139,6 +171,16 @@ class PlayerStore(
             PlayerIntent.SearchManualLyrics -> searchManualLyrics()
             is PlayerIntent.ApplyManualLyricsCandidate -> applyManualLyricsCandidate(intent.candidate)
             is PlayerIntent.ApplyWorkflowSongCandidate -> applyWorkflowSongCandidate(intent.candidate)
+            PlayerIntent.OpenLyricsShare -> openLyricsShare()
+            PlayerIntent.DismissLyricsShare -> dismissLyricsShare()
+            is PlayerIntent.ToggleLyricsLineSelection -> toggleLyricsLineSelection(intent.index)
+            PlayerIntent.ClearLyricsSelection -> clearLyricsSelection()
+            PlayerIntent.BuildLyricsSharePreview -> rebuildLyricsSharePreview()
+            PlayerIntent.SaveLyricsShareImage -> saveLyricsShareImage()
+            PlayerIntent.CopyLyricsShareImage -> copyLyricsShareImage()
+            PlayerIntent.ClearLyricsShareMessage -> updateState {
+                it.copy(shareMessage = null, sharePreviewError = null)
+            }
         }
     }
 
@@ -180,6 +222,88 @@ class PlayerStore(
                 manualLyricsResults = emptyList(),
                 manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
+            )
+        }
+    }
+
+    private suspend fun openLyricsShare() {
+        val snapshot = state.value.snapshot
+        val lyrics = state.value.lyrics ?: return
+        if (snapshot.currentTrack == null) return
+        val defaultSelection = state.value.highlightedLineIndex
+            .takeIf { index ->
+                index in lyrics.lines.indices && lyrics.lines[index].text.trim().isNotEmpty()
+            }?.let { setOf(it) }.orEmpty()
+        invalidateLyricsSharePreviewRequests()
+        updateState {
+            it.copy(
+                isManualLyricsSearchVisible = false,
+                isManualLyricsSearchLoading = false,
+                hasManualLyricsSearchResult = false,
+                manualLyricsResults = emptyList(),
+                manualWorkflowSongResults = emptyList(),
+                manualLyricsError = null,
+                isLyricsShareVisible = true,
+                selectedLyricsLineIndices = defaultSelection,
+                shareCardModel = deriveLyricsShareCardModel(snapshot, lyrics, defaultSelection),
+                sharePreviewBytes = null,
+                sharePreviewError = null,
+                isShareRendering = false,
+                isShareSaving = false,
+                isShareCopying = false,
+                shareMessage = null,
+            )
+        }
+        if (defaultSelection.isNotEmpty()) {
+            rebuildLyricsSharePreview()
+        }
+    }
+
+    private fun dismissLyricsShare() {
+        invalidateLyricsSharePreviewRequests()
+        updateState { it.clearLyricsShareState() }
+    }
+
+    private suspend fun toggleLyricsLineSelection(index: Int) {
+        val lyrics = state.value.lyrics ?: return
+        val line = lyrics.lines.getOrNull(index)?.text?.trim().orEmpty()
+        if (line.isEmpty()) return
+        val updatedSelection = state.value.selectedLyricsLineIndices.toMutableSet().also { selected ->
+            if (!selected.add(index)) {
+                selected.remove(index)
+            }
+        }.toSet()
+        invalidateLyricsSharePreviewRequests()
+        updateState {
+            val snapshot = it.snapshot
+            it.copy(
+                selectedLyricsLineIndices = updatedSelection,
+                shareCardModel = deriveLyricsShareCardModel(snapshot, lyrics, updatedSelection),
+                sharePreviewBytes = null,
+                sharePreviewError = null,
+                isShareRendering = false,
+                isShareSaving = false,
+                isShareCopying = false,
+                shareMessage = null,
+            )
+        }
+        if (updatedSelection.isNotEmpty()) {
+            rebuildLyricsSharePreview()
+        }
+    }
+
+    private fun clearLyricsSelection() {
+        invalidateLyricsSharePreviewRequests()
+        updateState {
+            it.copy(
+                selectedLyricsLineIndices = emptySet(),
+                shareCardModel = null,
+                sharePreviewBytes = null,
+                sharePreviewError = null,
+                isShareRendering = false,
+                isShareSaving = false,
+                isShareCopying = false,
+                shareMessage = null,
             )
         }
     }
@@ -285,6 +409,129 @@ class PlayerStore(
         }
     }
 
+    private suspend fun rebuildLyricsSharePreview(): ByteArray? {
+        val snapshot = state.value.snapshot
+        val lyrics = state.value.lyrics
+        val model = deriveLyricsShareCardModel(snapshot, lyrics, state.value.selectedLyricsLineIndices)
+        if (!state.value.isLyricsShareVisible || model == null) {
+            updateState {
+                it.copy(
+                    shareCardModel = model,
+                    sharePreviewBytes = null,
+                    sharePreviewError = null,
+                    isShareRendering = false,
+                )
+            }
+            return null
+        }
+        val requestId = nextLyricsSharePreviewRequestId()
+        updateState {
+            it.copy(
+                shareCardModel = model,
+                sharePreviewBytes = null,
+                sharePreviewError = null,
+                isShareRendering = true,
+            )
+        }
+        val result = lyricsSharePlatformService.buildPreview(model)
+        if (requestId != currentSharePreviewRequestId) return null
+        return result.fold(
+            onSuccess = { bytes ->
+                updateState {
+                    it.copy(
+                        shareCardModel = model,
+                        sharePreviewBytes = bytes,
+                        sharePreviewError = null,
+                        isShareRendering = false,
+                    )
+                }
+                bytes
+            },
+            onFailure = { throwable ->
+                updateState {
+                    it.copy(
+                        shareCardModel = model,
+                        sharePreviewBytes = null,
+                        sharePreviewError = "生成分享图片失败: ${throwable.message.orEmpty()}",
+                        isShareRendering = false,
+                    )
+                }
+                null
+            },
+        )
+    }
+
+    private suspend fun saveLyricsShareImage() {
+        val track = state.value.snapshot.currentTrack ?: return
+        val bytes = obtainLyricsSharePreviewBytes() ?: return
+        updateState { it.copy(isShareSaving = true, shareMessage = null) }
+        val result = lyricsSharePlatformService.saveImage(
+            pngBytes = bytes,
+            suggestedName = buildLyricsShareSuggestedName(track.title),
+        )
+        updateState {
+            it.copy(
+                isShareSaving = false,
+                shareMessage = result.fold(
+                    onSuccess = { saved -> saved.message },
+                    onFailure = { throwable -> "保存图片失败: ${throwable.message.orEmpty()}" },
+                ),
+            )
+        }
+    }
+
+    private suspend fun copyLyricsShareImage() {
+        val bytes = obtainLyricsSharePreviewBytes() ?: return
+        updateState { it.copy(isShareCopying = true, shareMessage = null) }
+        val result = lyricsSharePlatformService.copyImage(bytes)
+        updateState {
+            it.copy(
+                isShareCopying = false,
+                shareMessage = result.fold(
+                    onSuccess = { "图片已复制" },
+                    onFailure = { throwable -> "复制图片失败: ${throwable.message.orEmpty()}" },
+                ),
+            )
+        }
+    }
+
+    private suspend fun obtainLyricsSharePreviewBytes(): ByteArray? {
+        if (state.value.selectedLyricsLineIndices.isEmpty()) {
+            updateState { it.copy(shareMessage = "请先选择至少一句歌词") }
+            return null
+        }
+        state.value.sharePreviewBytes?.let { return it }
+        return rebuildLyricsSharePreview()
+    }
+
+    private fun deriveLyricsShareCardModel(
+        snapshot: PlaybackSnapshot,
+        lyrics: LyricsDocument?,
+        selectedLineIndices: Set<Int>,
+    ): LyricsShareCardModel? {
+        val selectedLines = lyrics?.lines.orEmpty()
+            .mapIndexedNotNull { index, line ->
+                if (index !in selectedLineIndices) return@mapIndexedNotNull null
+                line.text.trim().takeIf { it.isNotEmpty() }
+            }
+        if (selectedLines.isEmpty()) return null
+        return LyricsShareCardModel(
+            title = snapshot.currentDisplayTitle.ifBlank { snapshot.currentTrack?.title.orEmpty() },
+            artistName = snapshot.currentDisplayArtistName ?: snapshot.currentTrack?.artistName,
+            artworkLocator = snapshot.currentDisplayArtworkLocator,
+            lyricsLines = selectedLines,
+        )
+    }
+
+    private fun invalidateLyricsSharePreviewRequests() {
+        currentSharePreviewRequestId += 1
+    }
+
+    private fun nextLyricsSharePreviewRequestId(): Long {
+        currentSharePreviewRequestId += 1
+        return currentSharePreviewRequestId
+    }
+
     private fun findHighlightedLine(lyrics: LyricsDocument?, positionMs: Long): Int {
         val syncedLines = lyrics?.lines ?: return -1
         val target = positionMs + lyrics.offsetMs
@@ -301,6 +548,20 @@ class PlayerStore(
             else -> false
         }
     }
+}
+
+private fun PlayerState.clearLyricsShareState(): PlayerState {
+    return copy(
+        isLyricsShareVisible = false,
+        selectedLyricsLineIndices = emptySet(),
+        shareCardModel = null,
+        sharePreviewBytes = null,
+        sharePreviewError = null,
+        isShareRendering = false,
+        isShareSaving = false,
+        isShareCopying = false,
+        shareMessage = null,
+    )
 }
 
 private fun PlaybackSnapshot.toLyricsLookupTrack(): Track? {

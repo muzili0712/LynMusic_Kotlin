@@ -140,6 +140,7 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppTab
+import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
@@ -167,6 +168,7 @@ import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.feature.settings.SettingsStore
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
+import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.LynMusicTheme
 import top.iwesley.lyn.music.ui.heroGlow
 
@@ -206,7 +208,12 @@ fun buildPlayerAppComponent(
         libraryStore = sharedGraph.libraryStore,
         favoritesStore = sharedGraph.favoritesStore,
         importStore = sharedGraph.importStore,
-        playerStore = PlayerStore(playbackRepository, sharedGraph.lyricsRepository, sharedGraph.scope),
+        playerStore = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = sharedGraph.lyricsRepository,
+            storeScope = sharedGraph.scope,
+            lyricsSharePlatformService = playerRuntimeServices.lyricsSharePlatformService,
+        ),
         settingsStore = sharedGraph.settingsStore,
         scope = sharedGraph.scope,
         onDispose = {
@@ -1589,13 +1596,22 @@ private fun PlayerLyricsPane(
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White.copy(alpha = 0.88f),
                 )
-                OutlinedButton(
-                    onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
-                    shape = RoundedCornerShape(18.dp),
-                ) {
-                    Icon(Icons.Rounded.Tune, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("手动搜索")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
+                        enabled = state.lyrics != null && !state.isLyricsLoading,
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Text("分享歌词")
+                    }
+                    OutlinedButton(
+                        onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Icon(Icons.Rounded.Tune, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("手动搜索")
+                    }
                 }
             }
             val lyrics = state.lyrics
@@ -1666,6 +1682,13 @@ private fun PlayerLyricsPane(
         }
         if (state.isManualLyricsSearchVisible) {
             ManualLyricsSearchOverlay(
+                state = state,
+                onPlayerIntent = onPlayerIntent,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (state.isLyricsShareVisible) {
+            LyricsShareOverlay(
                 state = state,
                 onPlayerIntent = onPlayerIntent,
                 modifier = Modifier.fillMaxSize(),
@@ -1944,6 +1967,395 @@ private fun manualWorkflowCandidatePreview(candidate: top.iwesley.lyn.music.core
             append(it)
         }
     }.ifBlank { "歌曲候选" }
+}
+
+@Composable
+private fun LyricsShareOverlay(
+    state: PlayerState,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val lyrics = state.lyrics ?: return
+    val previewBitmap = rememberPlatformImageBitmap(state.sharePreviewBytes)
+    val primaryTextColor = Color.White.copy(alpha = 0.96f)
+    val secondaryTextColor = Color.White.copy(alpha = 0.74f)
+    val bannerMessage = state.sharePreviewError ?: state.shareMessage
+    Box(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.68f))
+                .clickable { onPlayerIntent(PlayerIntent.DismissLyricsShare) },
+        )
+        Card(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .widthIn(max = 1040.dp)
+                .padding(horizontal = 20.dp, vertical = 24.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { },
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF201B19)),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        ) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(22.dp),
+            ) {
+                val wideLayout = maxWidth >= 900.dp
+                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                "分享歌词",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = primaryTextColor,
+                            )
+                            Text(
+                                buildString {
+                                    append(state.snapshot.currentDisplayTitle.ifBlank { "当前歌曲" })
+                                    state.snapshot.currentDisplayArtistName?.takeIf { it.isNotBlank() }?.let {
+                                        append(" · ")
+                                        append(it)
+                                    }
+                                },
+                                color = secondaryTextColor,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        TextButton(onClick = { onPlayerIntent(PlayerIntent.DismissLyricsShare) }) {
+                            Text("关闭", color = primaryTextColor)
+                        }
+                    }
+                    bannerMessage?.let { message ->
+                        BannerCard(
+                            message = message,
+                            onDismiss = { onPlayerIntent(PlayerIntent.ClearLyricsShareMessage) },
+                        )
+                    }
+                    if (wideLayout) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
+                            LyricsShareSelectionPane(
+                                lyricsLines = lyrics.lines.map { it.text },
+                                selectedIndices = state.selectedLyricsLineIndices,
+                                onToggle = { onPlayerIntent(PlayerIntent.ToggleLyricsLineSelection(it)) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            LyricsSharePreviewPane(
+                                state = state,
+                                previewBitmap = previewBitmap,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                            LyricsSharePreviewPane(
+                                state = state,
+                                previewBitmap = previewBitmap,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            LyricsShareSelectionPane(
+                                lyricsLines = lyrics.lines.map { it.text },
+                                selectedIndices = state.selectedLyricsLineIndices,
+                                onToggle = { onPlayerIntent(PlayerIntent.ToggleLyricsLineSelection(it)) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(
+                            onClick = { onPlayerIntent(PlayerIntent.ClearLyricsSelection) },
+                            enabled = state.selectedLyricsLineIndices.isNotEmpty(),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                        ) {
+                            Text("清空")
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        OutlinedButton(
+                            onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
+                            enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                        ) {
+                            Text(if (state.isShareCopying) "复制中..." else "复制图片")
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Button(
+                            onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
+                            enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFEEE0C8),
+                                contentColor = Color(0xFF3C2E24),
+                                disabledContainerColor = Color.White.copy(alpha = 0.12f),
+                                disabledContentColor = secondaryTextColor,
+                            ),
+                        ) {
+                            Text(if (state.isShareSaving) "保存中..." else "保存到本地")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareSelectionPane(
+    lyricsLines: List<String>,
+    selectedIndices: Set<Int>,
+    onToggle: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SectionTitle(
+            title = "选句",
+            subtitle = "点选任意多句歌词，空白行不会加入分享图。",
+        )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 280.dp, max = 420.dp),
+                contentPadding = PaddingValues(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                itemsIndexed(lyricsLines) { index, line ->
+                    LyricsShareSelectableLine(
+                        text = line,
+                        selected = index in selectedIndices,
+                        onClick = { onToggle(index) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareSelectableLine(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val normalized = text.trim()
+    val enabled = normalized.isNotEmpty()
+    val containerColor = when {
+        !enabled -> Color.White.copy(alpha = 0.04f)
+        selected -> Color(0xFFF4E4BF)
+        else -> Color.White.copy(alpha = 0.08f)
+    }
+    val contentColor = when {
+        !enabled -> Color.White.copy(alpha = 0.28f)
+        selected -> Color(0xFF3C2E24)
+        else -> Color.White.copy(alpha = 0.9f)
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(1.dp, if (selected) Color(0xFFD0B57C) else Color.White.copy(alpha = 0.05f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                if (enabled) normalized else "空白行",
+                modifier = Modifier.weight(1f),
+                color = contentColor,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                if (selected) "已选" else "点选",
+                color = contentColor.copy(alpha = if (enabled) 0.72f else 0.45f),
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LyricsSharePreviewPane(
+    state: PlayerState,
+    previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    modifier: Modifier = Modifier,
+) {
+    val shareCardModel = state.shareCardModel
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SectionTitle(
+            title = "预览",
+            subtitle = when {
+                state.isShareRendering -> "正在生成便签风歌词卡片。"
+                state.selectedLyricsLineIndices.isEmpty() -> "请先选择至少一句歌词。"
+                state.sharePreviewBytes != null -> "当前预览会用于复制和保存。"
+                else -> "选句后会自动刷新预览。"
+            },
+        )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(26.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF0E5D5)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 320.dp)
+                    .padding(18.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                when {
+                    shareCardModel == null -> {
+                        EmptyStateCard(
+                            title = "请选择歌词",
+                            body = "点选左侧歌词行后，这里会生成一张便签样式的分享图片。",
+                        )
+                    }
+
+                    previewBitmap != null -> {
+                        Image(
+                            bitmap = previewBitmap,
+                            contentDescription = "歌词分享预览",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(22.dp)),
+                            contentScale = ContentScale.FillWidth,
+                        )
+                    }
+
+                    else -> {
+                        LyricsShareNoteCard(
+                            model = shareCardModel,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareNoteCard(
+    model: LyricsShareCardModel,
+    modifier: Modifier = Modifier,
+) {
+    val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
+    val primaryTextColor = Color(0xFF3C2E24)
+    val secondaryTextColor = Color(0xFF70584B)
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF7EEDC)),
+        border = BorderStroke(1.dp, Color(0xFFF0DEBF)),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp, vertical = 26.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = 18.dp, y = (-8).dp)
+                    .size(width = 92.dp, height = 20.dp)
+                    .background(Color(0xBFF6F0D4), RoundedCornerShape(6.dp)),
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                LyricsShareArtworkBlock(
+                    artworkBitmap = artworkBitmap,
+                    modifier = Modifier.size(92.dp),
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    model.lyricsLines.forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = primaryTextColor,
+                        )
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = model.title.ifBlank { "当前歌曲" },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人",
+                        color = secondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareArtworkBlock(
+    artworkBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFFE4D2BE)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (artworkBitmap != null) {
+            Image(
+                bitmap = artworkBitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Rounded.Album,
+                contentDescription = null,
+                tint = Color(0xFF8D735F),
+                modifier = Modifier.size(34.dp),
+            )
+        }
+    }
 }
 
 @Composable
