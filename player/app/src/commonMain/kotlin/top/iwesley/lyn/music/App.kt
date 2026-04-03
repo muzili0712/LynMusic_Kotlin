@@ -1397,6 +1397,13 @@ private fun PlayerOverlay(
                         onPlayerIntent = onPlayerIntent,
                     )
                 }
+                if (state.isLyricsShareVisible) {
+                    LyricsShareOverlay(
+                        state = state,
+                        onPlayerIntent = onPlayerIntent,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }
@@ -1682,13 +1689,6 @@ private fun PlayerLyricsPane(
         }
         if (state.isManualLyricsSearchVisible) {
             ManualLyricsSearchOverlay(
-                state = state,
-                onPlayerIntent = onPlayerIntent,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-        if (state.isLyricsShareVisible) {
-            LyricsShareOverlay(
                 state = state,
                 onPlayerIntent = onPlayerIntent,
                 modifier = Modifier.fillMaxSize(),
@@ -1990,7 +1990,10 @@ private fun LyricsShareOverlay(
         Card(
             modifier = Modifier
                 .align(Alignment.Center)
-                .fillMaxWidth()
+                .fillMaxWidth(
+                    fraction = if (state.snapshot.currentTrack != null) 0.96f else 1f,
+                )
+                .fillMaxHeight(0.92f)
                 .widthIn(max = 1040.dp)
                 .padding(horizontal = 20.dp, vertical = 24.dp)
                 .clickable(
@@ -2003,11 +2006,15 @@ private fun LyricsShareOverlay(
         ) {
             BoxWithConstraints(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxSize()
                     .padding(22.dp),
             ) {
-                val wideLayout = maxWidth >= 900.dp
-                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                val wideLayout = maxWidth >= 980.dp
+                val compactActions = maxWidth < 760.dp
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2045,68 +2052,118 @@ private fun LyricsShareOverlay(
                     }
                     if (wideLayout) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(18.dp),
                         ) {
                             LyricsShareSelectionPane(
                                 lyricsLines = lyrics.lines.map { it.text },
                                 selectedIndices = state.selectedLyricsLineIndices,
                                 onToggle = { onPlayerIntent(PlayerIntent.ToggleLyricsLineSelection(it)) },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
                             )
                             LyricsSharePreviewPane(
                                 state = state,
                                 previewBitmap = previewBitmap,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
                             )
                         }
                     } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
                             LyricsSharePreviewPane(
                                 state = state,
                                 previewBitmap = previewBitmap,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(0.48f),
                             )
                             LyricsShareSelectionPane(
                                 lyricsLines = lyrics.lines.map { it.text },
                                 selectedIndices = state.selectedLyricsLineIndices,
                                 onToggle = { onPlayerIntent(PlayerIntent.ToggleLyricsLineSelection(it)) },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(0.52f),
                             )
                         }
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedButton(
-                            onClick = { onPlayerIntent(PlayerIntent.ClearLyricsSelection) },
-                            enabled = state.selectedLyricsLineIndices.isNotEmpty(),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                    if (compactActions) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text("清空")
+                            OutlinedButton(
+                                onClick = { onPlayerIntent(PlayerIntent.ClearLyricsSelection) },
+                                enabled = state.selectedLyricsLineIndices.isNotEmpty(),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                            ) {
+                                Text("清空")
+                            }
+                            OutlinedButton(
+                                onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
+                                enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                            ) {
+                                Text(if (state.isShareCopying) "复制中..." else "复制图片")
+                            }
+                            Button(
+                                onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
+                                enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFEEE0C8),
+                                    contentColor = Color(0xFF3C2E24),
+                                    disabledContainerColor = Color.White.copy(alpha = 0.12f),
+                                    disabledContentColor = secondaryTextColor,
+                                ),
+                            ) {
+                                Text(if (state.isShareSaving) "保存中..." else "保存到本地")
+                            }
                         }
-                        Spacer(Modifier.width(10.dp))
-                        OutlinedButton(
-                            onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
-                            enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(if (state.isShareCopying) "复制中..." else "复制图片")
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Button(
-                            onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
-                            enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFEEE0C8),
-                                contentColor = Color(0xFF3C2E24),
-                                disabledContainerColor = Color.White.copy(alpha = 0.12f),
-                                disabledContentColor = secondaryTextColor,
-                            ),
-                        ) {
-                            Text(if (state.isShareSaving) "保存中..." else "保存到本地")
+                            OutlinedButton(
+                                onClick = { onPlayerIntent(PlayerIntent.ClearLyricsSelection) },
+                                enabled = state.selectedLyricsLineIndices.isNotEmpty(),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                            ) {
+                                Text("清空")
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            OutlinedButton(
+                                onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
+                                enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                            ) {
+                                Text(if (state.isShareCopying) "复制中..." else "复制图片")
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Button(
+                                onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
+                                enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFEEE0C8),
+                                    contentColor = Color(0xFF3C2E24),
+                                    disabledContainerColor = Color.White.copy(alpha = 0.12f),
+                                    disabledContentColor = secondaryTextColor,
+                                ),
+                            ) {
+                                Text(if (state.isShareSaving) "保存中..." else "保存到本地")
+                            }
                         }
                     }
                 }
@@ -2131,14 +2188,15 @@ private fun LyricsShareSelectionPane(
             subtitle = "点选任意多句歌词，空白行不会加入分享图。",
         )
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
         ) {
             LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 280.dp, max = 420.dp),
+                    .fillMaxSize(),
                 contentPadding = PaddingValues(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -2222,14 +2280,15 @@ private fun LyricsSharePreviewPane(
             },
         )
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
             shape = RoundedCornerShape(26.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFF0E5D5)),
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 320.dp)
+                    .fillMaxSize()
                     .padding(18.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -2246,9 +2305,9 @@ private fun LyricsSharePreviewPane(
                             bitmap = previewBitmap,
                             contentDescription = "歌词分享预览",
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .fillMaxSize()
                                 .clip(RoundedCornerShape(22.dp)),
-                            contentScale = ContentScale.FillWidth,
+                            contentScale = ContentScale.Fit,
                         )
                     }
 
