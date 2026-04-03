@@ -6,6 +6,10 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -54,6 +58,7 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
@@ -287,8 +292,17 @@ fun App(component: LynMusicAppComponent) {
                                 component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(track))
                             }
                         },
+                        onOpenQueue = {
+                            component.playerStore.dispatch(PlayerIntent.QueueVisibilityChanged(true))
+                        },
                     )
                 }
+                QueueDrawer(
+                    state = playerState,
+                    compact = compact,
+                    onPlayerIntent = component.playerStore::dispatch,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
     }
@@ -325,6 +339,7 @@ private fun MobileShell(
                                 onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
                             }
                         },
+                        onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
                     )
                 }
                 NavigationBar {
@@ -426,6 +441,7 @@ private fun DesktopShell(
                             onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
                         }
                     },
+                    onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
                     compact = false,
                 )
             }
@@ -1223,6 +1239,7 @@ private fun MiniPlayerBar(
     onPlayerIntent: (PlayerIntent) -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenQueue: () -> Unit,
     compact: Boolean = false,
 ) {
     val track = state.snapshot.currentTrack ?: return
@@ -1250,6 +1267,7 @@ private fun MiniPlayerBar(
                 isFavorite = isFavorite,
                 onClick = onToggleFavorite,
             )
+            QueueToggleButton(onClick = onOpenQueue)
             IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) { Icon(Icons.Rounded.SkipPrevious, null) }
             IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }) {
                 Icon(if (state.snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle, null, modifier = Modifier.size(34.dp))
@@ -1265,6 +1283,7 @@ private fun PlayerOverlay(
     onPlayerIntent: (PlayerIntent) -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenQueue: () -> Unit,
 ) {
     val track = state.snapshot.currentTrack ?: return
     Surface(
@@ -1366,8 +1385,94 @@ private fun PlayerOverlay(
                         wide = wide,
                         isFavorite = isFavorite,
                         onToggleFavorite = onToggleFavorite,
+                        onOpenQueue = onOpenQueue,
                         onPlayerIntent = onPlayerIntent,
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueueDrawer(
+    state: PlayerState,
+    compact: Boolean,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (state.snapshot.currentTrack == null) return
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.isQueueVisible, state.snapshot.currentIndex, state.snapshot.queue.size) {
+        if (state.isQueueVisible && state.snapshot.currentIndex in state.snapshot.queue.indices) {
+            listState.scrollToItem((state.snapshot.currentIndex - 2).coerceAtLeast(0))
+        }
+    }
+    AnimatedVisibility(
+        visible = state.isQueueVisible,
+        modifier = modifier,
+        enter = fadeIn(animationSpec = tween(durationMillis = 220)),
+        exit = fadeOut(animationSpec = tween(durationMillis = 180)),
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.42f))
+                    .clickable { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) },
+            )
+            Card(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(if (compact) 340.dp else 420.dp),
+                shape = RoundedCornerShape(topStart = 30.dp, bottomStart = 30.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 18.dp, vertical = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("播放队列", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                "${state.snapshot.queue.size} 首 · ${modeLabel(state.snapshot.mode)}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(onClick = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) }) {
+                            Text("关闭")
+                        }
+                    }
+                    if (state.snapshot.queue.isEmpty()) {
+                        EmptyStateCard(
+                            title = "当前没有播放队列",
+                            body = "从曲库或喜欢页播放歌曲后，这里会显示当前队列。",
+                        )
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            itemsIndexed(state.snapshot.queue, key = { _, item -> item.id }) { index, track ->
+                                QueueTrackRow(
+                                    track = track,
+                                    index = index,
+                                    isCurrent = index == state.snapshot.currentIndex,
+                                    isPlaying = index == state.snapshot.currentIndex && state.snapshot.isPlaying,
+                                    onClick = { onPlayerIntent(PlayerIntent.PlayQueueIndex(index)) },
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1847,6 +1952,7 @@ private fun PlayerBottomControls(
     wide: Boolean,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenQueue: () -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -1948,6 +2054,10 @@ private fun PlayerBottomControls(
                                 horizontalArrangement = Arrangement.End,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                QueueToggleButton(
+                                    onClick = onOpenQueue,
+                                    tint = Color.White.copy(alpha = 0.96f),
+                                )
                                 FavoriteToggleButton(
                                     isFavorite = isFavorite,
                                     onClick = onToggleFavorite,
@@ -1987,6 +2097,10 @@ private fun PlayerBottomControls(
                             IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(30.dp)) {
                                 Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
                             }
+                            QueueToggleButton(
+                                onClick = onOpenQueue,
+                                tint = Color.White.copy(alpha = 0.96f),
+                            )
                             FavoriteToggleButton(
                                 isFavorite = isFavorite,
                                 onClick = onToggleFavorite,
@@ -2021,6 +2135,20 @@ private fun FavoriteToggleButton(
         Icon(
             imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
             contentDescription = if (isFavorite) "取消喜欢" else "标记为喜欢",
+            tint = tint,
+        )
+    }
+}
+
+@Composable
+private fun QueueToggleButton(
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
+) {
+    IconButton(onClick = onClick) {
+        Icon(
+            imageVector = Icons.Rounded.QueueMusic,
+            contentDescription = "播放队列",
             tint = tint,
         )
     }
@@ -2318,6 +2446,70 @@ private val FLOWER_PARTICLE_COLORS = listOf(
 )
 
 private const val FLOWER_PARTICLE_LIFETIME_NANOS = 900_000_000L
+
+@Composable
+private fun QueueTrackRow(
+    track: Track,
+    index: Int,
+    isCurrent: Boolean,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+) {
+    ElevatedCard(
+        onClick = onClick,
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (isCurrent) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            } else {
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
+            },
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (isCurrent) {
+                Icon(
+                    Icons.Rounded.GraphicEq,
+                    null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            } else {
+                Text(
+                    (index + 1).toString().padStart(2, '0'),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    track.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
+                )
+                Text(
+                    buildString {
+                        append(track.artistName ?: "未知艺人")
+                        if (isCurrent) {
+                            append(if (isPlaying) " · 正在播放" else " · 当前歌曲")
+                        }
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(formatDuration(track.durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
 
 @Composable
 private fun TrackRow(

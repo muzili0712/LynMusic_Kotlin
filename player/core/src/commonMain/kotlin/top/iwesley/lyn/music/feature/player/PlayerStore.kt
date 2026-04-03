@@ -15,6 +15,7 @@ import top.iwesley.lyn.music.data.repository.PlaybackRepository
 data class PlayerState(
     val snapshot: PlaybackSnapshot = PlaybackSnapshot(),
     val isExpanded: Boolean = false,
+    val isQueueVisible: Boolean = false,
     val isLyricsLoading: Boolean = false,
     val lyrics: LyricsDocument? = null,
     val highlightedLineIndex: Int = -1,
@@ -31,6 +32,7 @@ data class PlayerState(
 
 sealed interface PlayerIntent {
     data class PlayTracks(val tracks: List<Track>, val startIndex: Int) : PlayerIntent
+    data class PlayQueueIndex(val index: Int) : PlayerIntent
     data object TogglePlayPause : PlayerIntent
     data object SkipNext : PlayerIntent
     data object SkipPrevious : PlayerIntent
@@ -38,6 +40,7 @@ sealed interface PlayerIntent {
     data class SetVolume(val value: Float) : PlayerIntent
     data object CycleMode : PlayerIntent
     data class ExpandedChanged(val value: Boolean) : PlayerIntent
+    data class QueueVisibilityChanged(val value: Boolean) : PlayerIntent
     data object OpenManualLyricsSearch : PlayerIntent
     data object DismissManualLyricsSearch : PlayerIntent
     data class ManualLyricsTitleChanged(val value: String) : PlayerIntent
@@ -69,6 +72,7 @@ class PlayerStore(
                 updateState { current ->
                     current.copy(
                         snapshot = snapshot,
+                        isQueueVisible = if (snapshot.currentTrack == null) false else current.isQueueVisible,
                         highlightedLineIndex = findHighlightedLine(
                             lyrics = current.lyrics,
                             positionMs = snapshot.positionMs,
@@ -116,6 +120,7 @@ class PlayerStore(
     override suspend fun handleIntent(intent: PlayerIntent) {
         when (intent) {
             is PlayerIntent.PlayTracks -> playbackRepository.playTracks(intent.tracks, intent.startIndex)
+            is PlayerIntent.PlayQueueIndex -> playQueueIndex(intent.index)
             PlayerIntent.TogglePlayPause -> playbackRepository.togglePlayPause()
             PlayerIntent.SkipNext -> playbackRepository.skipNext()
             PlayerIntent.SkipPrevious -> playbackRepository.skipPrevious()
@@ -123,6 +128,9 @@ class PlayerStore(
             is PlayerIntent.SetVolume -> playbackRepository.setVolume(intent.value)
             PlayerIntent.CycleMode -> playbackRepository.cycleMode()
             is PlayerIntent.ExpandedChanged -> updateState { it.copy(isExpanded = intent.value) }
+            is PlayerIntent.QueueVisibilityChanged -> updateState {
+                it.copy(isQueueVisible = intent.value && it.snapshot.currentTrack != null)
+            }
             PlayerIntent.OpenManualLyricsSearch -> openManualLyricsSearch()
             PlayerIntent.DismissManualLyricsSearch -> dismissManualLyricsSearch()
             is PlayerIntent.ManualLyricsTitleChanged -> updateManualLyricsForm(title = intent.value)
@@ -150,6 +158,17 @@ class PlayerStore(
                 manualLyricsError = null,
             )
         }
+    }
+
+    private suspend fun playQueueIndex(index: Int) {
+        val snapshot = state.value.snapshot
+        if (index !in snapshot.queue.indices) return
+        if (index == snapshot.currentIndex) {
+            updateState { it.copy(isQueueVisible = false) }
+            return
+        }
+        playbackRepository.playTracks(snapshot.queue, index)
+        updateState { it.copy(isQueueVisible = false) }
     }
 
     private fun dismissManualLyricsSearch() {
