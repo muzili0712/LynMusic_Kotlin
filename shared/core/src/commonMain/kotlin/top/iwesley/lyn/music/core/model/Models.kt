@@ -4,6 +4,7 @@ import kotlin.concurrent.Volatile
 
 enum class AppTab {
     Library,
+    Favorites,
     Sources,
     Settings,
 }

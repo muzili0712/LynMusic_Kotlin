@@ -9,6 +9,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.data.db.MIGRATION_1_2
 import top.iwesley.lyn.music.data.db.MIGRATION_2_3
+import top.iwesley.lyn.music.data.db.MIGRATION_4_5
 
 class DatabaseMigrationTest {
 
@@ -82,6 +83,44 @@ class DatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 4 to 5 creates favorite track table`() {
+        val databasePath = Files.createTempFile("lynmusic-migration", ".db")
+        val driver = BundledSQLiteDriver()
+
+        driver.open(databasePath.absolutePathString()).use { connection ->
+            connection.execSql(
+                """
+                CREATE TABLE track (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    sourceId TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    artistId TEXT,
+                    artistName TEXT,
+                    albumId TEXT,
+                    albumTitle TEXT,
+                    durationMs INTEGER NOT NULL,
+                    trackNumber INTEGER,
+                    discNumber INTEGER,
+                    mediaLocator TEXT NOT NULL,
+                    relativePath TEXT NOT NULL,
+                    artworkLocator TEXT,
+                    sizeBytes INTEGER NOT NULL,
+                    modifiedAt INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+
+            MIGRATION_4_5.migrate(connection)
+
+            assertTrue(connection.hasColumn("favorite_track", "trackId"))
+            assertTrue(connection.hasColumn("favorite_track", "sourceId"))
+            assertTrue(connection.hasColumn("favorite_track", "remoteSongId"))
+            assertTrue(connection.hasColumn("favorite_track", "favoritedAt"))
+            assertEquals(listOf("trackId"), connection.primaryKeyColumns("favorite_track"))
+        }
+    }
+
     private fun SQLiteConnection.execSql(sql: String) {
         prepare(sql).use { statement ->
             statement.step()
@@ -104,5 +143,18 @@ class DatabaseMigrationTest {
             check(statement.step()) { "Expected a row for query: $sql" }
             return statement.getLong(0)
         }
+    }
+
+    private fun SQLiteConnection.primaryKeyColumns(tableName: String): List<String> {
+        val columns = mutableListOf<Pair<Int, String>>()
+        prepare("PRAGMA table_info($tableName)").use { statement ->
+            while (statement.step()) {
+                val keyPosition = statement.getLong(5).toInt()
+                if (keyPosition > 0) {
+                    columns += keyPosition to statement.getText(1)
+                }
+            }
+        }
+        return columns.sortedBy { it.first }.map { it.second }
     }
 }

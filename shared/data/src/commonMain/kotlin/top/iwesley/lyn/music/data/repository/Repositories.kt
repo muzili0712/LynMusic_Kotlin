@@ -339,6 +339,7 @@ class RoomImportSourceRepository(
             val source = database.importSourceDao().getById(sourceId)?.toDomain()
                 ?: error("Source $sourceId does not exist.")
             source.credentialKey?.let { secureCredentialStore.remove(it) }
+            database.favoriteTrackDao().deleteBySourceId(source.id)
             database.trackDao().deleteBySourceId(source.id)
             database.lyricsCacheDao().deleteByTrackIdPrefix(trackIdPrefix(source.id))
             database.importIndexStateDao().deleteBySourceId(source.id)
@@ -393,6 +394,9 @@ class RoomImportSourceRepository(
                         ),
                     )
                 }
+        }
+        if (source.type != ImportSourceType.NAVIDROME) {
+            database.favoriteTrackDao().deleteOrphansBySourceId(source.id)
         }
         rebuildLibrarySummaries()
 
@@ -1036,10 +1040,14 @@ private fun albumIdFor(artistName: String?, albumTitle: String): String {
     return "album:${artistName.orEmpty().trim().lowercase()}:${albumTitle.trim().lowercase()}"
 }
 
+internal fun navidromeTrackIdFor(sourceId: String, songId: String): String {
+    return "track:${sourceId}:navidrome:${songId.lowercase()}"
+}
+
 private fun trackIdFor(sourceId: String, relativePath: String, mediaLocator: String): String {
     val navidromeSongId = parseNavidromeSongLocator(mediaLocator)?.second
     return if (navidromeSongId != null) {
-        "track:${sourceId}:navidrome:${navidromeSongId.lowercase()}"
+        navidromeTrackIdFor(sourceId, navidromeSongId)
     } else {
         "track:${sourceId}:${relativePath.lowercase()}"
     }

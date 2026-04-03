@@ -18,10 +18,12 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
 import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
 import top.iwesley.lyn.music.data.repository.LyricsRepository
+import top.iwesley.lyn.music.data.repository.RoomFavoritesRepository
 import top.iwesley.lyn.music.data.repository.RoomImportSourceRepository
 import top.iwesley.lyn.music.data.repository.RoomLibraryRepository
 import top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrl
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
+import top.iwesley.lyn.music.feature.favorites.FavoritesStore
 import top.iwesley.lyn.music.feature.importing.ImportStore
 import top.iwesley.lyn.music.feature.library.LibraryStore
 import top.iwesley.lyn.music.feature.settings.SettingsStore
@@ -43,6 +45,7 @@ class SharedGraph(
     val platform: PlatformDescriptor,
     val database: LynMusicDatabase,
     val libraryStore: LibraryStore,
+    val favoritesStore: FavoritesStore,
     val importStore: ImportStore,
     val settingsStore: SettingsStore,
     val lyricsRepository: LyricsRepository,
@@ -92,6 +95,12 @@ fun buildSharedGraph(
         artworkCacheStore = runtimeServices.artworkCacheStore,
         logger = runtimeServices.logger,
     )
+    val favoritesRepository = RoomFavoritesRepository(
+        database = database,
+        secureCredentialStore = runtimeServices.secureCredentialStore,
+        httpClient = runtimeServices.lyricsHttpClient,
+        logger = runtimeServices.logger,
+    )
     scope.launch {
         settingsRepository.ensureDefaults()
     }
@@ -99,6 +108,7 @@ fun buildSharedGraph(
         platform = platform,
         database = database,
         libraryStore = LibraryStore(libraryRepository, importSourceRepository, scope),
+        favoritesStore = FavoritesStore(favoritesRepository, importSourceRepository, scope),
         importStore = ImportStore(importSourceRepository, platform.capabilities, scope),
         settingsStore = SettingsStore(settingsRepository, scope),
         lyricsRepository = lyricsRepository,

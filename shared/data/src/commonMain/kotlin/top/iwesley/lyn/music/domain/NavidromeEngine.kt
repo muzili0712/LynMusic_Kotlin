@@ -330,7 +330,7 @@ private suspend fun requestNavidromeLyricsPayload(
         ?.takeIf { it.isNotBlank() }
 }
 
-private suspend fun requestNavidromeJson(
+internal suspend fun requestNavidromeJson(
     httpClient: LyricsHttpClient,
     source: NavidromeResolvedSource,
     endpoint: String,

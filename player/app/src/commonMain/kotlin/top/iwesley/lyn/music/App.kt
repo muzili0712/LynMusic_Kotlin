@@ -47,6 +47,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.LibraryMusic
@@ -145,6 +147,9 @@ import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.feature.importing.ImportIntent
 import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.importing.ImportStore
+import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
+import top.iwesley.lyn.music.feature.favorites.FavoritesState
+import top.iwesley.lyn.music.feature.favorites.FavoritesStore
 import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibraryState
@@ -162,6 +167,7 @@ import top.iwesley.lyn.music.ui.heroGlow
 class LynMusicAppComponent(
     val platform: PlatformDescriptor,
     val libraryStore: LibraryStore,
+    val favoritesStore: FavoritesStore,
     val importStore: ImportStore,
     val playerStore: PlayerStore,
     val settingsStore: SettingsStore,
@@ -192,6 +198,7 @@ fun buildPlayerAppComponent(
     return LynMusicAppComponent(
         platform = sharedGraph.platform,
         libraryStore = sharedGraph.libraryStore,
+        favoritesStore = sharedGraph.favoritesStore,
         importStore = sharedGraph.importStore,
         playerStore = PlayerStore(playbackRepository, sharedGraph.lyricsRepository, sharedGraph.scope),
         settingsStore = sharedGraph.settingsStore,
@@ -209,6 +216,7 @@ fun App(component: LynMusicAppComponent) {
     }
 
     val libraryState by component.libraryStore.state.collectAsState()
+    val favoritesState by component.favoritesStore.state.collectAsState()
     val importState by component.importStore.state.collectAsState()
     val playerState by component.playerStore.state.collectAsState()
     val settingsState by component.settingsStore.state.collectAsState()
@@ -238,10 +246,12 @@ fun App(component: LynMusicAppComponent) {
                         onTabSelected = { selectedTab = it },
                         platform = component.platform,
                         libraryState = libraryState,
+                        favoritesState = favoritesState,
                         importState = importState,
                         playerState = playerState,
                         settingsState = settingsState,
                         onLibraryIntent = component.libraryStore::dispatch,
+                        onFavoritesIntent = component.favoritesStore::dispatch,
                         onImportIntent = component.importStore::dispatch,
                         onPlayerIntent = component.playerStore::dispatch,
                         onSettingsIntent = component.settingsStore::dispatch,
@@ -252,10 +262,12 @@ fun App(component: LynMusicAppComponent) {
                         onTabSelected = { selectedTab = it },
                         platform = component.platform,
                         libraryState = libraryState,
+                        favoritesState = favoritesState,
                         importState = importState,
                         playerState = playerState,
                         settingsState = settingsState,
                         onLibraryIntent = component.libraryStore::dispatch,
+                        onFavoritesIntent = component.favoritesStore::dispatch,
                         onImportIntent = component.importStore::dispatch,
                         onPlayerIntent = component.playerStore::dispatch,
                         onSettingsIntent = component.settingsStore::dispatch,
@@ -269,6 +281,12 @@ fun App(component: LynMusicAppComponent) {
                     PlayerOverlay(
                         state = playerState,
                         onPlayerIntent = component.playerStore::dispatch,
+                        isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
+                        onToggleFavorite = {
+                            playerState.snapshot.currentTrack?.let { track ->
+                                component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(track))
+                            }
+                        },
                     )
                 }
             }
@@ -282,10 +300,12 @@ private fun MobileShell(
     onTabSelected: (AppTab) -> Unit,
     platform: PlatformDescriptor,
     libraryState: LibraryState,
+    favoritesState: FavoritesState,
     importState: ImportState,
     playerState: PlayerState,
     settingsState: SettingsState,
     onLibraryIntent: (LibraryIntent) -> Unit,
+    onFavoritesIntent: (FavoritesIntent) -> Unit,
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
@@ -299,11 +319,18 @@ private fun MobileShell(
                     MiniPlayerBar(
                         state = playerState,
                         onPlayerIntent = onPlayerIntent,
+                        isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
+                        onToggleFavorite = {
+                            playerState.snapshot.currentTrack?.let { track ->
+                                onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
+                            }
+                        },
                     )
                 }
                 NavigationBar {
                     listOf(
                         Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
+                        Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
                         Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
                         Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
                     ).forEach { (tab, icon, label) ->
@@ -327,9 +354,11 @@ private fun MobileShell(
             TabContent(
                 selectedTab = selectedTab,
                 libraryState = libraryState,
+                favoritesState = favoritesState,
                 importState = importState,
                 settingsState = settingsState,
                 onLibraryIntent = onLibraryIntent,
+                onFavoritesIntent = onFavoritesIntent,
                 onImportIntent = onImportIntent,
                 onPlayerIntent = onPlayerIntent,
                 onSettingsIntent = onSettingsIntent,
@@ -345,10 +374,12 @@ private fun DesktopShell(
     onTabSelected: (AppTab) -> Unit,
     platform: PlatformDescriptor,
     libraryState: LibraryState,
+    favoritesState: FavoritesState,
     importState: ImportState,
     playerState: PlayerState,
     settingsState: SettingsState,
     onLibraryIntent: (LibraryIntent) -> Unit,
+    onFavoritesIntent: (FavoritesIntent) -> Unit,
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
@@ -375,9 +406,11 @@ private fun DesktopShell(
             TabContent(
                 selectedTab = selectedTab,
                 libraryState = libraryState,
+                favoritesState = favoritesState,
                 importState = importState,
                 settingsState = settingsState,
                 onLibraryIntent = onLibraryIntent,
+                onFavoritesIntent = onFavoritesIntent,
                 onImportIntent = onImportIntent,
                 onPlayerIntent = onPlayerIntent,
                 onSettingsIntent = onSettingsIntent,
@@ -387,6 +420,12 @@ private fun DesktopShell(
                 MiniPlayerBar(
                     state = playerState,
                     onPlayerIntent = onPlayerIntent,
+                    isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
+                    onToggleFavorite = {
+                        playerState.snapshot.currentTrack?.let { track ->
+                            onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
+                        }
+                    },
                     compact = false,
                 )
             }
@@ -409,6 +448,7 @@ private fun DesktopNav(
         ) {
             listOf(
                 Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
+                Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
                 Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
                 Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
             ).forEach { (tab, icon, label) ->
@@ -490,9 +530,11 @@ private fun HeroHeader(
 private fun TabContent(
     selectedTab: AppTab,
     libraryState: LibraryState,
+    favoritesState: FavoritesState,
     importState: ImportState,
     settingsState: SettingsState,
     onLibraryIntent: (LibraryIntent) -> Unit,
+    onFavoritesIntent: (FavoritesIntent) -> Unit,
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
@@ -501,7 +543,16 @@ private fun TabContent(
     when (selectedTab) {
         AppTab.Library -> LibraryTab(
             state = libraryState,
+            favoritesState = favoritesState,
             onLibraryIntent = onLibraryIntent,
+            onFavoritesIntent = onFavoritesIntent,
+            onPlayerIntent = onPlayerIntent,
+            modifier = modifier,
+        )
+
+        AppTab.Favorites -> FavoritesTab(
+            state = favoritesState,
+            onFavoritesIntent = onFavoritesIntent,
             onPlayerIntent = onPlayerIntent,
             modifier = modifier,
         )
@@ -523,7 +574,9 @@ private fun TabContent(
 @Composable
 private fun LibraryTab(
     state: LibraryState,
+    favoritesState: FavoritesState,
     onLibraryIntent: (LibraryIntent) -> Unit,
+    onFavoritesIntent: (FavoritesIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -575,6 +628,14 @@ private fun LibraryTab(
                     StatCard(title = "艺人", value = state.visibleArtistCount.toString(), icon = Icons.Rounded.Tune, modifier = Modifier.weight(1f))
                 }
             }
+            favoritesState.message?.let { message ->
+                item {
+                    BannerCard(
+                        message = message,
+                        onDismiss = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
+                    )
+                }
+            }
             item {
                 SectionTitle(title = "你的曲库", subtitle = "支持本地文件夹、Samba、WebDAV、Navidrome 与自定义歌词联动。")
             }
@@ -602,6 +663,117 @@ private fun LibraryTab(
                     TrackRow(
                         track = track,
                         index = index,
+                        isFavorite = track.id in favoritesState.favoriteTrackIds,
+                        onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(track)) },
+                        onClick = {
+                            onPlayerIntent(PlayerIntent.PlayTracks(state.filteredTracks, index))
+                        },
+                    )
+                }
+            }
+        }
+        LibraryFastScrollbar(
+            listState = listState,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .padding(end = 8.dp, top = 20.dp, bottom = 20.dp),
+        )
+    }
+}
+
+@Composable
+private fun FavoritesTab(
+    state: FavoritesState,
+    onFavoritesIntent: (FavoritesIntent) -> Unit,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
+    var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 42.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item {
+                OutlinedTextField(
+                    value = state.query,
+                    onValueChange = { onFavoritesIntent(FavoritesIntent.SearchChanged(it)) },
+                    label = { Text("搜索喜欢的歌曲 / 艺人 / 专辑") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                )
+            }
+            item {
+                Box {
+                    OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
+                        Icon(Icons.Rounded.Tune, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(librarySourceFilterButtonLabel(state.selectedSourceFilter))
+                    }
+                    DropdownMenu(
+                        expanded = sourceFilterMenuExpanded,
+                        onDismissRequest = { sourceFilterMenuExpanded = false },
+                    ) {
+                        state.availableSourceFilters.forEach { filter ->
+                            DropdownMenuItem(
+                                text = { Text(librarySourceFilterMenuLabel(filter)) },
+                                onClick = {
+                                    sourceFilterMenuExpanded = false
+                                    onFavoritesIntent(FavoritesIntent.SourceFilterChanged(filter))
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatCard(title = "歌曲", value = state.filteredTracks.size.toString(), icon = Icons.Rounded.Favorite, modifier = Modifier.weight(1f))
+                    StatCard(title = "专辑", value = state.visibleAlbumCount.toString(), icon = Icons.Rounded.Album, modifier = Modifier.weight(1f))
+                    StatCard(title = "艺人", value = state.visibleArtistCount.toString(), icon = Icons.Rounded.Tune, modifier = Modifier.weight(1f))
+                }
+            }
+            state.message?.let { message ->
+                item {
+                    BannerCard(
+                        message = message,
+                        onDismiss = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
+                    )
+                }
+            }
+            item {
+                SectionTitle(title = "我的喜欢", subtitle = "本地来源保存在本地，Navidrome 来源会和服务器收藏双向同步。")
+            }
+            if (state.filteredTracks.isEmpty()) {
+                item {
+                    when {
+                        state.tracks.isEmpty() -> EmptyStateCard(
+                            title = "还没有喜欢的歌曲",
+                            body = "在曲库或播放器里点亮心形后，喜欢的歌曲会出现在这里。",
+                        )
+
+                        state.selectedSourceFilter != LibrarySourceFilter.ALL -> EmptyStateCard(
+                            title = "当前来源下没有喜欢的歌曲",
+                            body = "试试切回“全部来源”、更换过滤项，或去其他来源里添加喜欢。",
+                        )
+
+                        else -> EmptyStateCard(
+                            title = "没有匹配的喜欢歌曲",
+                            body = "试试调整搜索词，或切换来源过滤。",
+                        )
+                    }
+                }
+            } else {
+                itemsIndexed(state.filteredTracks, key = { _, item -> item.id }) { index, track ->
+                    TrackRow(
+                        track = track,
+                        index = index,
+                        isFavorite = true,
+                        onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(track)) },
                         onClick = {
                             onPlayerIntent(PlayerIntent.PlayTracks(state.filteredTracks, index))
                         },
@@ -1049,6 +1221,8 @@ private fun SettingsTab(
 private fun MiniPlayerBar(
     state: PlayerState,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     compact: Boolean = false,
 ) {
     val track = state.snapshot.currentTrack ?: return
@@ -1072,6 +1246,10 @@ private fun MiniPlayerBar(
                 Text(state.snapshot.currentDisplayTitle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(state.snapshot.currentDisplayArtistName ?: "未知艺人", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            FavoriteToggleButton(
+                isFavorite = isFavorite,
+                onClick = onToggleFavorite,
+            )
             IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) { Icon(Icons.Rounded.SkipPrevious, null) }
             IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }) {
                 Icon(if (state.snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle, null, modifier = Modifier.size(34.dp))
@@ -1085,6 +1263,8 @@ private fun MiniPlayerBar(
 private fun PlayerOverlay(
     state: PlayerState,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
 ) {
     val track = state.snapshot.currentTrack ?: return
     Surface(
@@ -1184,6 +1364,8 @@ private fun PlayerOverlay(
                         snapshot = state.snapshot,
                         track = track,
                         wide = wide,
+                        isFavorite = isFavorite,
+                        onToggleFavorite = onToggleFavorite,
                         onPlayerIntent = onPlayerIntent,
                     )
                 }
@@ -1663,6 +1845,8 @@ private fun PlayerBottomControls(
     snapshot: PlaybackSnapshot,
     track: Track,
     wide: Boolean,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -1759,8 +1943,19 @@ private fun PlayerBottomControls(
                                     Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
                                 }
                             }
-                            Box(modifier = Modifier.weight(0.30f)) {
-                                PlaybackVolume(snapshot, onPlayerIntent, sliderWidthFraction = 0.5f)
+                            Row(
+                                modifier = Modifier.weight(0.30f),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                FavoriteToggleButton(
+                                    isFavorite = isFavorite,
+                                    onClick = onToggleFavorite,
+                                    tint = Color.White.copy(alpha = 0.96f),
+                                )
+                                Box(modifier = Modifier.weight(1f)) {
+                                    PlaybackVolume(snapshot, onPlayerIntent, sliderWidthFraction = 0.5f)
+                                }
                             }
                         }
                     } else {
@@ -1792,6 +1987,11 @@ private fun PlayerBottomControls(
                             IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(30.dp)) {
                                 Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
                             }
+                            FavoriteToggleButton(
+                                isFavorite = isFavorite,
+                                onClick = onToggleFavorite,
+                                tint = Color.White.copy(alpha = 0.96f),
+                            )
                         }
                     }
                 }
@@ -1807,6 +2007,21 @@ private fun PlayerBottomControls(
                 .padding(horizontal = 16.dp),
             showTimeLabels = false,
             floating = true,
+        )
+    }
+}
+
+@Composable
+private fun FavoriteToggleButton(
+    isFavorite: Boolean,
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
+) {
+    IconButton(onClick = onClick) {
+        Icon(
+            imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+            contentDescription = if (isFavorite) "取消喜欢" else "标记为喜欢",
+            tint = tint,
         )
     }
 }
@@ -2108,6 +2323,8 @@ private const val FLOWER_PARTICLE_LIFETIME_NANOS = 900_000_000L
 private fun TrackRow(
     track: Track,
     index: Int,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
 ) {
     ElevatedCard(
@@ -2128,6 +2345,10 @@ private fun TrackRow(
                 Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                 Text(track.artistName ?: "未知艺人", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            FavoriteToggleButton(
+                isFavorite = isFavorite,
+                onClick = onToggleFavorite,
+            )
             Text(formatDuration(track.durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

@@ -84,6 +84,14 @@ data class PlaybackQueueSnapshotEntity(
     val updatedAt: Long,
 )
 
+@Entity(tableName = "favorite_track")
+data class FavoriteTrackEntity(
+    @PrimaryKey val trackId: String,
+    val sourceId: String,
+    val remoteSongId: String?,
+    val favoritedAt: Long,
+)
+
 @Entity(tableName = "lyrics_source_config")
 data class LyricsSourceConfigEntity(
     @PrimaryKey val id: String,
@@ -148,6 +156,9 @@ interface ImportSourceDao {
     @Query("SELECT * FROM import_source ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<ImportSourceEntity>>
 
+    @Query("SELECT * FROM import_source ORDER BY createdAt DESC")
+    suspend fun getAll(): List<ImportSourceEntity>
+
     @Query("SELECT * FROM import_source WHERE id = :sourceId LIMIT 1")
     suspend fun getById(sourceId: String): ImportSourceEntity?
 
@@ -204,6 +215,39 @@ interface PlaybackQueueSnapshotDao {
 
     @Upsert
     suspend fun upsert(item: PlaybackQueueSnapshotEntity)
+}
+
+@Dao
+interface FavoriteTrackDao {
+    @Query("SELECT * FROM favorite_track ORDER BY favoritedAt DESC, trackId ASC")
+    fun observeAll(): Flow<List<FavoriteTrackEntity>>
+
+    @Query("SELECT * FROM favorite_track WHERE trackId = :trackId LIMIT 1")
+    suspend fun getByTrackId(trackId: String): FavoriteTrackEntity?
+
+    @Query("SELECT * FROM favorite_track WHERE sourceId = :sourceId ORDER BY favoritedAt DESC, trackId ASC")
+    suspend fun getBySourceId(sourceId: String): List<FavoriteTrackEntity>
+
+    @Query("DELETE FROM favorite_track WHERE trackId = :trackId")
+    suspend fun deleteByTrackId(trackId: String)
+
+    @Query("DELETE FROM favorite_track WHERE sourceId = :sourceId")
+    suspend fun deleteBySourceId(sourceId: String)
+
+    @Query(
+        """
+        DELETE FROM favorite_track
+        WHERE sourceId = :sourceId
+          AND trackId NOT IN (SELECT id FROM track WHERE sourceId = :sourceId)
+        """,
+    )
+    suspend fun deleteOrphansBySourceId(sourceId: String)
+
+    @Upsert
+    suspend fun upsert(item: FavoriteTrackEntity)
+
+    @Upsert
+    suspend fun upsertAll(items: List<FavoriteTrackEntity>)
 }
 
 @Dao
@@ -268,11 +312,12 @@ interface LyricsCacheDao {
         ImportIndexStateEntity::class,
         TrackEntity::class,
         PlaybackQueueSnapshotEntity::class,
+        FavoriteTrackEntity::class,
         LyricsSourceConfigEntity::class,
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 4,
+    version = 5,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -282,6 +327,7 @@ abstract class LynMusicDatabase : RoomDatabase() {
     abstract fun importIndexStateDao(): ImportIndexStateDao
     abstract fun trackDao(): TrackDao
     abstract fun playbackQueueSnapshotDao(): PlaybackQueueSnapshotDao
+    abstract fun favoriteTrackDao(): FavoriteTrackDao
     abstract fun lyricsSourceConfigDao(): LyricsSourceConfigDao
     abstract fun workflowLyricsSourceConfigDao(): WorkflowLyricsSourceConfigDao
     abstract fun lyricsCacheDao(): LyricsCacheDao
@@ -299,6 +345,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_1_2)
         .addMigrations(MIGRATION_2_3)
         .addMigrations(MIGRATION_3_4)
+        .addMigrations(MIGRATION_4_5)
         .fallbackToDestructiveMigration(true)
         .build()
 }
@@ -336,6 +383,21 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
             """
             ALTER TABLE track
             ADD COLUMN sizeBytes INTEGER NOT NULL DEFAULT 0
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            CREATE TABLE IF NOT EXISTS favorite_track (
+                trackId TEXT NOT NULL PRIMARY KEY,
+                sourceId TEXT NOT NULL,
+                remoteSongId TEXT,
+                favoritedAt INTEGER NOT NULL
+            )
             """.trimIndent(),
         )
     }

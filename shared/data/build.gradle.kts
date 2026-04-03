@@ -43,6 +43,10 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.jaudiotagger)
         }
+        jvmTest.dependencies {
+            implementation(libs.kotlin.testJunit)
+            implementation(libs.kotlinx.coroutines.test)
+        }
     }
 }
 
