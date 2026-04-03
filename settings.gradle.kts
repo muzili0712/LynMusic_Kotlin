@@ -33,3 +33,8 @@ plugins {
 }
 
 include(":composeApp")
+include(":shared:core")
+include(":shared:data")
+include(":shared:features")
+include(":player:core")
+include(":player:app")

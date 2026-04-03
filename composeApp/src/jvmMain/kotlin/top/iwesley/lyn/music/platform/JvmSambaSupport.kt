@@ -147,11 +147,12 @@ private suspend fun resolveJvmSambaSourceContext(
     locator: Pair<String, String>,
 ): JvmSambaSourceContext {
     val source = database.importSourceDao().getById(locator.first) ?: error("Samba source missing")
-    val storedPort = source.shareName?.toIntOrNull()
+    val shareName = source.shareName
+    val storedPort = shareName?.toIntOrNull()
     val storedPath = when {
         storedPort != null -> normalizeSambaPath(source.directoryPath)
-        source.shareName.isNullOrBlank() -> normalizeSambaPath(source.directoryPath)
-        else -> normalizeSambaPath(joinSambaPath(source.shareName, source.directoryPath.orEmpty()))
+        shareName.isNullOrBlank() -> normalizeSambaPath(source.directoryPath)
+        else -> normalizeSambaPath(joinSambaPath(shareName, source.directoryPath.orEmpty()))
     }
     val sambaPath = parseSambaPath(storedPath)
         ?: error("SMB source path is missing a share name.")

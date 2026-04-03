@@ -9,6 +9,7 @@ import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
 import java.io.File
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.ArrayDeque
@@ -28,8 +29,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import top.iwesley.lyn.music.buildLynMusicAppComponent
-import top.iwesley.lyn.music.core.model.ArtworkLoader
+import top.iwesley.lyn.music.SharedRuntimeServices
+import top.iwesley.lyn.music.buildPlayerAppComponent
+import top.iwesley.lyn.music.buildSharedGraph
+import top.iwesley.lyn.music.core.model.AudioTagGateway
+import top.iwesley.lyn.music.core.model.AudioTagPatch
+import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.ConsoleDiagnosticLogger
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -45,6 +50,7 @@ import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
+import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
@@ -63,6 +69,7 @@ import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
 import com.hierynomus.msdtyp.AccessMask
@@ -97,31 +104,38 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
     )
     val logger = ConsoleDiagnosticLogger(enabled = true, label = "Desktop")
     val secureStore = createJvmSecureCredentialStore(logger)
-    val playbackPreferencesStore = JvmPlaybackPreferencesStore()
-    val playbackGateway = JvmPlaybackGateway(database, secureStore, playbackPreferencesStore, logger)
+    val appPreferencesStore = JvmAppPreferencesStore()
+    val playbackGateway = JvmPlaybackGateway(database, secureStore, appPreferencesStore, logger)
     val navidromeHttpClient = JvmLyricsHttpClient()
-    return buildLynMusicAppComponent(
-        platform = PlatformDescriptor(
-            name = "Desktop",
-            capabilities = PlatformCapabilities(
-                supportsLocalFolderImport = true,
-                supportsSambaImport = true,
-                supportsWebDavImport = true,
-                supportsNavidromeImport = true,
-                supportsSystemMediaControls = false,
-            ),
+    val platform = PlatformDescriptor(
+        name = "Desktop",
+        capabilities = PlatformCapabilities(
+            supportsLocalFolderImport = true,
+            supportsSambaImport = true,
+            supportsWebDavImport = true,
+            supportsNavidromeImport = true,
+            supportsSystemMediaControls = false,
         ),
+    )
+    val sharedGraph = buildSharedGraph(
+        platform = platform,
         database = database,
-        importSourceGateway = JvmImportSourceGateway(logger, navidromeHttpClient),
-        playbackGateway = playbackGateway,
-        playbackPreferencesStore = playbackPreferencesStore,
-        secureCredentialStore = secureStore,
-        lyricsHttpClient = navidromeHttpClient,
-        artworkCacheStore = createJvmArtworkCacheStore(),
-        logger = logger,
-        artworkLoader = object : ArtworkLoader {
-            override suspend fun resolve(track: Track): String? = track.artworkLocator
-        },
+        runtimeServices = SharedRuntimeServices(
+            importSourceGateway = JvmImportSourceGateway(logger, navidromeHttpClient),
+            secureCredentialStore = secureStore,
+            sambaCachePreferencesStore = appPreferencesStore,
+            lyricsHttpClient = navidromeHttpClient,
+            artworkCacheStore = createJvmArtworkCacheStore(),
+            audioTagGateway = JvmAudioTagGateway(logger),
+            logger = logger,
+        ),
+    )
+    return buildPlayerAppComponent(
+        sharedGraph = sharedGraph,
+        playerRuntimeServices = PlayerRuntimeServices(
+            playbackGateway = playbackGateway,
+            playbackPreferencesStore = appPreferencesStore,
+        ),
     )
 }
 
@@ -147,7 +161,7 @@ private class JvmLyricsHttpClient : LyricsHttpClient {
     }
 }
 
-private class JvmPlaybackPreferencesStore : PlaybackPreferencesStore {
+private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore {
     private val settingsFile = File(File(System.getProperty("user.home")), ".lynmusic/settings.properties").apply {
         parentFile?.mkdirs()
     }
@@ -175,6 +189,43 @@ private class JvmPlaybackPreferencesStore : PlaybackPreferencesStore {
         }
         return properties
     }
+}
+
+private class JvmAudioTagGateway(
+    private val logger: DiagnosticLogger,
+) : AudioTagGateway {
+    override suspend fun canEdit(track: Track): Boolean {
+        return resolveJvmLocalTrackPath(track.mediaLocator) != null
+    }
+
+    override suspend fun read(track: Track): Result<AudioTagSnapshot> {
+        return runCatching {
+            val path = resolveJvmLocalTrackPath(track.mediaLocator)
+                ?: error("当前仅支持桌面本地文件的音频标签读取。")
+            JvmAudioTagReader.readSnapshot(
+                path = path,
+                relativePath = track.relativePath.ifBlank { path.fileName?.toString().orEmpty() },
+                logger = logger,
+            )
+        }
+    }
+
+    override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> {
+        return Result.failure(IllegalStateException("桌面音频标签写回将在后续阶段实现。"))
+    }
+}
+
+private fun resolveJvmLocalTrackPath(locator: String): Path? {
+    val value = locator.trim()
+    if (value.isBlank()) return null
+    return runCatching {
+        when {
+            value.startsWith("file://", ignoreCase = true) -> Path.of(URI(value))
+            value.startsWith("/") -> Path.of(value)
+            Regex("^[A-Za-z]:[/\\\\].*").matches(value) -> Path.of(value)
+            else -> Path.of(value).takeIf { it.isAbsolute }
+        }
+    }.getOrNull()
 }
 
 private class JvmImportSourceGateway(
@@ -598,11 +649,12 @@ private class JvmPlaybackGateway(
         resolveNavidromeStreamUrl(database, secureCredentialStore, locator)?.let { return it }
         val samba = parseSambaLocator(locator) ?: return locator
         val source = database.importSourceDao().getById(samba.first) ?: error("Samba source missing")
-        val storedPort = source.shareName?.toIntOrNull()
+        val shareName = source.shareName
+        val storedPort = shareName?.toIntOrNull()
         val storedPath = when {
             storedPort != null -> normalizeSambaPath(source.directoryPath)
-            source.shareName.isNullOrBlank() -> normalizeSambaPath(source.directoryPath)
-            else -> normalizeSambaPath(joinSambaPath(source.shareName, source.directoryPath.orEmpty()))
+            shareName.isNullOrBlank() -> normalizeSambaPath(source.directoryPath)
+            else -> normalizeSambaPath(joinSambaPath(shareName, source.directoryPath.orEmpty()))
         }
         val sambaPath = parseSambaPath(storedPath)
             ?: error("SMB source path is missing a share name.")

@@ -1,0 +1,108 @@
+package top.iwesley.lyn.music
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.AudioTagGateway
+import top.iwesley.lyn.music.core.model.DiagnosticLogger
+import top.iwesley.lyn.music.core.model.ImportSourceGateway
+import top.iwesley.lyn.music.core.model.LyricsHttpClient
+import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
+import top.iwesley.lyn.music.core.model.PlatformDescriptor
+import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
+import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
+import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
+import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
+import top.iwesley.lyn.music.data.repository.LyricsRepository
+import top.iwesley.lyn.music.data.repository.RoomImportSourceRepository
+import top.iwesley.lyn.music.data.repository.RoomLibraryRepository
+import top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrl
+import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
+import top.iwesley.lyn.music.feature.importing.ImportStore
+import top.iwesley.lyn.music.feature.library.LibraryStore
+import top.iwesley.lyn.music.feature.settings.SettingsStore
+import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
+
+data class SharedRuntimeServices(
+    val importSourceGateway: ImportSourceGateway,
+    val secureCredentialStore: SecureCredentialStore,
+    val sambaCachePreferencesStore: SambaCachePreferencesStore,
+    val lyricsHttpClient: LyricsHttpClient,
+    val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
+        override suspend fun cache(locator: String, cacheKey: String): String? = locator
+    },
+    val audioTagGateway: AudioTagGateway = UnsupportedAudioTagGateway,
+    val logger: DiagnosticLogger = NoopDiagnosticLogger,
+)
+
+class SharedGraph(
+    val platform: PlatformDescriptor,
+    val database: LynMusicDatabase,
+    val libraryStore: LibraryStore,
+    val importStore: ImportStore,
+    val settingsStore: SettingsStore,
+    val lyricsRepository: LyricsRepository,
+    val audioTagGateway: AudioTagGateway,
+    val scope: CoroutineScope,
+)
+
+fun buildSharedGraph(
+    platform: PlatformDescriptor,
+    database: LynMusicDatabase,
+    runtimeServices: SharedRuntimeServices,
+): SharedGraph {
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val libraryRepository = RoomLibraryRepository(database)
+    val importSourceRepository = RoomImportSourceRepository(
+        database = database,
+        gateway = runtimeServices.importSourceGateway,
+        secureCredentialStore = runtimeServices.secureCredentialStore,
+    )
+    val settingsRepository = DefaultSettingsRepository(
+        database = database,
+        sambaCachePreferencesStore = runtimeServices.sambaCachePreferencesStore,
+    )
+    NavidromeLocatorRuntime.install(
+        object : top.iwesley.lyn.music.core.model.NavidromeLocatorResolver {
+            override suspend fun resolveStreamUrl(locator: String): String? {
+                return resolveNavidromeStreamUrl(
+                    database = database,
+                    secureCredentialStore = runtimeServices.secureCredentialStore,
+                    locator = locator,
+                )
+            }
+
+            override suspend fun resolveCoverArtUrl(locator: String): String? {
+                return resolveNavidromeCoverArtUrl(
+                    database = database,
+                    secureCredentialStore = runtimeServices.secureCredentialStore,
+                    locator = locator,
+                )
+            }
+        },
+    )
+    val lyricsRepository = DefaultLyricsRepository(
+        database = database,
+        httpClient = runtimeServices.lyricsHttpClient,
+        secureCredentialStore = runtimeServices.secureCredentialStore,
+        artworkCacheStore = runtimeServices.artworkCacheStore,
+        logger = runtimeServices.logger,
+    )
+    scope.launch {
+        settingsRepository.ensureDefaults()
+    }
+    return SharedGraph(
+        platform = platform,
+        database = database,
+        libraryStore = LibraryStore(libraryRepository, scope),
+        importStore = ImportStore(importSourceRepository, platform.capabilities, scope),
+        settingsStore = SettingsStore(settingsRepository, scope),
+        lyricsRepository = lyricsRepository,
+        audioTagGateway = runtimeServices.audioTagGateway,
+        scope = scope,
+    )
+}

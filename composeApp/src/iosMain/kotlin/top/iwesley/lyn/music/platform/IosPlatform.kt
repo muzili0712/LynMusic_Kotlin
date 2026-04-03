@@ -19,7 +19,9 @@ import kotlinx.cinterop.value
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import top.iwesley.lyn.music.buildLynMusicAppComponent
+import top.iwesley.lyn.music.SharedRuntimeServices
+import top.iwesley.lyn.music.buildPlayerAppComponent
+import top.iwesley.lyn.music.buildSharedGraph
 import top.iwesley.lyn.music.core.model.ConsoleDiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
@@ -30,16 +32,16 @@ import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
-import top.iwesley.lyn.music.core.model.PlaybackGateway
-import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.RequestMethod
+import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
-import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
 import platform.CoreFoundation.CFDataCreate
 import platform.CoreFoundation.CFDictionaryAddValue
@@ -81,27 +83,37 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
         ),
     )
     val secureStore = IosKeychainCredentialStore()
-    val playbackPreferencesStore = IosPlaybackPreferencesStore()
+    val appPreferencesStore = IosAppPreferencesStore()
     val navidromeHttpClient = IosLyricsHttpClient()
-    return buildLynMusicAppComponent(
-        platform = PlatformDescriptor(
-            name = "iPhone / iPad",
-            capabilities = PlatformCapabilities(
-                supportsLocalFolderImport = false,
-                supportsSambaImport = false,
-                supportsWebDavImport = false,
-                supportsNavidromeImport = true,
-                supportsSystemMediaControls = false,
-            ),
+    val platform = PlatformDescriptor(
+        name = "iPhone / iPad",
+        capabilities = PlatformCapabilities(
+            supportsLocalFolderImport = false,
+            supportsSambaImport = false,
+            supportsWebDavImport = false,
+            supportsNavidromeImport = true,
+            supportsSystemMediaControls = false,
         ),
+    )
+    val sharedGraph = buildSharedGraph(
+        platform = platform,
         database = database,
-        importSourceGateway = IosImportSourceGateway(navidromeHttpClient),
-        playbackGateway = ApplePlaybackGateway(platformLabel = "iOS"),
-        playbackPreferencesStore = playbackPreferencesStore,
-        secureCredentialStore = secureStore,
-        lyricsHttpClient = navidromeHttpClient,
-        artworkCacheStore = createIosArtworkCacheStore(),
-        logger = ConsoleDiagnosticLogger(enabled = true, label = "iOS"),
+        runtimeServices = SharedRuntimeServices(
+            importSourceGateway = IosImportSourceGateway(navidromeHttpClient),
+            secureCredentialStore = secureStore,
+            sambaCachePreferencesStore = appPreferencesStore,
+            lyricsHttpClient = navidromeHttpClient,
+            artworkCacheStore = createIosArtworkCacheStore(),
+            audioTagGateway = UnsupportedAudioTagGateway,
+            logger = ConsoleDiagnosticLogger(enabled = true, label = "iOS"),
+        ),
+    )
+    return buildPlayerAppComponent(
+        sharedGraph = sharedGraph,
+        playerRuntimeServices = PlayerRuntimeServices(
+            playbackGateway = ApplePlaybackGateway(platformLabel = "iOS"),
+            playbackPreferencesStore = appPreferencesStore,
+        ),
     )
 }
 
@@ -198,7 +210,7 @@ private class IosKeychainCredentialStore : SecureCredentialStore {
     }
 }
 
-private class IosPlaybackPreferencesStore : PlaybackPreferencesStore {
+private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore {
     private val defaults = NSUserDefaults.standardUserDefaults
     private val mutableUseSambaCache = MutableStateFlow(
         if (defaults.objectForKey(KEY_USE_SAMBA_CACHE) == null) true else defaults.boolForKey(KEY_USE_SAMBA_CACHE),

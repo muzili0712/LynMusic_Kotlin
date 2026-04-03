@@ -3,7 +3,6 @@ package top.iwesley.lyn.music.platform
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -29,7 +28,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.suspendCancellableCoroutine
-import top.iwesley.lyn.music.buildLynMusicAppComponent
+import top.iwesley.lyn.music.SharedRuntimeServices
+import top.iwesley.lyn.music.buildPlayerAppComponent
+import top.iwesley.lyn.music.buildSharedGraph
+import top.iwesley.lyn.music.core.model.AudioTagGateway
+import top.iwesley.lyn.music.core.model.AudioTagPatch
+import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.ConsoleDiagnosticLogger
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -46,6 +50,7 @@ import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.RequestMethod
+import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
@@ -63,6 +68,7 @@ import top.iwesley.lyn.music.core.model.parseSambaPath
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
 import com.hierynomus.msdtyp.AccessMask
@@ -89,28 +95,38 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
         ),
     )
     val secureStore = AndroidCredentialStore(activity.applicationContext)
-    val playbackPreferencesStore = AndroidPlaybackPreferencesStore(activity.applicationContext)
+    val appPreferencesStore = AndroidAppPreferencesStore(activity.applicationContext)
     val logger = ConsoleDiagnosticLogger(enabled = activity.applicationContext.isDebuggableApp(), label = "Android")
     val navidromeHttpClient = AndroidLyricsHttpClient()
-    return buildLynMusicAppComponent(
-        platform = PlatformDescriptor(
-            name = "Android",
-            capabilities = PlatformCapabilities(
-                supportsLocalFolderImport = true,
-                supportsSambaImport = true,
-                supportsWebDavImport = true,
-                supportsNavidromeImport = true,
-                supportsSystemMediaControls = true,
-            ),
+    val platform = PlatformDescriptor(
+        name = "Android",
+        capabilities = PlatformCapabilities(
+            supportsLocalFolderImport = true,
+            supportsSambaImport = true,
+            supportsWebDavImport = true,
+            supportsNavidromeImport = true,
+            supportsSystemMediaControls = true,
         ),
+    )
+    val sharedGraph = buildSharedGraph(
+        platform = platform,
         database = database,
-        importSourceGateway = AndroidImportSourceGateway(activity, logger, navidromeHttpClient),
-        playbackGateway = AndroidPlaybackGateway(activity.applicationContext, database, secureStore, playbackPreferencesStore, logger),
-        playbackPreferencesStore = playbackPreferencesStore,
-        secureCredentialStore = secureStore,
-        lyricsHttpClient = navidromeHttpClient,
-        artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
-        logger = logger,
+        runtimeServices = SharedRuntimeServices(
+            importSourceGateway = AndroidImportSourceGateway(activity, logger, navidromeHttpClient),
+            secureCredentialStore = secureStore,
+            sambaCachePreferencesStore = appPreferencesStore,
+            lyricsHttpClient = navidromeHttpClient,
+            artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
+            audioTagGateway = AndroidAudioTagGateway(activity.applicationContext),
+            logger = logger,
+        ),
+    )
+    return buildPlayerAppComponent(
+        sharedGraph = sharedGraph,
+        playerRuntimeServices = PlayerRuntimeServices(
+            playbackGateway = AndroidPlaybackGateway(activity.applicationContext, database, secureStore, appPreferencesStore, logger),
+            playbackPreferencesStore = appPreferencesStore,
+        ),
     )
 }
 
@@ -207,9 +223,9 @@ private class AndroidCredentialStore(
     }
 }
 
-private class AndroidPlaybackPreferencesStore(
+private class AndroidAppPreferencesStore(
     context: Context,
-) : PlaybackPreferencesStore {
+) : PlaybackPreferencesStore, SambaCachePreferencesStore {
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.settings", Context.MODE_PRIVATE)
     private val mutableUseSambaCache = MutableStateFlow(
@@ -221,6 +237,29 @@ private class AndroidPlaybackPreferencesStore(
     override suspend fun setUseSambaCache(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_USE_SAMBA_CACHE, enabled).apply()
         mutableUseSambaCache.value = enabled
+    }
+}
+
+private class AndroidAudioTagGateway(
+    private val context: Context,
+) : AudioTagGateway {
+    override suspend fun canEdit(track: Track): Boolean {
+        return resolveAndroidLocalTrackUri(track.mediaLocator) != null
+    }
+
+    override suspend fun read(track: Track): Result<AudioTagSnapshot> {
+        val uri = resolveAndroidLocalTrackUri(track.mediaLocator)
+            ?: return Result.failure(IllegalStateException("当前仅支持 Android 本地 URI 的音频标签读取。"))
+        return AndroidAudioTagReader.readSnapshot(
+            context = context,
+            uri = uri,
+            displayName = track.relativePath.substringAfterLast('/'),
+            artworkDirectory = File(context.cacheDir, "artwork"),
+        )
+    }
+
+    override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> {
+        return Result.failure(IllegalStateException("Android 音频标签写回将在后续阶段实现。"))
     }
 }
 
@@ -328,52 +367,16 @@ private class AndroidImportSourceGateway(
         file: DocumentFile,
         relativePath: String,
     ): top.iwesley.lyn.music.core.model.ImportedTrackCandidate {
-        val retriever = MediaMetadataRetriever()
-        return runCatching {
-            retriever.setDataSource(activity, file.uri)
-            top.iwesley.lyn.music.core.model.ImportedTrackCandidate(
-                title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                    ?: file.name?.substringBeforeLast('.').orEmpty(),
-                artistName = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST),
-                albumTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
-                durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L,
-                trackNumber = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
-                    ?.substringBefore('/')
-                    ?.toIntOrNull(),
-                discNumber = runCatching {
-                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
-                        ?.substringBefore('/')
-                        ?.toIntOrNull()
-                }.getOrNull(),
-                mediaLocator = file.uri.toString(),
-                relativePath = relativePath,
-                artworkLocator = retriever.embeddedPicture
-                    ?.takeIf { it.isNotEmpty() }
-                    ?.let { bytes -> storeAndroidArtwork(relativePath, bytes) },
-                sizeBytes = file.length(),
-                modifiedAt = file.lastModified(),
-            )
-        }.onSuccess { candidate ->
-            logger.debug(METADATA_LOG_TAG) {
-                buildMetadataLogMessage(
-                    relativePath = relativePath,
-                    candidate = candidate,
-                )
-            }
-        }.getOrElse {
-            logger.warn(METADATA_LOG_TAG) {
-                "parse-fallback path=$relativePath reason=${it.message ?: it::class.simpleName} title=${file.name?.substringBeforeLast('.') ?: "未知曲目"}"
-            }
-            top.iwesley.lyn.music.core.model.ImportedTrackCandidate(
-                title = file.name?.substringBeforeLast('.') ?: "未知曲目",
-                mediaLocator = file.uri.toString(),
-                relativePath = relativePath,
-                sizeBytes = file.length(),
-                modifiedAt = file.lastModified(),
-            )
-        }.also {
-            runCatching { retriever.release() }
-        }
+        return AndroidAudioTagReader.readCandidate(
+            context = activity,
+            uri = file.uri,
+            displayName = file.name,
+            relativePath = relativePath,
+            artworkDirectory = File(activity.cacheDir, "artwork"),
+            logger = logger,
+            sizeBytes = file.length(),
+            modifiedAt = file.lastModified(),
+        )
     }
 
     private fun storeAndroidArtwork(relativePath: String, bytes: ByteArray): String {
@@ -416,6 +419,16 @@ private class AndroidImportSourceGateway(
                 )
             }
         }
+    }
+}
+
+private fun resolveAndroidLocalTrackUri(locator: String): Uri? {
+    val value = locator.trim()
+    if (value.isBlank()) return null
+    val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return null
+    return when (uri.scheme?.lowercase()) {
+        "content", "file" -> uri
+        else -> null
     }
 }
 
@@ -572,11 +585,12 @@ private class AndroidPlaybackGateway(
             }
         }
         val source = database.importSourceDao().getById(samba.first) ?: error("Missing SMB source")
-        val storedPort = source.shareName?.toIntOrNull()
+        val shareName = source.shareName
+        val storedPort = shareName?.toIntOrNull()
         val storedPath = when {
             storedPort != null -> normalizeSambaPath(source.directoryPath)
-            source.shareName.isNullOrBlank() -> normalizeSambaPath(source.directoryPath)
-            else -> normalizeSambaPath(joinSambaPath(source.shareName, source.directoryPath.orEmpty()))
+            shareName.isNullOrBlank() -> normalizeSambaPath(source.directoryPath)
+            else -> normalizeSambaPath(joinSambaPath(shareName, source.directoryPath.orEmpty()))
         }
         val sambaPath = parseSambaPath(storedPath)
             ?: error("SMB source path is missing a share name.")
