@@ -98,7 +98,7 @@ fun buildSharedGraph(
     return SharedGraph(
         platform = platform,
         database = database,
-        libraryStore = LibraryStore(libraryRepository, scope),
+        libraryStore = LibraryStore(libraryRepository, importSourceRepository, scope),
         importStore = ImportStore(importSourceRepository, platform.capabilities, scope),
         settingsStore = SettingsStore(settingsRepository, scope),
         lyricsRepository = lyricsRepository,

@@ -64,6 +64,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -144,6 +146,7 @@ import top.iwesley.lyn.music.feature.importing.ImportIntent
 import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.importing.ImportStore
 import top.iwesley.lyn.music.feature.library.LibraryIntent
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibraryState
 import top.iwesley.lyn.music.feature.library.LibraryStore
 import top.iwesley.lyn.music.feature.player.PlayerIntent
@@ -525,6 +528,7 @@ private fun LibraryTab(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
@@ -542,10 +546,33 @@ private fun LibraryTab(
                 )
             }
             item {
+                Box {
+                    OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
+                        Icon(Icons.Rounded.Tune, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(librarySourceFilterButtonLabel(state.selectedSourceFilter))
+                    }
+                    DropdownMenu(
+                        expanded = sourceFilterMenuExpanded,
+                        onDismissRequest = { sourceFilterMenuExpanded = false },
+                    ) {
+                        state.availableSourceFilters.forEach { filter ->
+                            DropdownMenuItem(
+                                text = { Text(librarySourceFilterMenuLabel(filter)) },
+                                onClick = {
+                                    sourceFilterMenuExpanded = false
+                                    onLibraryIntent(LibraryIntent.SourceFilterChanged(filter))
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard(title = "歌曲", value = state.tracks.size.toString(), icon = Icons.Rounded.LibraryMusic, modifier = Modifier.weight(1f))
-                    StatCard(title = "专辑", value = state.albums.size.toString(), icon = Icons.Rounded.Album, modifier = Modifier.weight(1f))
-                    StatCard(title = "艺人", value = state.artists.size.toString(), icon = Icons.Rounded.Tune, modifier = Modifier.weight(1f))
+                    StatCard(title = "歌曲", value = state.filteredTracks.size.toString(), icon = Icons.Rounded.LibraryMusic, modifier = Modifier.weight(1f))
+                    StatCard(title = "专辑", value = state.visibleAlbumCount.toString(), icon = Icons.Rounded.Album, modifier = Modifier.weight(1f))
+                    StatCard(title = "艺人", value = state.visibleArtistCount.toString(), icon = Icons.Rounded.Tune, modifier = Modifier.weight(1f))
                 }
             }
             item {
@@ -553,10 +580,22 @@ private fun LibraryTab(
             }
             if (state.filteredTracks.isEmpty()) {
                 item {
-                    EmptyStateCard(
-                        title = "曲库还是空的",
-                        body = "先到“来源”页导入本地文件夹、Samba、WebDAV 或 Navidrome，扫描完成后会出现在这里。",
-                    )
+                    when {
+                        state.tracks.isEmpty() -> EmptyStateCard(
+                            title = "曲库还是空的",
+                            body = "先到“来源”页导入本地文件夹、Samba、WebDAV 或 Navidrome，扫描完成后会出现在这里。",
+                        )
+
+                        state.selectedSourceFilter != LibrarySourceFilter.ALL -> EmptyStateCard(
+                            title = "当前来源下没有歌曲",
+                            body = "试试切回“全部来源”、更换过滤项，或调整搜索词。",
+                        )
+
+                        else -> EmptyStateCard(
+                            title = "没有匹配的歌曲",
+                            body = "试试调整搜索词，或切换来源过滤。",
+                        )
+                    }
                 }
             } else {
                 itemsIndexed(state.filteredTracks, key = { _, item -> item.id }) { index, track ->
@@ -577,6 +616,23 @@ private fun LibraryTab(
                 .fillMaxHeight()
                 .padding(end = 8.dp, top = 20.dp, bottom = 20.dp),
         )
+    }
+}
+
+private fun librarySourceFilterButtonLabel(filter: LibrarySourceFilter): String {
+    return when (filter) {
+        LibrarySourceFilter.ALL -> "全部来源"
+        LibrarySourceFilter.LOCAL_FOLDER -> "本地文件夹"
+        LibrarySourceFilter.SAMBA -> "Samba"
+        LibrarySourceFilter.WEBDAV -> "WebDAV"
+        LibrarySourceFilter.NAVIDROME -> "Navidrome"
+    }
+}
+
+private fun librarySourceFilterMenuLabel(filter: LibrarySourceFilter): String {
+    return when (filter) {
+        LibrarySourceFilter.ALL -> "全部"
+        else -> librarySourceFilterButtonLabel(filter)
     }
 }
 
