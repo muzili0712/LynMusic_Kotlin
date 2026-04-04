@@ -1685,15 +1685,18 @@ private fun PlayerLyricsPane(
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    if (state.isLyricsLoading) "正在请求歌词..." else "歌词",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White.copy(alpha = 0.88f),
-                )
+                if (state.isLyricsLoading) {
+                    Text(
+                        "正在请求歌词...",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.88f),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                Spacer(Modifier.weight(1f))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(
                         onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
