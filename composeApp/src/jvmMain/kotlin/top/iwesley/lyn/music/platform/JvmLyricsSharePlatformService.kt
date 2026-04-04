@@ -35,6 +35,7 @@ import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 class JvmLyricsSharePlatformService : LyricsSharePlatformService {
     private val artworkCacheStore = createJvmArtworkCacheStore()
@@ -109,12 +110,10 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         artworkImage: BufferedImage?,
     ): ByteArray {
         val width = LyricsShareCardSpec.IMAGE_WIDTH_PX
-        val canvasFont = Font("Serif", Font.BOLD, LyricsShareCardSpec.LYRICS_FONT_SIZE_PX.toInt())
         val titleFont = Font("Serif", Font.BOLD, LyricsShareCardSpec.TITLE_FONT_SIZE_PX.toInt())
         val brandFont = Font("Serif", Font.PLAIN, LyricsShareCardSpec.BRAND_FONT_SIZE_PX.toInt())
         val probe = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB).createGraphics()
         val contentWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2 - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2
-        val wrappedLyrics = wrapTextLines(model.lyricsLines, probe, canvasFont, contentWidth)
         val wrappedFooterLine = wrapSingleBlock(
             buildLyricsShareTitleArtistLine(model.title, model.artistName),
             probe,
@@ -122,16 +121,41 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
             contentWidth,
             1,
         )
-        val lyricsLineHeight = probe.getFontMetrics(canvasFont).height + LyricsShareCardSpec.LYRICS_JVM_LINE_GAP_PX
         val titleLineHeight = probe.getFontMetrics(titleFont).height + 4
         val brandLineHeight = probe.getFontMetrics(brandFont).height
+        val maxLyricsBlockHeight =
+            LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX -
+                (
+                    LyricsShareCardSpec.OUTER_PADDING_PX * 2 +
+                        LyricsShareCardSpec.SHADOW_OFFSET_PX +
+                        LyricsShareCardSpec.PAPER_PADDING_TOP_PX +
+                        LyricsShareCardSpec.ARTWORK_SIZE_PX +
+                        LyricsShareCardSpec.LYRICS_TOP_GAP_PX +
+                        LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
+                        max(1, wrappedFooterLine.size) * titleLineHeight +
+                        LyricsShareCardSpec.BRAND_TOP_GAP_PX +
+                        brandLineHeight +
+                        LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
+                    )
+        val fittedLyrics = fitJvmLyricsLayout(
+            lines = model.lyricsLines,
+            graphics = probe,
+            fontFamily = "Serif",
+            fontStyle = Font.BOLD,
+            baseFontSizePx = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX,
+            baseLineGapPx = LyricsShareCardSpec.LYRICS_JVM_LINE_GAP_PX,
+            maxWidth = contentWidth,
+            maxBlockHeight = maxLyricsBlockHeight,
+            minFontScale = LyricsShareCardSpec.LYRICS_MIN_FONT_SCALE,
+            shrinkStep = LyricsShareCardSpec.LYRICS_FONT_SHRINK_STEP,
+        )
         probe.dispose()
 
         val contentHeight =
             LyricsShareCardSpec.PAPER_PADDING_TOP_PX +
                 LyricsShareCardSpec.ARTWORK_SIZE_PX +
                 LyricsShareCardSpec.LYRICS_TOP_GAP_PX +
-                max(1, wrappedLyrics.size) * lyricsLineHeight +
+                fittedLyrics.blockHeight +
                 LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
                 max(1, wrappedFooterLine.size) * titleLineHeight +
                 LyricsShareCardSpec.BRAND_TOP_GAP_PX +
@@ -233,12 +257,12 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         var cursorY = artworkY + LyricsShareCardSpec.ARTWORK_SIZE_PX + LyricsShareCardSpec.LYRICS_TOP_GAP_PX
 
         graphics.color = textPrimary
-        graphics.font = canvasFont
+        graphics.font = fittedLyrics.font
         val lyricsMetrics = graphics.fontMetrics
-        wrappedLyrics.forEach { line ->
+        fittedLyrics.lines.forEach { line ->
             cursorY += lyricsMetrics.ascent
             graphics.drawString(line, textX, cursorY)
-            cursorY += lyricsMetrics.descent + lyricsMetrics.leading + LyricsShareCardSpec.LYRICS_JVM_LINE_GAP_PX
+            cursorY += lyricsMetrics.descent + lyricsMetrics.leading + fittedLyrics.lineGapPx
         }
 
         cursorY += LyricsShareCardSpec.FOOTER_TOP_GAP_PX
@@ -271,12 +295,10 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         artworkImage: BufferedImage?,
     ): ByteArray {
         val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX
-        val lyricsFont = Font("Serif", Font.BOLD, LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX.toInt())
         val titleFont = Font("Serif", Font.BOLD, LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX.toInt())
         val brandFont = Font("Serif", Font.PLAIN, LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX.toInt())
         val probe = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB).createGraphics()
         val contentWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2
-        val wrappedLyrics = wrapTextLines(model.lyricsLines, probe, lyricsFont, contentWidth)
         val wrappedFooterLine = wrapSingleBlock(
             buildLyricsShareTitleArtistLine(model.title, model.artistName),
             probe,
@@ -284,9 +306,33 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
             contentWidth,
             1,
         )
-        val lyricsLineHeight = probe.getFontMetrics(lyricsFont).height + LyricsShareArtworkTintSpec.LYRICS_JVM_LINE_GAP_PX
         val titleLineHeight = probe.getFontMetrics(titleFont).height + 4
         val brandLineHeight = probe.getFontMetrics(brandFont).height
+        val maxLyricsBlockHeight =
+            LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX -
+                (
+                    LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
+                        LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX +
+                        LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX +
+                        LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX +
+                        LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX +
+                        max(1, wrappedFooterLine.size) * titleLineHeight +
+                        LyricsShareArtworkTintSpec.BRAND_TOP_GAP_PX +
+                        brandLineHeight +
+                        LyricsShareArtworkTintSpec.OUTER_PADDING_PX
+                    )
+        val fittedLyrics = fitJvmLyricsLayout(
+            lines = model.lyricsLines,
+            graphics = probe,
+            fontFamily = "Serif",
+            fontStyle = Font.BOLD,
+            baseFontSizePx = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX,
+            baseLineGapPx = LyricsShareArtworkTintSpec.LYRICS_JVM_LINE_GAP_PX,
+            maxWidth = contentWidth,
+            maxBlockHeight = maxLyricsBlockHeight,
+            minFontScale = LyricsShareArtworkTintSpec.LYRICS_MIN_FONT_SCALE,
+            shrinkStep = LyricsShareArtworkTintSpec.LYRICS_FONT_SHRINK_STEP,
+        )
         probe.dispose()
 
         val contentHeight =
@@ -294,7 +340,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
                 LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX +
                 LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX +
                 LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX +
-                max(1, wrappedLyrics.size) * lyricsLineHeight +
+                fittedLyrics.blockHeight +
                 LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX +
                 max(1, wrappedFooterLine.size) * titleLineHeight +
                 LyricsShareArtworkTintSpec.BRAND_TOP_GAP_PX +
@@ -399,12 +445,12 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val textX = artworkX
         var cursorY = artworkY + LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX + LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX
         graphics.color = textPrimary
-        graphics.font = lyricsFont
+        graphics.font = fittedLyrics.font
         val lyricsMetrics = graphics.fontMetrics
-        wrappedLyrics.forEach { line ->
+        fittedLyrics.lines.forEach { line ->
             cursorY += lyricsMetrics.ascent
             graphics.drawString(line, textX, cursorY)
-            cursorY += lyricsMetrics.descent + lyricsMetrics.leading + LyricsShareArtworkTintSpec.LYRICS_JVM_LINE_GAP_PX
+            cursorY += lyricsMetrics.descent + lyricsMetrics.leading + fittedLyrics.lineGapPx
         }
 
         cursorY += LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX
@@ -461,6 +507,56 @@ private fun sampleArtworkTintTheme(artworkImage: BufferedImage?): top.iwesley.ly
             }
         },
     )
+}
+
+private data class JvmFittedLyricsLayout(
+    val font: Font,
+    val lines: List<String>,
+    val lineGapPx: Int,
+    val blockHeight: Int,
+)
+
+private fun fitJvmLyricsLayout(
+    lines: List<String>,
+    graphics: Graphics2D,
+    fontFamily: String,
+    fontStyle: Int,
+    baseFontSizePx: Float,
+    baseLineGapPx: Int,
+    maxWidth: Int,
+    maxBlockHeight: Int,
+    minFontScale: Float,
+    shrinkStep: Float,
+): JvmFittedLyricsLayout {
+    var fontSizePx = baseFontSizePx
+    var lineGapPx = baseLineGapPx.toFloat()
+    val minFontSizePx = (baseFontSizePx * minFontScale).coerceAtLeast(1f)
+    while (true) {
+        val font = Font(fontFamily, fontStyle, fontSizePx.roundToInt().coerceAtLeast(1))
+        val wrappedLines = wrapTextLines(lines, graphics, font, maxWidth)
+        val effectiveLineGapPx = lineGapPx.roundToInt().coerceAtLeast(0)
+        val lineHeight = graphics.getFontMetrics(font).height + effectiveLineGapPx
+        val blockHeight = max(1, wrappedLines.size) * lineHeight
+        if (blockHeight <= maxBlockHeight || fontSizePx <= minFontSizePx) {
+            return JvmFittedLyricsLayout(
+                font = font,
+                lines = wrappedLines,
+                lineGapPx = effectiveLineGapPx,
+                blockHeight = blockHeight,
+            )
+        }
+        val nextFontSizePx = (fontSizePx * shrinkStep).coerceAtLeast(minFontSizePx)
+        if (nextFontSizePx == fontSizePx) {
+            return JvmFittedLyricsLayout(
+                font = font,
+                lines = wrappedLines,
+                lineGapPx = effectiveLineGapPx,
+                blockHeight = blockHeight,
+            )
+        }
+        fontSizePx = nextFontSizePx
+        lineGapPx = (lineGapPx * shrinkStep).coerceAtLeast(0f)
+    }
 }
 
 private fun wrapTextLines(

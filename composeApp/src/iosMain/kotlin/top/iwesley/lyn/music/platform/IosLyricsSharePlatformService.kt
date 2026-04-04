@@ -109,22 +109,40 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         artworkImage: Image?,
     ): ByteArray {
         val width = LyricsShareCardSpec.IMAGE_WIDTH_PX.toFloat()
-        val lyricsLines = wrapLines(model.lyricsLines, maxCharsPerLine = 12)
         val footerLines = wrapLines(
             listOf(buildLyricsShareTitleArtistLine(model.title, model.artistName)),
             maxCharsPerLine = 28,
         ).take(1)
 
-        val lyricsFont = Font(null, LyricsShareCardSpec.LYRICS_FONT_SIZE_PX)
         val titleFont = Font(null, LyricsShareCardSpec.TITLE_FONT_SIZE_PX)
         val brandFont = Font(null, LyricsShareCardSpec.BRAND_FONT_SIZE_PX)
-        val lyricsLineHeight = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX + LyricsShareCardSpec.LYRICS_IOS_LINE_GAP_PX
         val titleLineHeight = LyricsShareCardSpec.TITLE_FONT_SIZE_PX + 12f
+        val fixedHeight =
+            LyricsShareCardSpec.OUTER_PADDING_PX * 2 +
+                LyricsShareCardSpec.SHADOW_OFFSET_PX +
+                LyricsShareCardSpec.PAPER_PADDING_TOP_PX +
+                LyricsShareCardSpec.ARTWORK_SIZE_PX +
+                LyricsShareCardSpec.LYRICS_TOP_GAP_PX +
+                LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
+                max(1, footerLines.size) * titleLineHeight +
+                LyricsShareCardSpec.BRAND_TOP_GAP_PX +
+                LyricsShareCardSpec.BRAND_FONT_SIZE_PX +
+                LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
+        val fittedLyrics = fitIosLyricsLayout(
+            lines = model.lyricsLines,
+            baseMaxCharsPerLine = 12,
+            baseFontSizePx = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX,
+            baseLineGapPx = LyricsShareCardSpec.LYRICS_IOS_LINE_GAP_PX,
+            maxTotalHeight = LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX,
+            fixedHeight = fixedHeight,
+            minFontScale = LyricsShareCardSpec.LYRICS_MIN_FONT_SCALE,
+            shrinkStep = LyricsShareCardSpec.LYRICS_FONT_SHRINK_STEP,
+        )
         val contentHeight =
             LyricsShareCardSpec.PAPER_PADDING_TOP_PX +
                 LyricsShareCardSpec.ARTWORK_SIZE_PX +
                 LyricsShareCardSpec.LYRICS_TOP_GAP_PX +
-                max(1, lyricsLines.size) * lyricsLineHeight +
+                fittedLyrics.blockHeight +
                 LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
                 max(1, footerLines.size) * titleLineHeight +
                 LyricsShareCardSpec.BRAND_TOP_GAP_PX +
@@ -235,12 +253,12 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         }
 
         val textX = artworkX
-        var cursorY = artworkY + LyricsShareCardSpec.ARTWORK_SIZE_PX + LyricsShareCardSpec.LYRICS_TOP_GAP_PX + LyricsShareCardSpec.LYRICS_FONT_SIZE_PX
-        lyricsLines.forEach { line ->
-            canvas.drawString(line, textX, cursorY, lyricsFont, textPrimaryPaint)
-            cursorY += lyricsLineHeight
+        var cursorY = artworkY + LyricsShareCardSpec.ARTWORK_SIZE_PX + LyricsShareCardSpec.LYRICS_TOP_GAP_PX + fittedLyrics.fontSizePx
+        fittedLyrics.lines.forEach { line ->
+            canvas.drawString(line, textX, cursorY, fittedLyrics.font, textPrimaryPaint)
+            cursorY += fittedLyrics.lineHeight
         }
-        cursorY += LyricsShareCardSpec.FOOTER_TOP_GAP_PX - LyricsShareCardSpec.LYRICS_FONT_SIZE_PX
+        cursorY += LyricsShareCardSpec.FOOTER_TOP_GAP_PX - fittedLyrics.fontSizePx
         footerLines.forEach { line ->
             canvas.drawString(line, textX, cursorY + LyricsShareCardSpec.TITLE_FONT_SIZE_PX, titleFont, textFooterPaint)
             cursorY += titleLineHeight
@@ -263,24 +281,41 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         artworkImage: Image?,
     ): ByteArray {
         val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX.toFloat()
-        val lyricsLines = wrapLines(model.lyricsLines, maxCharsPerLine = 12)
         val footerLines = wrapLines(
             listOf(buildLyricsShareTitleArtistLine(model.title, model.artistName)),
             maxCharsPerLine = 28,
         ).take(1)
         val theme = model.artworkTintTheme ?: sampleArtworkTintTheme(artworkImage)
 
-        val lyricsFont = Font(null, LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX)
         val titleFont = Font(null, LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX)
         val brandFont = Font(null, LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX)
-        val lyricsLineHeight = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX + LyricsShareArtworkTintSpec.LYRICS_IOS_LINE_GAP_PX
         val titleLineHeight = LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX + 12f
+        val fixedHeight =
+            LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
+                LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX +
+                LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX +
+                LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX +
+                LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX +
+                max(1, footerLines.size) * titleLineHeight +
+                LyricsShareArtworkTintSpec.BRAND_TOP_GAP_PX +
+                LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX +
+                LyricsShareArtworkTintSpec.OUTER_PADDING_PX
+        val fittedLyrics = fitIosLyricsLayout(
+            lines = model.lyricsLines,
+            baseMaxCharsPerLine = 12,
+            baseFontSizePx = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX,
+            baseLineGapPx = LyricsShareArtworkTintSpec.LYRICS_IOS_LINE_GAP_PX,
+            maxTotalHeight = LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX,
+            fixedHeight = fixedHeight,
+            minFontScale = LyricsShareArtworkTintSpec.LYRICS_MIN_FONT_SCALE,
+            shrinkStep = LyricsShareArtworkTintSpec.LYRICS_FONT_SHRINK_STEP,
+        )
         val contentHeight =
             LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
                 LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX +
                 LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX +
                 LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX +
-                max(1, lyricsLines.size) * lyricsLineHeight +
+                fittedLyrics.blockHeight +
                 LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX +
                 max(1, footerLines.size) * titleLineHeight +
                 LyricsShareArtworkTintSpec.BRAND_TOP_GAP_PX +
@@ -392,12 +427,12 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         }
 
         val textX = artworkX
-        var cursorY = artworkY + LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX + LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX + LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX
-        lyricsLines.forEach { line ->
-            canvas.drawString(line, textX, cursorY, lyricsFont, textPrimaryPaint)
-            cursorY += lyricsLineHeight
+        var cursorY = artworkY + LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX + LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX + fittedLyrics.fontSizePx
+        fittedLyrics.lines.forEach { line ->
+            canvas.drawString(line, textX, cursorY, fittedLyrics.font, textPrimaryPaint)
+            cursorY += fittedLyrics.lineHeight
         }
-        cursorY += LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX - LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX
+        cursorY += LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX - fittedLyrics.fontSizePx
         footerLines.forEach { line ->
             canvas.drawString(line, textX, cursorY + LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX, titleFont, textFooterPaint)
             cursorY += titleLineHeight
@@ -413,6 +448,58 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         val encoded = surface.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG, 100)
             ?: error("无法导出 PNG 数据。")
         return encoded.bytes
+    }
+}
+
+private data class IosFittedLyricsLayout(
+    val font: Font,
+    val fontSizePx: Float,
+    val lineHeight: Float,
+    val lines: List<String>,
+    val blockHeight: Float,
+)
+
+private fun fitIosLyricsLayout(
+    lines: List<String>,
+    baseMaxCharsPerLine: Int,
+    baseFontSizePx: Float,
+    baseLineGapPx: Float,
+    maxTotalHeight: Int,
+    fixedHeight: Float,
+    minFontScale: Float,
+    shrinkStep: Float,
+): IosFittedLyricsLayout {
+    var fontSizePx = baseFontSizePx
+    var lineGapPx = baseLineGapPx
+    val minFontSizePx = (baseFontSizePx * minFontScale).coerceAtLeast(1f)
+    while (true) {
+        val scale = (fontSizePx / baseFontSizePx).coerceAtLeast(0.01f)
+        val maxCharsPerLine = (baseMaxCharsPerLine / scale).toInt().coerceAtLeast(baseMaxCharsPerLine)
+        val wrappedLines = wrapLines(lines, maxCharsPerLine = maxCharsPerLine)
+        val lineHeight = fontSizePx + lineGapPx
+        val blockHeight = max(1, wrappedLines.size) * lineHeight
+        val font = Font(null, fontSizePx)
+        if (fixedHeight + blockHeight <= maxTotalHeight || fontSizePx <= minFontSizePx) {
+            return IosFittedLyricsLayout(
+                font = font,
+                fontSizePx = fontSizePx,
+                lineHeight = lineHeight,
+                lines = wrappedLines,
+                blockHeight = blockHeight,
+            )
+        }
+        val nextFontSizePx = (fontSizePx * shrinkStep).coerceAtLeast(minFontSizePx)
+        if (nextFontSizePx == fontSizePx) {
+            return IosFittedLyricsLayout(
+                font = font,
+                fontSizePx = fontSizePx,
+                lineHeight = lineHeight,
+                lines = wrappedLines,
+                blockHeight = blockHeight,
+            )
+        }
+        fontSizePx = nextFontSizePx
+        lineGapPx = (lineGapPx * shrinkStep).coerceAtLeast(0f)
     }
 }
 

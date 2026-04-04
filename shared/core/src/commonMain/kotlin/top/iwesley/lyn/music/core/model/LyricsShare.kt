@@ -57,6 +57,8 @@ object LyricsShareCardSpec {
     const val LYRICS_JVM_LINE_GAP_PX: Int = 50
     const val LYRICS_ANDROID_LINE_GAP_PX: Float = 10f
     const val LYRICS_IOS_LINE_GAP_PX: Float = 18f
+    const val LYRICS_MIN_FONT_SCALE: Float = 0.4f
+    const val LYRICS_FONT_SHRINK_STEP: Float = 0.92f
     const val META_FONT_SIZE_PX: Float = 36f
     const val TITLE_FONT_SIZE_PX: Float = 58f
     const val BRAND_FONT_SIZE_PX: Float = 30f
@@ -112,6 +114,8 @@ object LyricsShareArtworkTintSpec {
     const val LYRICS_JVM_LINE_GAP_PX: Int = 50
     const val LYRICS_ANDROID_LINE_GAP_PX: Float = 10f
     const val LYRICS_IOS_LINE_GAP_PX: Float = 18f
+    const val LYRICS_MIN_FONT_SCALE: Float = 0.4f
+    const val LYRICS_FONT_SHRINK_STEP: Float = 0.92f
     const val TITLE_FONT_SIZE_PX: Float = 54f
     const val META_FONT_SIZE_PX: Float = 34f
     const val BRAND_FONT_SIZE_PX: Float = 30f

@@ -199,11 +199,6 @@ class AndroidLyricsSharePlatformService(
         val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareCardSpec.PLACEHOLDER_ARGB
         }
-        val lyricsPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = LyricsShareCardSpec.TEXT_PRIMARY_ARGB
-            textSize = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX
-            isFakeBoldText = true
-        }
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareCardSpec.TEXT_FOOTER_ARGB
             textSize = LyricsShareCardSpec.TITLE_FONT_SIZE_PX
@@ -216,13 +211,6 @@ class AndroidLyricsSharePlatformService(
         }
 
         val availableWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2 - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2
-        val lyricsLayout = createTextLayout(
-            text = model.lyricsLines.joinToString("\n"),
-            paint = lyricsPaint,
-            widthPx = availableWidth,
-            alignment = Layout.Alignment.ALIGN_NORMAL,
-            lineSpacingExtraPx = LyricsShareCardSpec.LYRICS_ANDROID_LINE_GAP_PX,
-        )
         val titleLayout = createTextLayout(
             text = buildLyricsShareTitleArtistLine(model.title, model.artistName),
             paint = titlePaint,
@@ -230,12 +218,34 @@ class AndroidLyricsSharePlatformService(
             alignment = Layout.Alignment.ALIGN_NORMAL,
             lineSpacingExtraPx = 0f,
         )
+        val fixedHeight =
+            LyricsShareCardSpec.OUTER_PADDING_PX * 2 +
+                LyricsShareCardSpec.SHADOW_OFFSET_PX +
+                LyricsShareCardSpec.PAPER_PADDING_TOP_PX +
+                LyricsShareCardSpec.ARTWORK_SIZE_PX +
+                LyricsShareCardSpec.LYRICS_TOP_GAP_PX +
+                LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
+                titleLayout.height +
+                LyricsShareCardSpec.BRAND_TOP_GAP_PX +
+                brandPaint.textSize.toInt() +
+                LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
+        val fittedLyrics = fitAndroidLyricsLayout(
+            text = model.lyricsLines.joinToString("\n"),
+            widthPx = availableWidth,
+            textColor = LyricsShareCardSpec.TEXT_PRIMARY_ARGB,
+            baseFontSizePx = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX,
+            baseLineSpacingExtraPx = LyricsShareCardSpec.LYRICS_ANDROID_LINE_GAP_PX,
+            maxTotalHeight = LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX,
+            fixedHeight = fixedHeight,
+            minFontScale = LyricsShareCardSpec.LYRICS_MIN_FONT_SCALE,
+            shrinkStep = LyricsShareCardSpec.LYRICS_FONT_SHRINK_STEP,
+        )
 
         val contentHeight =
             LyricsShareCardSpec.PAPER_PADDING_TOP_PX +
                 LyricsShareCardSpec.ARTWORK_SIZE_PX +
                 LyricsShareCardSpec.LYRICS_TOP_GAP_PX +
-                lyricsLayout.height +
+                fittedLyrics.layout.height +
                 LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
                 titleLayout.height +
                 LyricsShareCardSpec.BRAND_TOP_GAP_PX +
@@ -313,9 +323,9 @@ class AndroidLyricsSharePlatformService(
         var cursorY = artworkRect.bottom + LyricsShareCardSpec.LYRICS_TOP_GAP_PX
         canvas.save()
         canvas.translate(artworkLeft, cursorY)
-        lyricsLayout.draw(canvas)
+        fittedLyrics.layout.draw(canvas)
         canvas.restore()
-        cursorY += lyricsLayout.height + LyricsShareCardSpec.FOOTER_TOP_GAP_PX
+        cursorY += fittedLyrics.layout.height + LyricsShareCardSpec.FOOTER_TOP_GAP_PX
 
         canvas.save()
         canvas.translate(artworkLeft, cursorY)
@@ -387,11 +397,6 @@ class AndroidLyricsSharePlatformService(
         val artworkShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareArtworkTintSpec.ARTWORK_SHADOW_ARGB
         }
-        val lyricsPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB
-            textSize = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX
-            isFakeBoldText = true
-        }
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareArtworkTintSpec.TEXT_FOOTER_ARGB
             textSize = LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX
@@ -404,13 +409,6 @@ class AndroidLyricsSharePlatformService(
         }
 
         val availableWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2
-        val lyricsLayout = createTextLayout(
-            text = model.lyricsLines.joinToString("\n"),
-            paint = lyricsPaint,
-            widthPx = availableWidth,
-            alignment = Layout.Alignment.ALIGN_NORMAL,
-            lineSpacingExtraPx = LyricsShareArtworkTintSpec.LYRICS_ANDROID_LINE_GAP_PX,
-        )
         val titleLayout = createTextLayout(
             text = buildLyricsShareTitleArtistLine(model.title, model.artistName),
             paint = titlePaint,
@@ -418,12 +416,33 @@ class AndroidLyricsSharePlatformService(
             alignment = Layout.Alignment.ALIGN_NORMAL,
             lineSpacingExtraPx = 0f,
         )
+        val fixedHeight =
+            LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
+                LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX +
+                LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX +
+                LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX +
+                LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX +
+                titleLayout.height +
+                LyricsShareArtworkTintSpec.BRAND_TOP_GAP_PX +
+                brandPaint.textSize.toInt() +
+                LyricsShareArtworkTintSpec.OUTER_PADDING_PX
+        val fittedLyrics = fitAndroidLyricsLayout(
+            text = model.lyricsLines.joinToString("\n"),
+            widthPx = availableWidth,
+            textColor = LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB,
+            baseFontSizePx = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX,
+            baseLineSpacingExtraPx = LyricsShareArtworkTintSpec.LYRICS_ANDROID_LINE_GAP_PX,
+            maxTotalHeight = LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX,
+            fixedHeight = fixedHeight,
+            minFontScale = LyricsShareArtworkTintSpec.LYRICS_MIN_FONT_SCALE,
+            shrinkStep = LyricsShareArtworkTintSpec.LYRICS_FONT_SHRINK_STEP,
+        )
         val contentHeight =
             LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
                 LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX +
                 LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX +
                 LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX +
-                lyricsLayout.height +
+                fittedLyrics.layout.height +
                 LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX +
                 titleLayout.height +
                 LyricsShareArtworkTintSpec.BRAND_TOP_GAP_PX +
@@ -483,9 +502,9 @@ class AndroidLyricsSharePlatformService(
         var cursorY = artworkRect.bottom + LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX
         canvas.save()
         canvas.translate(artworkLeft, cursorY)
-        lyricsLayout.draw(canvas)
+        fittedLyrics.layout.draw(canvas)
         canvas.restore()
-        cursorY += lyricsLayout.height + LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX
+        cursorY += fittedLyrics.layout.height + LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX
 
         canvas.save()
         canvas.translate(artworkLeft, cursorY)
@@ -517,6 +536,49 @@ private fun sampleArtworkTintTheme(artworkBitmap: Bitmap?): top.iwesley.lyn.musi
             }
         },
     )
+}
+
+private data class AndroidFittedLyricsLayout(
+    val layout: StaticLayout,
+)
+
+private fun fitAndroidLyricsLayout(
+    text: String,
+    widthPx: Int,
+    textColor: Int,
+    baseFontSizePx: Float,
+    baseLineSpacingExtraPx: Float,
+    maxTotalHeight: Int,
+    fixedHeight: Int,
+    minFontScale: Float,
+    shrinkStep: Float,
+): AndroidFittedLyricsLayout {
+    var fontSizePx = baseFontSizePx
+    var lineSpacingExtraPx = baseLineSpacingExtraPx
+    val minFontSizePx = (baseFontSizePx * minFontScale).coerceAtLeast(1f)
+    while (true) {
+        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = textColor
+            textSize = fontSizePx
+            isFakeBoldText = true
+        }
+        val layout = createTextLayout(
+            text = text,
+            paint = paint,
+            widthPx = widthPx,
+            alignment = Layout.Alignment.ALIGN_NORMAL,
+            lineSpacingExtraPx = lineSpacingExtraPx,
+        )
+        if (fixedHeight + layout.height <= maxTotalHeight || fontSizePx <= minFontSizePx) {
+            return AndroidFittedLyricsLayout(layout = layout)
+        }
+        val nextFontSizePx = (fontSizePx * shrinkStep).coerceAtLeast(minFontSizePx)
+        if (nextFontSizePx == fontSizePx) {
+            return AndroidFittedLyricsLayout(layout = layout)
+        }
+        fontSizePx = nextFontSizePx
+        lineSpacingExtraPx = (lineSpacingExtraPx * shrinkStep).coerceAtLeast(0f)
+    }
 }
 
 private fun createTextLayout(
