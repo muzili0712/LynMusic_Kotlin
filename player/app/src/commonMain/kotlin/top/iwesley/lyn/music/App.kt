@@ -1612,12 +1612,6 @@ private fun PlayerInfoPane(
                 .fillMaxWidth()
                 .fillMaxHeight(),
         )
-        TurntableArmDecoration(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .offset(x = if (compact) 46.dp else 88.dp, y = if (compact) 22.dp else 34.dp),
-            compact = compact,
-        )
         VinylPlaceholder(
             vinylSize = if (compact) 250.dp else 420.dp,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
@@ -2791,56 +2785,6 @@ private fun PlayerSectionChip(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             color = if (active) Color.White.copy(alpha = 0.96f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f),
             fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-        )
-    }
-}
-
-@Composable
-private fun TurntableArmDecoration(
-    modifier: Modifier = Modifier,
-    compact: Boolean,
-) {
-    Box(
-        modifier = modifier.size(if (compact) 140.dp else 210.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(if (compact) 24.dp else 32.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.14f))
-                .border(1.dp, Color.White.copy(alpha = 0.22f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(if (compact) 10.dp else 12.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.96f)),
-            )
-        }
-        Box(
-            modifier = Modifier
-                .offset(x = if (compact) 18.dp else 24.dp, y = if (compact) 18.dp else 22.dp)
-                .size(width = if (compact) 94.dp else 138.dp, height = if (compact) 8.dp else 10.dp)
-                .graphicsLayer(rotationZ = 42f)
-                .clip(RoundedCornerShape(100))
-                .background(Color.White.copy(alpha = 0.96f)),
-        )
-        Box(
-            modifier = Modifier
-                .offset(x = if (compact) 86.dp else 126.dp, y = if (compact) 80.dp else 118.dp)
-                .size(width = if (compact) 40.dp else 54.dp, height = if (compact) 8.dp else 10.dp)
-                .graphicsLayer(rotationZ = 4f)
-                .clip(RoundedCornerShape(100))
-                .background(Color.White.copy(alpha = 0.96f)),
-        )
-        Box(
-            modifier = Modifier
-                .offset(x = if (compact) 112.dp else 166.dp, y = if (compact) 78.dp else 116.dp)
-                .size(width = if (compact) 18.dp else 24.dp, height = if (compact) 18.dp else 24.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
-                .background(Color.White.copy(alpha = 0.9f)),
         )
     }
 }
