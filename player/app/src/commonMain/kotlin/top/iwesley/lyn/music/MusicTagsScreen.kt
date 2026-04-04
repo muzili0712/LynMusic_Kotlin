@@ -3,7 +3,11 @@ package top.iwesley.lyn.music
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -21,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -46,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,9 +59,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.tags.MusicTagsDraft
@@ -65,7 +75,7 @@ import top.iwesley.lyn.music.feature.tags.MusicTagsState
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 
-private val MusicTagsTableWidth = 1160.dp
+private val MusicTagsTableWidth = 940.dp
 
 @Composable
 fun MusicTagsTab(
@@ -246,44 +256,62 @@ private fun MusicTagsTrackPane(
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
-                val horizontalScroll = rememberScrollState()
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .border(
-                            width = 1.dp,
-                            color = Color.White.copy(alpha = 0.08f),
-                            shape = RoundedCornerShape(20.dp),
-                        )
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.18f)),
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize(),
                 ) {
+                    val horizontalScroll = rememberScrollState()
+                    val showHorizontalBar = maxWidth < MusicTagsTableWidth
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .horizontalScroll(horizontalScroll),
+                            .border(
+                                width = 1.dp,
+                                color = Color.White.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(20.dp),
+                            )
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.18f)),
                     ) {
                         Column(
-                            modifier = Modifier
-                                .width(MusicTagsTableWidth)
-                                .fillMaxHeight(),
+                            modifier = Modifier.fillMaxSize(),
                         ) {
-                            MusicTagsTableHeader()
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(vertical = 4.dp),
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .horizontalScroll(horizontalScroll),
                             ) {
-                                items(state.tracks, key = { it.id }) { track ->
-                                    LaunchedEffect(track.id) {
-                                        onMusicTagsIntent(MusicTagsIntent.EnsureRowMetadata(track.id))
+                                Column(
+                                    modifier = Modifier
+                                        .width(MusicTagsTableWidth)
+                                        .fillMaxHeight(),
+                                ) {
+                                    MusicTagsTableHeader()
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(vertical = 4.dp),
+                                    ) {
+                                        items(state.tracks, key = { it.id }) { track ->
+                                            LaunchedEffect(track.id) {
+                                                onMusicTagsIntent(MusicTagsIntent.EnsureRowMetadata(track.id))
+                                            }
+                                            MusicTagsTrackRow(
+                                                track = track,
+                                                rowMetadata = state.rowMetadata[track.id],
+                                                selected = state.selectedTrackId == track.id,
+                                                onClick = { onMusicTagsIntent(MusicTagsIntent.SelectTrack(track.id)) },
+                                            )
+                                        }
                                     }
-                                    MusicTagsTrackRow(
-                                        track = track,
-                                        rowMetadata = state.rowMetadata[track.id],
-                                        selected = state.selectedTrackId == track.id,
-                                        onClick = { onMusicTagsIntent(MusicTagsIntent.SelectTrack(track.id)) },
-                                    )
                                 }
+                            }
+                            if (showHorizontalBar) {
+                                MusicTagsHorizontalScrollBar(
+                                    scrollState = horizontalScroll,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                )
                             }
                         }
                     }
@@ -536,13 +564,10 @@ private fun MusicTagsTrackRow(
             track = track,
             width = 180.dp,
         )
-        MusicTagsTableCell(track.relativePath, 220.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        MusicTagsTableCell(rowMetadata?.tagLabel.orEmpty(), 120.dp)
         MusicTagsTableCell(track.title, 170.dp)
-        MusicTagsTableCell(track.trackNumber?.toString().orEmpty(), 72.dp)
         MusicTagsTableCell(track.artistName.orEmpty(), 150.dp)
         MusicTagsTableCell(rowMetadata?.albumArtist.orEmpty(), 160.dp)
-        MusicTagsTableCell(track.albumTitle.orEmpty(), 150.dp)
+        MusicTagsTableCell(track.albumTitle.orEmpty(), 180.dp)
         MusicTagsTableCell(track.discNumber?.toString().orEmpty(), 84.dp)
     }
 }
@@ -595,6 +620,63 @@ private fun MusicTagsTrackFileCell(
 }
 
 @Composable
+private fun MusicTagsHorizontalScrollBar(
+    scrollState: ScrollState,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    BoxWithConstraints(
+        modifier = modifier.height(18.dp),
+    ) {
+        val trackWidthPx = with(density) { maxWidth.toPx() }
+        val maxScrollPx = scrollState.maxValue.toFloat()
+        val minThumbWidthPx = with(density) { 44.dp.toPx() }
+        val thumbWidthPx = if (maxScrollPx <= 0f || trackWidthPx <= 0f) {
+            trackWidthPx
+        } else {
+            val contentWidthPx = trackWidthPx + maxScrollPx
+            (trackWidthPx * trackWidthPx / contentWidthPx).coerceIn(minThumbWidthPx, trackWidthPx)
+        }
+        val maxThumbOffsetPx = (trackWidthPx - thumbWidthPx).coerceAtLeast(0f)
+        val thumbOffsetPx = if (maxScrollPx <= 0f || maxThumbOffsetPx <= 0f) {
+            0f
+        } else {
+            (scrollState.value.toFloat() / maxScrollPx) * maxThumbOffsetPx
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(thumbOffsetPx.roundToInt(), 0) }
+                    .width(with(density) { thumbWidthPx.toDp() })
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.78f))
+                    .draggable(
+                        orientation = Orientation.Horizontal,
+                        state = rememberDraggableState { delta ->
+                            if (scrollState.maxValue <= 0 || maxThumbOffsetPx <= 0f) return@rememberDraggableState
+                            val deltaRatio = delta / maxThumbOffsetPx
+                            val target = (scrollState.value + deltaRatio * scrollState.maxValue)
+                                .roundToInt()
+                                .coerceIn(0, scrollState.maxValue)
+                            scope.launch {
+                                scrollState.scrollTo(target)
+                            }
+                        },
+                    ),
+            )
+        }
+    }
+}
+
+@Composable
 private fun MusicTagsTableHeader() {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -607,13 +689,10 @@ private fun MusicTagsTableHeader() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             MusicTagsTableCell("文件名", 180.dp, fontWeight = FontWeight.Bold)
-            MusicTagsTableCell("路径", 220.dp, fontWeight = FontWeight.Bold)
-            MusicTagsTableCell("标签", 120.dp, fontWeight = FontWeight.Bold)
             MusicTagsTableCell("标题", 170.dp, fontWeight = FontWeight.Bold)
-            MusicTagsTableCell("音轨", 72.dp, fontWeight = FontWeight.Bold)
             MusicTagsTableCell("艺术家", 150.dp, fontWeight = FontWeight.Bold)
             MusicTagsTableCell("专辑艺术家", 160.dp, fontWeight = FontWeight.Bold)
-            MusicTagsTableCell("专辑", 150.dp, fontWeight = FontWeight.Bold)
+            MusicTagsTableCell("专辑", 180.dp, fontWeight = FontWeight.Bold)
             MusicTagsTableCell("光盘编号", 84.dp, fontWeight = FontWeight.Bold)
         }
     }
