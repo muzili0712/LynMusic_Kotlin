@@ -1253,38 +1253,37 @@ private fun MiniPlayerBar(
     onOpenQueue: () -> Unit,
     compact: Boolean = false,
 ) {
-    val track = state.snapshot.currentTrack ?: return
-    ElevatedCard(
+    if (state.snapshot.currentTrack == null) return
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = if (compact) 0.dp else 18.dp, vertical = 12.dp),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onPlayerIntent(PlayerIntent.ExpandedChanged(true)) }
-                .padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            VinylPlaceholder(vinylSize = 50.dp)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(state.snapshot.currentDisplayTitle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(state.snapshot.currentDisplayArtistName ?: "未知艺人", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            FavoriteToggleButton(
-                isFavorite = isFavorite,
-                onClick = onToggleFavorite,
+            .padding(horizontal = if (compact) 0.dp else 18.dp, vertical = 12.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
+            .border(
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(28.dp),
             )
-            QueueToggleButton(onClick = onOpenQueue)
-            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) { Icon(Icons.Rounded.SkipPrevious, null) }
-            IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }) {
-                Icon(if (state.snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle, null, modifier = Modifier.size(34.dp))
-            }
-            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) { Icon(Icons.Rounded.SkipNext, null) }
+            .clickable { onPlayerIntent(PlayerIntent.ExpandedChanged(true)) }
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        VinylPlaceholder(vinylSize = 50.dp)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(state.snapshot.currentDisplayTitle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(state.snapshot.currentDisplayArtistName ?: "未知艺人", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        FavoriteToggleButton(
+            isFavorite = isFavorite,
+            onClick = onToggleFavorite,
+        )
+        QueueToggleButton(onClick = onOpenQueue)
+        IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) { Icon(Icons.Rounded.SkipPrevious, null) }
+        IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }) {
+            Icon(if (state.snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle, null, modifier = Modifier.size(34.dp))
+        }
+        IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) { Icon(Icons.Rounded.SkipNext, null) }
     }
 }
 
