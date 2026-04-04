@@ -117,7 +117,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val wrappedLyrics = wrapTextLines(model.lyricsLines, probe, canvasFont, contentWidth)
         val wrappedTitle = wrapSingleBlock(model.title.ifBlank { "当前歌曲" }, probe, titleFont, contentWidth, 2)
         val wrappedArtist = wrapSingleBlock(model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人", probe, metaFont, contentWidth, 2)
-        val lyricsLineHeight = probe.getFontMetrics(canvasFont).height + 8
+        val lyricsLineHeight = probe.getFontMetrics(canvasFont).height + LyricsShareCardSpec.LYRICS_JVM_LINE_GAP_PX
         val titleLineHeight = probe.getFontMetrics(titleFont).height + 4
         val artistLineHeight = probe.getFontMetrics(metaFont).height + 2
         val brandLineHeight = probe.getFontMetrics(brandFont).height
@@ -234,7 +234,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         wrappedLyrics.forEach { line ->
             cursorY += lyricsMetrics.ascent
             graphics.drawString(line, textX, cursorY)
-            cursorY += lyricsMetrics.descent + lyricsMetrics.leading + 8
+            cursorY += lyricsMetrics.descent + lyricsMetrics.leading + LyricsShareCardSpec.LYRICS_JVM_LINE_GAP_PX
         }
 
         cursorY += LyricsShareCardSpec.FOOTER_TOP_GAP_PX
@@ -284,7 +284,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val wrappedLyrics = wrapTextLines(model.lyricsLines, probe, lyricsFont, contentWidth)
         val wrappedTitle = wrapSingleBlock(model.title.ifBlank { "当前歌曲" }, probe, titleFont, contentWidth, 2)
         val wrappedArtist = wrapSingleBlock(model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人", probe, metaFont, contentWidth, 2)
-        val lyricsLineHeight = probe.getFontMetrics(lyricsFont).height + 10
+        val lyricsLineHeight = probe.getFontMetrics(lyricsFont).height + LyricsShareArtworkTintSpec.LYRICS_JVM_LINE_GAP_PX
         val titleLineHeight = probe.getFontMetrics(titleFont).height + 4
         val artistLineHeight = probe.getFontMetrics(metaFont).height + 2
         val brandLineHeight = probe.getFontMetrics(brandFont).height
@@ -405,7 +405,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         wrappedLyrics.forEach { line ->
             cursorY += lyricsMetrics.ascent
             graphics.drawString(line, textX, cursorY)
-            cursorY += lyricsMetrics.descent + lyricsMetrics.leading + 10
+            cursorY += lyricsMetrics.descent + lyricsMetrics.leading + LyricsShareArtworkTintSpec.LYRICS_JVM_LINE_GAP_PX
         }
 
         cursorY += LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX

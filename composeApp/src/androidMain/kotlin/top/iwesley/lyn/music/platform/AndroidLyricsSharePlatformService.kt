@@ -224,12 +224,14 @@ class AndroidLyricsSharePlatformService(
             paint = lyricsPaint,
             widthPx = availableWidth,
             alignment = Layout.Alignment.ALIGN_NORMAL,
+            lineSpacingExtraPx = LyricsShareCardSpec.LYRICS_ANDROID_LINE_GAP_PX,
         )
         val titleLayout = createTextLayout(
             text = model.title.ifBlank { "当前歌曲" },
             paint = titlePaint,
             widthPx = availableWidth,
             alignment = Layout.Alignment.ALIGN_NORMAL,
+            lineSpacingExtraPx = 0f,
         )
         val artistText = model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人"
         val artistLayout = createTextLayout(
@@ -237,6 +239,7 @@ class AndroidLyricsSharePlatformService(
             paint = artistPaint,
             widthPx = availableWidth,
             alignment = Layout.Alignment.ALIGN_NORMAL,
+            lineSpacingExtraPx = 0f,
         )
 
         val contentHeight =
@@ -428,18 +431,21 @@ class AndroidLyricsSharePlatformService(
             paint = lyricsPaint,
             widthPx = availableWidth,
             alignment = Layout.Alignment.ALIGN_NORMAL,
+            lineSpacingExtraPx = LyricsShareArtworkTintSpec.LYRICS_ANDROID_LINE_GAP_PX,
         )
         val titleLayout = createTextLayout(
             text = model.title.ifBlank { "当前歌曲" },
             paint = titlePaint,
             widthPx = availableWidth,
             alignment = Layout.Alignment.ALIGN_NORMAL,
+            lineSpacingExtraPx = 0f,
         )
         val artistLayout = createTextLayout(
             text = model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人",
             paint = artistPaint,
             widthPx = availableWidth,
             alignment = Layout.Alignment.ALIGN_NORMAL,
+            lineSpacingExtraPx = 0f,
         )
         val contentHeight =
             LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
@@ -554,11 +560,12 @@ private fun createTextLayout(
     paint: TextPaint,
     widthPx: Int,
     alignment: Layout.Alignment,
+    lineSpacingExtraPx: Float,
 ): StaticLayout {
     return StaticLayout.Builder.obtain(text, 0, text.length, paint, widthPx)
         .setAlignment(alignment)
         .setIncludePad(false)
-        .setLineSpacing(10f, 1f)
+        .setLineSpacing(lineSpacingExtraPx, 1f)
         .build()
 }
 

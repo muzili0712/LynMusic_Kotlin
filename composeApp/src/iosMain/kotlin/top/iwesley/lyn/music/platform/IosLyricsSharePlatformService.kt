@@ -116,7 +116,7 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         val titleFont = Font(null, LyricsShareCardSpec.TITLE_FONT_SIZE_PX)
         val artistFont = Font(null, LyricsShareCardSpec.META_FONT_SIZE_PX)
         val brandFont = Font(null, LyricsShareCardSpec.BRAND_FONT_SIZE_PX)
-        val lyricsLineHeight = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX + 18f
+        val lyricsLineHeight = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX + LyricsShareCardSpec.LYRICS_IOS_LINE_GAP_PX
         val titleLineHeight = LyricsShareCardSpec.TITLE_FONT_SIZE_PX + 12f
         val artistLineHeight = LyricsShareCardSpec.META_FONT_SIZE_PX + 8f
         val contentHeight =
@@ -272,7 +272,7 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         val titleFont = Font(null, LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX)
         val artistFont = Font(null, LyricsShareArtworkTintSpec.META_FONT_SIZE_PX)
         val brandFont = Font(null, LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX)
-        val lyricsLineHeight = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX + 18f
+        val lyricsLineHeight = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX + LyricsShareArtworkTintSpec.LYRICS_IOS_LINE_GAP_PX
         val titleLineHeight = LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX + 12f
         val artistLineHeight = LyricsShareArtworkTintSpec.META_FONT_SIZE_PX + 8f
         val contentHeight =

@@ -2903,7 +2903,7 @@ private fun LyricsShareNoteCard(
                     artworkBitmap = artworkBitmap,
                     modifier = Modifier.size(92.dp),
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(LyricsShareCardSpec.LYRICS_PREVIEW_LINE_GAP_DP.dp)) {
                     model.lyricsLines.forEach { line ->
                         Text(
                             text = line,
@@ -3042,7 +3042,7 @@ private fun LyricsShareArtworkTintCard(
                         )
                     }
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(LyricsShareArtworkTintSpec.LYRICS_PREVIEW_LINE_GAP_DP.dp)) {
                     model.lyricsLines.forEach { line ->
                         Text(
                             text = line,
