@@ -14,6 +14,7 @@ import top.iwesley.lyn.music.data.repository.sanitizeLrclibQueryTemplate
 import top.iwesley.lyn.music.domain.buildLyricsRequest
 import top.iwesley.lyn.music.domain.parseLyricsPayload
 import top.iwesley.lyn.music.domain.parseLyricsPayloadResult
+import top.iwesley.lyn.music.domain.parseLyricsPayloadResults
 
 class LyricsEngineTest {
 
@@ -156,6 +157,47 @@ class LyricsEngineTest {
     }
 
     @Test
+    fun `json map extractor can expand multiple candidates from array root`() {
+        val config = LyricsSourceConfig(
+            id = "cfg",
+            name = "Mapped",
+            urlTemplate = "https://lyrics.example/search",
+            responseFormat = LyricsResponseFormat.JSON,
+            extractor = "json-map:lyrics=plainLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id",
+        )
+        val payload = """
+            [
+              {
+                "id": "song-1",
+                "trackName": "Blue Sky",
+                "artistName": "Nova",
+                "albumName": "Horizons",
+                "duration": 218.0,
+                "plainLyrics": "hello"
+              },
+              {
+                "id": "song-2",
+                "trackName": "Night Drive",
+                "artistName": "Nova",
+                "albumName": "Horizons",
+                "duration": 221.3,
+                "plainLyrics": "world"
+              }
+            ]
+        """.trimIndent()
+
+        val parsed = parseLyricsPayloadResults(config, payload)
+
+        assertEquals(2, parsed.size)
+        assertEquals("song-1", parsed[0].itemId)
+        assertEquals("Blue Sky", parsed[0].title)
+        assertEquals(218, parsed[0].durationSeconds)
+        assertEquals("song-2", parsed[1].itemId)
+        assertEquals("Night Drive", parsed[1].title)
+        assertEquals(221, parsed[1].durationSeconds)
+    }
+
+    @Test
     fun `default lyrics sources include lrclib synced and plain`() {
         val configs = defaultLyricsSourceConfigs()
 
@@ -164,7 +206,7 @@ class LyricsEngineTest {
         assertEquals(LRCLIB_SYNCED_JSON_MAP_EXTRACTOR, configs[0].extractor)
         assertEquals("lrclib-plain", configs[1].id)
         assertEquals(LRCLIB_PLAIN_JSON_MAP_EXTRACTOR, configs[1].extractor)
-        assertTrue(configs.all { it.urlTemplate == "https://lrclib.net/api/get" })
+        assertTrue(configs.all { it.urlTemplate == "https://lrclib.net/api/search" })
         assertTrue(configs.all { it.queryTemplate == "track_name={title}&artist_name={artist}" })
     }
 

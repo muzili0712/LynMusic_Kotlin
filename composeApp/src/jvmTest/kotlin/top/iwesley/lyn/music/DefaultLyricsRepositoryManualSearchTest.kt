@@ -153,6 +153,64 @@ class DefaultLyricsRepositoryManualSearchTest {
         assertTrue(candidate.document.isSynced)
     }
 
+    @Test
+    fun `manual search expands multiple candidates from one direct json map source`() = runTest {
+        val database = createTestDatabase()
+        database.lyricsSourceConfigDao().upsert(
+            lyricsSourceConfig(
+                id = "source-many",
+                name = "多候选源",
+                priority = 20,
+                urlTemplate = "https://lyrics.example/many",
+                responseFormat = LyricsResponseFormat.JSON,
+                extractor = "json-map:lyrics=plainLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id",
+            ),
+        )
+        val httpClient = FakeLyricsHttpClient(
+            mapOf(
+                "https://lyrics.example/many" to Result.success(
+                    LyricsHttpResponse(
+                        statusCode = 200,
+                        body = """
+                            [
+                              {
+                                "id": "song-1",
+                                "trackName": "别让我哭",
+                                "artistName": "陈升",
+                                "albumName": "魔鬼的情诗",
+                                "duration": 404.16,
+                                "plainLyrics": "第一版歌词"
+                              },
+                              {
+                                "id": "song-2",
+                                "trackName": "别让我哭",
+                                "artistName": "陈升",
+                                "albumName": "魔鬼A春天",
+                                "duration": 402.0,
+                                "plainLyrics": "第二版歌词"
+                              }
+                            ]
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val candidates = repository.searchLyricsCandidates(sampleTrack())
+
+        assertEquals(2, candidates.size)
+        assertEquals(listOf("song-1", "song-2"), candidates.map { it.itemId })
+        assertEquals(listOf("魔鬼的情诗", "魔鬼A春天"), candidates.map { it.albumTitle })
+        assertEquals(listOf(404, 402), candidates.map { it.durationSeconds })
+        assertTrue(candidates.all { !it.document.isSynced })
+    }
+
     private fun createTestDatabase(): LynMusicDatabase {
         val path = Files.createTempFile("lynmusic-lyrics-manual", ".db")
         return buildLynMusicDatabase(

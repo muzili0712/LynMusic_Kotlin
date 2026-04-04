@@ -59,33 +59,43 @@ fun parseLyricsPayload(
     config: LyricsSourceConfig,
     payload: String,
 ): LyricsDocument? {
-    return parseLyricsPayloadResult(config, payload)?.document
+    return parseLyricsPayloadResults(config, payload).firstOrNull()?.document
 }
 
 fun parseLyricsPayloadResult(
     config: LyricsSourceConfig,
     payload: String,
 ): ParsedLyricsPayload? {
+    return parseLyricsPayloadResults(config, payload).firstOrNull()
+}
+
+fun parseLyricsPayloadResults(
+    config: LyricsSourceConfig,
+    payload: String,
+): List<ParsedLyricsPayload> {
     val extracted = when (config.responseFormat) {
-        LyricsResponseFormat.LRC -> ExtractedLyricsPayload(lines = parseLrc(payload))
-        LyricsResponseFormat.TEXT -> ExtractedLyricsPayload(lines = parsePlainText(payload))
-        LyricsResponseFormat.JSON -> parseJsonPayload(config.extractor, payload)
-        LyricsResponseFormat.XML -> ExtractedLyricsPayload(lines = parseXmlPayload(config.extractor, payload))
+        LyricsResponseFormat.LRC -> listOf(ExtractedLyricsPayload(lines = parseLrc(payload)))
+        LyricsResponseFormat.TEXT -> listOf(ExtractedLyricsPayload(lines = parsePlainText(payload)))
+        LyricsResponseFormat.JSON -> parseJsonPayloads(config.extractor, payload)
+        LyricsResponseFormat.XML -> listOf(ExtractedLyricsPayload(lines = parseXmlPayload(config.extractor, payload)))
     }
-    if (extracted.lines.isEmpty()) return null
-    return ParsedLyricsPayload(
-        document = LyricsDocument(
-            lines = extracted.lines,
-            offsetMs = 0L,
-            sourceId = config.id,
-            rawPayload = payload,
-        ),
-        itemId = extracted.itemId,
-        title = extracted.title,
-        artistName = extracted.artistName,
-        albumTitle = extracted.albumTitle,
-        durationSeconds = extracted.durationSeconds,
-    )
+    return extracted.mapNotNull { candidate ->
+        candidate.lines.takeIf { it.isNotEmpty() }?.let { lines ->
+            ParsedLyricsPayload(
+                document = LyricsDocument(
+                    lines = lines,
+                    offsetMs = 0L,
+                    sourceId = config.id,
+                    rawPayload = payload,
+                ),
+                itemId = candidate.itemId,
+                title = candidate.title,
+                artistName = candidate.artistName,
+                albumTitle = candidate.albumTitle,
+                durationSeconds = candidate.durationSeconds,
+            )
+        }
+    }
 }
 
 fun serializeLyricsDocument(document: LyricsDocument): String {
@@ -111,11 +121,11 @@ fun parseCachedLyrics(sourceId: String, rawPayload: String): LyricsDocument? {
     )
 }
 
-private fun parseJsonPayload(extractor: String, payload: String): ExtractedLyricsPayload {
+private fun parseJsonPayloads(extractor: String, payload: String): List<ExtractedLyricsPayload> {
     val root = runCatching { json.parseToJsonElement(payload) }.getOrNull()
-        ?: return ExtractedLyricsPayload(lines = emptyList())
+        ?: return emptyList()
     return when {
-        extractor.startsWith("json-map:") -> parseJsonMappedPayload(
+        extractor.startsWith("json-map:") -> parseJsonMappedPayloads(
             root = root,
             spec = extractor.removePrefix("json-map:"),
         )
@@ -128,7 +138,7 @@ private fun parseJsonPayload(extractor: String, payload: String): ExtractedLyric
             val fields = mapping.split(',').map { it.trim() }
             val timeField = fields.getOrNull(0).orEmpty()
             val textField = fields.getOrNull(1).orEmpty()
-            ExtractedLyricsPayload(
+            listOf(ExtractedLyricsPayload(
                 lines = extractJsonArray(root, arrayPath).mapNotNull { item ->
                     val obj = item as? JsonObject ?: return@mapNotNull null
                     val text = obj[textField]?.jsonPrimitiveContent() ?: return@mapNotNull null
@@ -137,7 +147,7 @@ private fun parseJsonPayload(extractor: String, payload: String): ExtractedLyric
                         text = text,
                     )
                 },
-            )
+            ))
         }
 
         else -> {
@@ -146,15 +156,15 @@ private fun parseJsonPayload(extractor: String, payload: String): ExtractedLyric
                 normalized.isBlank() || normalized == "text" -> root.jsonPrimitiveContent()
                 else -> extractJsonValue(root, normalized)?.jsonPrimitiveContent()
             }.orEmpty()
-            ExtractedLyricsPayload(lines = parseLrc(extracted).ifEmpty { parsePlainText(extracted) })
+            listOf(ExtractedLyricsPayload(lines = parseLrc(extracted).ifEmpty { parsePlainText(extracted) }))
         }
     }
 }
 
-private fun parseJsonMappedPayload(
+private fun parseJsonMappedPayloads(
     root: JsonElement,
     spec: String,
-): ExtractedLyricsPayload {
+): List<ExtractedLyricsPayload> {
     val (rootPath, mappingSpec) = if ('|' in spec) {
         spec.split('|', limit = 2).let { it.firstOrNull().orEmpty() to it.getOrElse(1) { "" } }
     } else {
@@ -172,6 +182,16 @@ private fun parseJsonMappedPayload(
         }
         .toMap()
     val target = rootPath.takeIf { it.isNotBlank() }?.let { extractJsonValue(root, it) } ?: root
+    return when (target) {
+        is JsonArray -> target.map { item -> parseJsonMappedCandidate(item, mappings) }
+        else -> listOf(parseJsonMappedCandidate(target, mappings))
+    }
+}
+
+private fun parseJsonMappedCandidate(
+    target: JsonElement,
+    mappings: Map<String, String>,
+): ExtractedLyricsPayload {
     val lyricsPayload = mappings["lyrics"]
         ?.let { path -> extractJsonValue(target, path)?.jsonPrimitiveContent() }
         .orEmpty()
