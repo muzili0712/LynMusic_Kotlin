@@ -18,29 +18,31 @@ private class AndroidArtworkCacheStore(
     private val directory = File(context.cacheDir, "artwork-cache").apply { mkdirs() }
 
     override suspend fun cache(locator: String, cacheKey: String): String? {
-        val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
-        if (rawTarget.isBlank()) return null
-        val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
-            NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
-        } else {
-            rawTarget
-        }
-        if (target.isBlank()) return null
-        if (target.startsWith("file://", ignoreCase = true)) {
-            return runCatching { File(URI(target)).absolutePath }.getOrNull()
-        }
-        if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
-            return target
-        }
-        val fileName = "${cacheKey.stableHash()}${artworkExtension(target)}"
-        val output = File(directory, fileName)
-        if (output.exists() && output.length() > 0L) {
-            return output.absolutePath
-        }
-        URL(target).openStream().use { input ->
-            output.outputStream().use { out -> input.copyTo(out) }
-        }
-        return output.absolutePath.takeIf { output.length() > 0L }
+        return runCatching {
+            val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
+            if (rawTarget.isBlank()) return@runCatching null
+            val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
+                NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
+            } else {
+                rawTarget
+            }
+            if (target.isBlank()) return@runCatching null
+            if (target.startsWith("file://", ignoreCase = true)) {
+                return@runCatching runCatching { File(URI(target)).absolutePath }.getOrNull()
+            }
+            if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
+                return@runCatching target
+            }
+            val fileName = "${cacheKey.stableHash()}${artworkExtension(target)}"
+            val output = File(directory, fileName)
+            if (output.exists() && output.length() > 0L) {
+                return@runCatching output.absolutePath
+            }
+            URL(target).openStream().use { input ->
+                output.outputStream().use { out -> input.copyTo(out) }
+            }
+            output.absolutePath.takeIf { output.length() > 0L }
+        }.getOrNull()
     }
 }
 

@@ -27,24 +27,24 @@ actual fun rememberPlatformArtworkBitmap(locator: String?): ImageBitmap? {
 }
 
 private suspend fun loadAndroidArtworkBitmap(context: Context, locator: String?): ImageBitmap? = withContext(Dispatchers.IO) {
-    val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
-    if (rawTarget.isBlank()) return@withContext null
-    val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
-        val actualUrl = NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
-        if (actualUrl.isBlank()) return@withContext null
-        val cacheFile = File(context.cacheDir, "artwork-cache").apply { mkdirs() }
-            .resolve("${rawTarget.stableHash()}${artworkExtension(actualUrl)}")
-        if (!cacheFile.exists() || cacheFile.length() <= 0L) {
-            URL(actualUrl).openStream().use { input ->
-                cacheFile.outputStream().use { output -> input.copyTo(output) }
-            }
-        }
-        cacheFile.absolutePath
-    } else {
-        rawTarget
-    }
-    if (target.isBlank()) return@withContext null
     runCatching {
+        val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
+        if (rawTarget.isBlank()) return@runCatching null
+        val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
+            val actualUrl = NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
+            if (actualUrl.isBlank()) return@runCatching null
+            val cacheFile = File(context.cacheDir, "artwork-cache").apply { mkdirs() }
+                .resolve("${rawTarget.stableHash()}${artworkExtension(actualUrl)}")
+            if (!cacheFile.exists() || cacheFile.length() <= 0L) {
+                URL(actualUrl).openStream().use { input ->
+                    cacheFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+            cacheFile.absolutePath
+        } else {
+            rawTarget
+        }
+        if (target.isBlank()) return@runCatching null
         val bitmap = when {
             target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true) ->
                 URL(target).openStream().use { BitmapFactory.decodeStream(it) }

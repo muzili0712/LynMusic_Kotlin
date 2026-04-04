@@ -71,11 +71,11 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
     }
 
     private suspend fun loadArtworkImage(locator: String?): BufferedImage? {
-        val normalized = locator?.trim().orEmpty()
-        if (normalized.isBlank()) return null
-        val target = artworkCacheStore.cache(normalized, normalized).orEmpty()
-        if (target.isBlank()) return null
         return runCatching {
+            val normalized = locator?.trim().orEmpty()
+            if (normalized.isBlank()) return@runCatching null
+            val target = artworkCacheStore.cache(normalized, normalized).orEmpty()
+            if (target.isBlank()) return@runCatching null
             when {
                 target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true) ->
                     URL(target).openStream().use(ImageIO::read)

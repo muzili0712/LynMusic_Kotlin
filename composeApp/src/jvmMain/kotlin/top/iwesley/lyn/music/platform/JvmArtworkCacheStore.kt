@@ -19,30 +19,32 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
     }
 
     override suspend fun cache(locator: String, cacheKey: String): String? {
-        val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
-        if (rawTarget.isBlank()) return null
-        val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
-            NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
-        } else {
-            rawTarget
-        }
-        if (target.isBlank()) return null
-        if (target.startsWith("file://", ignoreCase = true)) {
-            return runCatching { Paths.get(URI(target)).toAbsolutePath().normalize().toString() }.getOrNull()
-        }
-        if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
-            return target
-        }
-        val extension = artworkExtension(target)
-        val fileName = "${cacheKey.stableHash()}$extension"
-        val output = File(directory, fileName)
-        if (output.exists() && output.length() > 0L) {
-            return output.absolutePath
-        }
-        URL(target).openStream().use { input ->
-            Files.copy(input, output.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-        }
-        return output.absolutePath.takeIf { output.length() > 0L }
+        return runCatching {
+            val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
+            if (rawTarget.isBlank()) return@runCatching null
+            val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
+                NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
+            } else {
+                rawTarget
+            }
+            if (target.isBlank()) return@runCatching null
+            if (target.startsWith("file://", ignoreCase = true)) {
+                return@runCatching runCatching { Paths.get(URI(target)).toAbsolutePath().normalize().toString() }.getOrNull()
+            }
+            if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
+                return@runCatching target
+            }
+            val extension = artworkExtension(target)
+            val fileName = "${cacheKey.stableHash()}$extension"
+            val output = File(directory, fileName)
+            if (output.exists() && output.length() > 0L) {
+                return@runCatching output.absolutePath
+            }
+            URL(target).openStream().use { input ->
+                Files.copy(input, output.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+            output.absolutePath.takeIf { output.length() > 0L }
+        }.getOrNull()
     }
 }
 
