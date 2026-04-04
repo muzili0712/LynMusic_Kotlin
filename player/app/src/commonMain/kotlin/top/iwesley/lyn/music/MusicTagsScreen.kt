@@ -532,7 +532,10 @@ private fun MusicTagsTrackRow(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MusicTagsTableCell(track.relativePath.substringAfterLast('/'), 180.dp, fontWeight = FontWeight.SemiBold)
+        MusicTagsTrackFileCell(
+            track = track,
+            width = 180.dp,
+        )
         MusicTagsTableCell(track.relativePath, 220.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         MusicTagsTableCell(rowMetadata?.tagLabel.orEmpty(), 120.dp)
         MusicTagsTableCell(track.title, 170.dp)
@@ -541,6 +544,53 @@ private fun MusicTagsTrackRow(
         MusicTagsTableCell(rowMetadata?.albumArtist.orEmpty(), 160.dp)
         MusicTagsTableCell(track.albumTitle.orEmpty(), 150.dp)
         MusicTagsTableCell(track.discNumber?.toString().orEmpty(), 84.dp)
+    }
+}
+
+@Composable
+private fun MusicTagsTrackFileCell(
+    track: Track,
+    width: androidx.compose.ui.unit.Dp,
+) {
+    val artworkBitmap = rememberPlatformArtworkBitmap(track.artworkLocator)
+    Box(
+        modifier = Modifier.width(width),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (artworkBitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = artworkBitmap,
+                        contentDescription = "歌曲封面",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Icon(
+                        Icons.Rounded.MusicNote,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                    )
+                }
+            }
+            Text(
+                text = track.relativePath.substringAfterLast('/'),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 
