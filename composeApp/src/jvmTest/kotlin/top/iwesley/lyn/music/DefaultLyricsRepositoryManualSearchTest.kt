@@ -126,7 +126,7 @@ class DefaultLyricsRepositoryManualSearchTest {
                                 "trackName": "映射标题",
                                 "artistName": "映射歌手",
                                 "albumName": "映射专辑",
-                                "duration": "201",
+                                "duration": "201.0",
                                 "syncedLyrics": "[00:01.00]第一句\n[00:02.00]第二句"
                               }
                             ]

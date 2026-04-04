@@ -139,7 +139,7 @@ class LyricsEngineTest {
                 "trackName": "Blue Sky",
                 "artistName": "Nova",
                 "albumName": "Horizons",
-                "duration": "218",
+                "duration": "218.0",
                 "syncedLyrics": "[00:01.00]hello\n[00:03.50]world"
               }
             ]

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlin.math.roundToInt
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.LyricsRequest
@@ -181,9 +182,15 @@ private fun parseJsonMappedPayload(
         artistName = mappings["artist"]?.let { path -> extractJsonValue(target, path)?.jsonPrimitiveContent()?.trim()?.takeIf(String::isNotEmpty) },
         albumTitle = mappings["album"]?.let { path -> extractJsonValue(target, path)?.jsonPrimitiveContent()?.trim()?.takeIf(String::isNotEmpty) },
         durationSeconds = mappings["durationSeconds"]?.let { path ->
-            extractJsonValue(target, path)?.jsonPrimitiveContent()?.trim()?.toIntOrNull()
+            extractJsonValue(target, path)?.jsonPrimitiveContent()?.trim()?.toDurationSecondsOrNull()
         },
     )
+}
+
+private fun String.toDurationSecondsOrNull(): Int? {
+    if (isBlank()) return null
+    return toIntOrNull()
+        ?: toDoubleOrNull()?.takeIf { it.isFinite() }?.roundToInt()
 }
 
 private fun parseXmlPayload(extractor: String, payload: String): List<LyricsLine> {
