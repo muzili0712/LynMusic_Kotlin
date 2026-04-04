@@ -1745,7 +1745,7 @@ private fun PlayerLyricsPane(
                                 Int.MAX_VALUE
                             }
                             val targetAlpha = when {
-                                state.highlightedLineIndex < 0 -> 0.92f
+                                state.highlightedLineIndex < 0 -> 0.6f
                                 distance == 0 -> 1f
                                 distance == 1 -> 0.72f
                                 distance == 2 -> 0.5f
