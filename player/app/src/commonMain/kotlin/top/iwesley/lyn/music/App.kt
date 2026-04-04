@@ -1297,6 +1297,7 @@ private fun PlayerOverlay(
     onOpenQueue: () -> Unit,
 ) {
     val track = state.snapshot.currentTrack ?: return
+    val playbackStatusColor = Color.White.copy(alpha = 0.6f)
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF232325),
@@ -1325,11 +1326,11 @@ private fun PlayerOverlay(
                         Icon(
                             playbackModeIcon(state.snapshot.mode),
                             null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                            tint = playbackStatusColor,
                         )
                         Text(
                             modeLabel(state.snapshot.mode),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                            color = playbackStatusColor,
                         )
                     }
                 }
@@ -1616,6 +1617,9 @@ private fun PlayerLyricsPane(
     compact: Boolean = false,
 ) {
     val listState = rememberLazyListState()
+    val lyricsPrimaryTextColor = Color.White
+    val lyricsSecondaryTextColor = Color.White.copy(alpha = 0.6f)
+    val lyricsButtonBorder = BorderStroke(1.dp, Color.White.copy(alpha = 0.32f))
     LaunchedEffect(state.highlightedLineIndex, state.lyrics?.sourceId, state.lyrics?.isSynced) {
         val lyrics = state.lyrics ?: return@LaunchedEffect
         if (!lyrics.isSynced) return@LaunchedEffect
@@ -1645,25 +1649,25 @@ private fun PlayerLyricsPane(
                     state.snapshot.currentDisplayTitle,
                     style = if (compact) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.ExtraBold,
-                    color = Color.White.copy(alpha = 0.96f),
+                    color = lyricsPrimaryTextColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}    来源：${track.sourceId.substringBefore('-').uppercase()}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                    color = lyricsSecondaryTextColor,
                     maxLines = if (compact) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     track.relativePath,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f),
+                    color = lyricsSecondaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     "格式：${trackDisplayFormat(track)}    大小：${formatTrackSize(track.sizeBytes)}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.70f),
+                    color = lyricsSecondaryTextColor,
                     maxLines = if (compact) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1677,7 +1681,7 @@ private fun PlayerLyricsPane(
                         "正在请求歌词...",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White.copy(alpha = 0.88f),
+                        color = lyricsSecondaryTextColor,
                     )
                     Spacer(Modifier.width(10.dp))
                 }
@@ -1687,14 +1691,29 @@ private fun PlayerLyricsPane(
                         onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
                         enabled = state.lyrics != null && !state.isLyricsLoading,
                         shape = RoundedCornerShape(18.dp),
+                        border = lyricsButtonBorder,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = lyricsSecondaryTextColor,
+                            disabledContentColor = lyricsSecondaryTextColor.copy(alpha = 0.45f),
+                        ),
                     ) {
                         Text("分享歌词")
                     }
                     OutlinedButton(
                         onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
                         shape = RoundedCornerShape(18.dp),
+                        border = lyricsButtonBorder,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = lyricsSecondaryTextColor,
+                            disabledContentColor = lyricsSecondaryTextColor.copy(alpha = 0.45f),
+                        ),
                     ) {
-                        Icon(Icons.Rounded.Tune, null, modifier = Modifier.size(16.dp))
+                        Icon(
+                            Icons.Rounded.Tune,
+                            null,
+                            modifier = Modifier.size(16.dp),
+                            tint = lyricsSecondaryTextColor,
+                        )
                         Spacer(Modifier.width(6.dp))
                         Text("手动搜索")
                     }
@@ -1742,9 +1761,9 @@ private fun PlayerLyricsPane(
                             val animatedScale by animateFloatAsState(targetValue = targetScale)
                             val animatedColor by animateColorAsState(
                                 targetValue = if (index == state.highlightedLineIndex) {
-                                    Color.White.copy(alpha = 0.96f)
+                                    lyricsPrimaryTextColor
                                 } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+                                    lyricsPrimaryTextColor
                                 },
                             )
                             Text(
