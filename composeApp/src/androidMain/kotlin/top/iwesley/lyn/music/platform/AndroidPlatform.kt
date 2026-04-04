@@ -54,6 +54,7 @@ import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildSambaLocator
 import top.iwesley.lyn.music.core.model.debug
@@ -118,6 +119,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
             audioTagGateway = AndroidAudioTagGateway(activity.applicationContext),
+            audioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
             logger = logger,
         ),
     )
@@ -247,6 +249,8 @@ private class AndroidAudioTagGateway(
     override suspend fun canEdit(track: Track): Boolean {
         return resolveAndroidLocalTrackUri(track.mediaLocator) != null
     }
+
+    override suspend fun canWrite(track: Track): Boolean = false
 
     override suspend fun read(track: Track): Result<AudioTagSnapshot> {
         val uri = resolveAndroidLocalTrackUri(track.mediaLocator)

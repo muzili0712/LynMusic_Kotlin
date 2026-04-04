@@ -47,6 +47,37 @@ class DefaultPlaybackRepository(
             restoreQueue()
         }
         scope.launch {
+            database.trackDao().observeAll().collect { entities ->
+                val tracksById = entities.associateBy { it.id }
+                var snapshotChanged = false
+                var currentTrackChanged = false
+                mutableSnapshot.update { snapshot ->
+                    if (snapshot.queue.isEmpty()) return@update snapshot
+                    val updatedQueue = snapshot.queue.mapIndexed { index, track ->
+                        val updated = tracksById[track.id]?.toDomain() ?: track
+                        if (updated != track) {
+                            snapshotChanged = true
+                            if (index == snapshot.currentIndex) {
+                                currentTrackChanged = true
+                            }
+                        }
+                        updated
+                    }
+                    if (!snapshotChanged) return@update snapshot
+                    snapshot.copy(
+                        queue = updatedQueue,
+                        metadataTitle = if (currentTrackChanged) null else snapshot.metadataTitle,
+                        metadataArtistName = if (currentTrackChanged) null else snapshot.metadataArtistName,
+                        metadataAlbumTitle = if (currentTrackChanged) null else snapshot.metadataAlbumTitle,
+                        metadataArtworkLocator = if (currentTrackChanged) null else snapshot.metadataArtworkLocator,
+                    )
+                }
+                if (snapshotChanged) {
+                    persistSnapshot()
+                }
+            }
+        }
+        scope.launch {
             gateway.state.collect { gatewayState ->
                 val completionChanged = gatewayState.completionCount > observedCompletionCount
                 observedCompletionCount = gatewayState.completionCount

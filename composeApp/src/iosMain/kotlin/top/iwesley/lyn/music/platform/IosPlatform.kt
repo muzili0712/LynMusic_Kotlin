@@ -37,6 +37,7 @@ import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
@@ -105,6 +106,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createIosArtworkCacheStore(),
             audioTagGateway = UnsupportedAudioTagGateway,
+            audioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
             logger = ConsoleDiagnosticLogger(enabled = true, label = "iOS"),
         ),
     )

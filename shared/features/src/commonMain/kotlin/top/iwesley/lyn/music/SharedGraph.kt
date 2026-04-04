@@ -6,6 +6,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.AudioTagGateway
+import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
@@ -13,11 +14,13 @@ import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
 import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
 import top.iwesley.lyn.music.data.repository.LyricsRepository
+import top.iwesley.lyn.music.data.repository.RoomMusicTagsRepository
 import top.iwesley.lyn.music.data.repository.RoomFavoritesRepository
 import top.iwesley.lyn.music.data.repository.RoomImportSourceRepository
 import top.iwesley.lyn.music.data.repository.RoomLibraryRepository
@@ -27,6 +30,7 @@ import top.iwesley.lyn.music.feature.favorites.FavoritesStore
 import top.iwesley.lyn.music.feature.importing.ImportStore
 import top.iwesley.lyn.music.feature.library.LibraryStore
 import top.iwesley.lyn.music.feature.settings.SettingsStore
+import top.iwesley.lyn.music.feature.tags.MusicTagsStore
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 
 data class SharedRuntimeServices(
@@ -38,6 +42,7 @@ data class SharedRuntimeServices(
         override suspend fun cache(locator: String, cacheKey: String): String? = locator
     },
     val audioTagGateway: AudioTagGateway = UnsupportedAudioTagGateway,
+    val audioTagEditorPlatformService: AudioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
     val logger: DiagnosticLogger = NoopDiagnosticLogger,
 )
 
@@ -46,6 +51,7 @@ class SharedGraph(
     val database: LynMusicDatabase,
     val libraryStore: LibraryStore,
     val favoritesStore: FavoritesStore,
+    val musicTagsStore: MusicTagsStore,
     val importStore: ImportStore,
     val settingsStore: SettingsStore,
     val lyricsRepository: LyricsRepository,
@@ -101,6 +107,10 @@ fun buildSharedGraph(
         httpClient = runtimeServices.lyricsHttpClient,
         logger = runtimeServices.logger,
     )
+    val musicTagsRepository = RoomMusicTagsRepository(
+        database = database,
+        audioTagGateway = runtimeServices.audioTagGateway,
+    )
     scope.launch {
         settingsRepository.ensureDefaults()
     }
@@ -109,6 +119,11 @@ fun buildSharedGraph(
         database = database,
         libraryStore = LibraryStore(libraryRepository, importSourceRepository, scope),
         favoritesStore = FavoritesStore(favoritesRepository, importSourceRepository, scope),
+        musicTagsStore = MusicTagsStore(
+            repository = musicTagsRepository,
+            editorPlatformService = runtimeServices.audioTagEditorPlatformService,
+            storeScope = scope,
+        ),
         importStore = ImportStore(importSourceRepository, platform.capabilities, scope),
         settingsStore = SettingsStore(settingsRepository, scope),
         lyricsRepository = lyricsRepository,

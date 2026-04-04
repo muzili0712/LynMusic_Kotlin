@@ -82,6 +82,8 @@ object AndroidAudioTagReader {
                     ?: displayName?.substringBeforeLast('.').orEmpty(),
                 artistName = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST),
                 albumTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
+                year = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)?.toIntOrNull(),
+                genre = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE),
                 trackNumber = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
                     ?.substringBefore('/')
                     ?.toIntOrNull(),

@@ -15,6 +15,7 @@ import java.nio.file.Path
 import java.util.ArrayDeque
 import java.util.Properties
 import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.isRegularFile
@@ -33,6 +34,7 @@ import top.iwesley.lyn.music.SharedRuntimeServices
 import top.iwesley.lyn.music.buildPlayerAppComponent
 import top.iwesley.lyn.music.buildSharedGraph
 import top.iwesley.lyn.music.core.model.AudioTagGateway
+import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.ConsoleDiagnosticLogger
@@ -54,6 +56,7 @@ import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildSambaLocator
 import top.iwesley.lyn.music.core.model.debug
@@ -127,6 +130,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createJvmArtworkCacheStore(),
             audioTagGateway = JvmAudioTagGateway(logger),
+            audioTagEditorPlatformService = JvmAudioTagEditorPlatformService(),
             logger = logger,
         ),
     )
@@ -199,6 +203,10 @@ private class JvmAudioTagGateway(
         return resolveJvmLocalTrackPath(track.mediaLocator) != null
     }
 
+    override suspend fun canWrite(track: Track): Boolean {
+        return resolveJvmLocalTrackPath(track.mediaLocator) != null
+    }
+
     override suspend fun read(track: Track): Result<AudioTagSnapshot> {
         return runCatching {
             val path = resolveJvmLocalTrackPath(track.mediaLocator)
@@ -212,7 +220,41 @@ private class JvmAudioTagGateway(
     }
 
     override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> {
-        return Result.failure(IllegalStateException("桌面音频标签写回将在后续阶段实现。"))
+        return runCatching {
+            val path = resolveJvmLocalTrackPath(track.mediaLocator)
+                ?: error("当前仅支持桌面本地文件的音频标签写回。")
+            JvmAudioTagEditor.writeSnapshot(
+                path = path,
+                relativePath = track.relativePath.ifBlank { path.fileName?.toString().orEmpty() },
+                patch = patch,
+                logger = logger,
+            )
+        }
+    }
+}
+
+private class JvmAudioTagEditorPlatformService : AudioTagEditorPlatformService {
+    override suspend fun pickArtworkBytes(): Result<ByteArray?> {
+        return runCatching {
+            val chooser = JFileChooser().apply {
+                fileSelectionMode = JFileChooser.FILES_ONLY
+                isAcceptAllFileFilterUsed = true
+                fileFilter = FileNameExtensionFilter(
+                    "图片文件",
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "webp",
+                    "bmp",
+                    "gif",
+                )
+            }
+            if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) {
+                null
+            } else {
+                chooser.selectedFile?.toPath()?.let(Files::readAllBytes)
+            }
+        }
     }
 }
 

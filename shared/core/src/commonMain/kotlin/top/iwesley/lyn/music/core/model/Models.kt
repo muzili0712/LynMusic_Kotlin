@@ -5,6 +5,7 @@ import kotlin.concurrent.Volatile
 enum class AppTab {
     Library,
     Favorites,
+    Tags,
     Sources,
     Settings,
 }
@@ -137,6 +138,13 @@ data class AudioTagSnapshot(
     val title: String,
     val artistName: String? = null,
     val albumTitle: String? = null,
+    val albumArtist: String? = null,
+    val year: Int? = null,
+    val genre: String? = null,
+    val comment: String? = null,
+    val composer: String? = null,
+    val isCompilation: Boolean = false,
+    val tagLabel: String? = null,
     val trackNumber: Int? = null,
     val discNumber: Int? = null,
     val embeddedLyrics: String? = null,
@@ -147,6 +155,12 @@ data class AudioTagPatch(
     val title: String? = null,
     val artistName: String? = null,
     val albumTitle: String? = null,
+    val albumArtist: String? = null,
+    val year: Int? = null,
+    val genre: String? = null,
+    val comment: String? = null,
+    val composer: String? = null,
+    val isCompilation: Boolean? = null,
     val trackNumber: Int? = null,
     val discNumber: Int? = null,
     val embeddedLyrics: String? = null,
@@ -336,6 +350,7 @@ interface ArtworkCacheStore {
 
 interface AudioTagGateway {
     suspend fun canEdit(track: Track): Boolean
+    suspend fun canWrite(track: Track): Boolean
     suspend fun read(track: Track): Result<AudioTagSnapshot>
     suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot>
 }
@@ -344,10 +359,21 @@ object UnsupportedAudioTagGateway : AudioTagGateway {
     private val error = IllegalStateException("当前平台暂未实现音频标签编辑。")
 
     override suspend fun canEdit(track: Track): Boolean = false
+    override suspend fun canWrite(track: Track): Boolean = false
 
     override suspend fun read(track: Track): Result<AudioTagSnapshot> = Result.failure(error)
 
     override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> = Result.failure(error)
+}
+
+interface AudioTagEditorPlatformService {
+    suspend fun pickArtworkBytes(): Result<ByteArray?>
+}
+
+object UnsupportedAudioTagEditorPlatformService : AudioTagEditorPlatformService {
+    private val error = IllegalStateException("当前平台暂不支持选择封面。")
+
+    override suspend fun pickArtworkBytes(): Result<ByteArray?> = Result.failure(error)
 }
 
 interface NavidromeLocatorResolver {

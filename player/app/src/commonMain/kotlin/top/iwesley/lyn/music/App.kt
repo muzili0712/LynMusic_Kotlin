@@ -171,6 +171,9 @@ import top.iwesley.lyn.music.feature.player.PlayerStore
 import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.feature.settings.SettingsStore
+import top.iwesley.lyn.music.feature.tags.MusicTagsIntent
+import top.iwesley.lyn.music.feature.tags.MusicTagsState
+import top.iwesley.lyn.music.feature.tags.MusicTagsStore
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.LynMusicTheme
@@ -180,6 +183,7 @@ class LynMusicAppComponent(
     val platform: PlatformDescriptor,
     val libraryStore: LibraryStore,
     val favoritesStore: FavoritesStore,
+    val musicTagsStore: MusicTagsStore,
     val importStore: ImportStore,
     val playerStore: PlayerStore,
     val settingsStore: SettingsStore,
@@ -211,6 +215,7 @@ fun buildPlayerAppComponent(
         platform = sharedGraph.platform,
         libraryStore = sharedGraph.libraryStore,
         favoritesStore = sharedGraph.favoritesStore,
+        musicTagsStore = sharedGraph.musicTagsStore,
         importStore = sharedGraph.importStore,
         playerStore = PlayerStore(
             playbackRepository = playbackRepository,
@@ -234,6 +239,7 @@ fun App(component: LynMusicAppComponent) {
 
     val libraryState by component.libraryStore.state.collectAsState()
     val favoritesState by component.favoritesStore.state.collectAsState()
+    val musicTagsState by component.musicTagsStore.state.collectAsState()
     val importState by component.importStore.state.collectAsState()
     val playerState by component.playerStore.state.collectAsState()
     val settingsState by component.settingsStore.state.collectAsState()
@@ -264,11 +270,13 @@ fun App(component: LynMusicAppComponent) {
                         platform = component.platform,
                         libraryState = libraryState,
                         favoritesState = favoritesState,
+                        musicTagsState = musicTagsState,
                         importState = importState,
                         playerState = playerState,
                         settingsState = settingsState,
                         onLibraryIntent = component.libraryStore::dispatch,
                         onFavoritesIntent = component.favoritesStore::dispatch,
+                        onMusicTagsIntent = component.musicTagsStore::dispatch,
                         onImportIntent = component.importStore::dispatch,
                         onPlayerIntent = component.playerStore::dispatch,
                         onSettingsIntent = component.settingsStore::dispatch,
@@ -280,11 +288,13 @@ fun App(component: LynMusicAppComponent) {
                         platform = component.platform,
                         libraryState = libraryState,
                         favoritesState = favoritesState,
+                        musicTagsState = musicTagsState,
                         importState = importState,
                         playerState = playerState,
                         settingsState = settingsState,
                         onLibraryIntent = component.libraryStore::dispatch,
                         onFavoritesIntent = component.favoritesStore::dispatch,
+                        onMusicTagsIntent = component.musicTagsStore::dispatch,
                         onImportIntent = component.importStore::dispatch,
                         onPlayerIntent = component.playerStore::dispatch,
                         onSettingsIntent = component.settingsStore::dispatch,
@@ -328,11 +338,13 @@ private fun MobileShell(
     platform: PlatformDescriptor,
     libraryState: LibraryState,
     favoritesState: FavoritesState,
+    musicTagsState: MusicTagsState,
     importState: ImportState,
     playerState: PlayerState,
     settingsState: SettingsState,
     onLibraryIntent: (LibraryIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
+    onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
@@ -359,6 +371,7 @@ private fun MobileShell(
                     listOf(
                         Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
                         Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
+                        Triple(AppTab.Tags, Icons.Rounded.Tune, "音乐标签"),
                         Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
                         Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
                     ).forEach { (tab, icon, label) ->
@@ -381,12 +394,15 @@ private fun MobileShell(
             HeroHeader(platform = platform, snapshot = playerState.snapshot)
             TabContent(
                 selectedTab = selectedTab,
+                platform = platform,
                 libraryState = libraryState,
                 favoritesState = favoritesState,
+                musicTagsState = musicTagsState,
                 importState = importState,
                 settingsState = settingsState,
                 onLibraryIntent = onLibraryIntent,
                 onFavoritesIntent = onFavoritesIntent,
+                onMusicTagsIntent = onMusicTagsIntent,
                 onImportIntent = onImportIntent,
                 onPlayerIntent = onPlayerIntent,
                 onSettingsIntent = onSettingsIntent,
@@ -403,11 +419,13 @@ private fun DesktopShell(
     platform: PlatformDescriptor,
     libraryState: LibraryState,
     favoritesState: FavoritesState,
+    musicTagsState: MusicTagsState,
     importState: ImportState,
     playerState: PlayerState,
     settingsState: SettingsState,
     onLibraryIntent: (LibraryIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
+    onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
@@ -433,12 +451,15 @@ private fun DesktopShell(
         ) {
             TabContent(
                 selectedTab = selectedTab,
+                platform = platform,
                 libraryState = libraryState,
                 favoritesState = favoritesState,
+                musicTagsState = musicTagsState,
                 importState = importState,
                 settingsState = settingsState,
                 onLibraryIntent = onLibraryIntent,
                 onFavoritesIntent = onFavoritesIntent,
+                onMusicTagsIntent = onMusicTagsIntent,
                 onImportIntent = onImportIntent,
                 onPlayerIntent = onPlayerIntent,
                 onSettingsIntent = onSettingsIntent,
@@ -478,6 +499,7 @@ private fun DesktopNav(
             listOf(
                 Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
                 Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
+                Triple(AppTab.Tags, Icons.Rounded.Tune, "音乐标签"),
                 Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
                 Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
             ).forEach { (tab, icon, label) ->
@@ -558,12 +580,15 @@ private fun HeroHeader(
 @Composable
 private fun TabContent(
     selectedTab: AppTab,
+    platform: PlatformDescriptor,
     libraryState: LibraryState,
     favoritesState: FavoritesState,
+    musicTagsState: MusicTagsState,
     importState: ImportState,
     settingsState: SettingsState,
     onLibraryIntent: (LibraryIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
+    onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
@@ -583,6 +608,13 @@ private fun TabContent(
             state = favoritesState,
             onFavoritesIntent = onFavoritesIntent,
             onPlayerIntent = onPlayerIntent,
+            modifier = modifier,
+        )
+
+        AppTab.Tags -> MusicTagsTab(
+            platform = platform,
+            state = musicTagsState,
+            onMusicTagsIntent = onMusicTagsIntent,
             modifier = modifier,
         )
 

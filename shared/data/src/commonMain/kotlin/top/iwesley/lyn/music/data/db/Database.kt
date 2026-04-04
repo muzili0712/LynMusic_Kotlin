@@ -204,6 +204,34 @@ interface TrackDao {
     @Query("UPDATE track SET artworkLocator = :artworkLocator WHERE id = :trackId")
     suspend fun updateArtworkLocator(trackId: String, artworkLocator: String?)
 
+    @Query(
+        """
+        UPDATE track
+        SET title = :title,
+            artistId = :artistId,
+            artistName = :artistName,
+            albumId = :albumId,
+            albumTitle = :albumTitle,
+            trackNumber = :trackNumber,
+            discNumber = :discNumber,
+            artworkLocator = :artworkLocator,
+            modifiedAt = :modifiedAt
+        WHERE id = :trackId
+        """,
+    )
+    suspend fun updateLibraryMetadata(
+        trackId: String,
+        title: String,
+        artistId: String?,
+        artistName: String?,
+        albumId: String?,
+        albumTitle: String?,
+        trackNumber: Int?,
+        discNumber: Int?,
+        artworkLocator: String?,
+        modifiedAt: Long,
+    )
+
     @Upsert
     suspend fun upsertAll(items: List<TrackEntity>)
 }

@@ -8,6 +8,7 @@ import java.nio.file.Path
 import kotlin.io.path.name
 import kotlin.io.path.pathString
 import org.jaudiotagger.audio.AudioFileIO
+import org.jaudiotagger.audio.AudioFile
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.Tag
 import org.jaudiotagger.tag.id3.AbstractID3v2Tag
@@ -49,16 +50,24 @@ object JvmAudioTagReader {
         relativePath: String,
         logger: DiagnosticLogger = NoopDiagnosticLogger,
     ): AudioTagSnapshot {
-        val candidate = read(path, relativePath, logger)
-        return AudioTagSnapshot(
-            title = candidate.title,
-            artistName = candidate.artistName,
-            albumTitle = candidate.albumTitle,
-            trackNumber = candidate.trackNumber,
-            discNumber = candidate.discNumber,
-            embeddedLyrics = candidate.embeddedLyrics,
-            artworkLocator = candidate.artworkLocator,
-        )
+        val fallbackTitle = relativePath.fallbackTitle()
+        return runCatching {
+            val audioFile = AudioFileIO.read(path.toFile())
+            buildSnapshot(
+                audioFile = audioFile,
+                path = path,
+                relativePath = relativePath,
+                fallbackTitle = fallbackTitle,
+            )
+        }.onFailure {
+            logger.warn(METADATA_LOG_TAG) {
+                "snapshot-fallback path=$relativePath reason=${it.message ?: it::class.simpleName}"
+            }
+        }.getOrElse {
+            AudioTagSnapshot(
+                title = fallbackTitle,
+            )
+        }
     }
 
     fun requiredRemoteSnippetBytes(path: Path, relativePath: String): Long? {
@@ -171,6 +180,33 @@ object JvmAudioTagReader {
         )
     }
 
+    private fun buildSnapshot(
+        audioFile: AudioFile,
+        path: Path,
+        relativePath: String,
+        fallbackTitle: String,
+    ): AudioTagSnapshot {
+        val tag = audioFile.tag
+        return AudioTagSnapshot(
+            title = tag.firstNonBlank(FieldKey.TITLE) ?: fallbackTitle,
+            artistName = tag.firstNonBlank(FieldKey.ARTIST),
+            albumTitle = tag.firstNonBlank(FieldKey.ALBUM),
+            albumArtist = tag.firstNonBlank(FieldKey.ALBUM_ARTIST),
+            year = tag.firstInt(FieldKey.YEAR, FieldKey.ALBUM_YEAR),
+            genre = tag.firstNonBlank(FieldKey.GENRE),
+            comment = tag.firstNonBlank(FieldKey.COMMENT),
+            composer = tag.firstNonBlank(FieldKey.COMPOSER),
+            isCompilation = tag.firstBoolean(FieldKey.IS_COMPILATION),
+            tagLabel = tagLabelFor(audioFile),
+            trackNumber = tag.firstInt(FieldKey.TRACK),
+            discNumber = tag.firstInt(FieldKey.DISC_NO),
+            embeddedLyrics = tag.firstLyrics(),
+            artworkLocator = tag?.firstArtwork?.binaryData?.takeIf { it.isNotEmpty() }?.let { bytes ->
+                storeArtwork(path, bytes)
+            },
+        )
+    }
+
     private fun storeArtwork(path: Path, bytes: ByteArray): String {
         val fileName = buildString {
             append(path.toAbsolutePath().normalize().toString().hashCode().toUInt().toString(16))
@@ -200,11 +236,20 @@ private fun Tag?.firstNonBlank(vararg keys: FieldKey): String? {
     }
 }
 
-private fun Tag?.firstInt(key: FieldKey): Int? {
-    return this?.getFirst(key)
-        ?.trim()
-        ?.substringBefore('/')
-        ?.toIntOrNull()
+private fun Tag?.firstInt(vararg keys: FieldKey): Int? {
+    val current = this ?: return null
+    return keys.firstNotNullOfOrNull { key ->
+        current.getFirst(key)
+            ?.trim()
+            ?.substringBefore('/')
+            ?.substringBefore('.')
+            ?.toIntOrNull()
+    }
+}
+
+private fun Tag?.firstBoolean(key: FieldKey): Boolean {
+    val value = this?.getFirst(key)?.trim()?.lowercase().orEmpty()
+    return value == "1" || value == "true" || value == "yes"
 }
 
 private fun Tag?.firstLyrics(): String? {
@@ -251,3 +296,13 @@ private fun String?.toLyricsPreview(maxLength: Int = 80): String {
 }
 
 private const val METADATA_LOG_TAG = "Metadata"
+
+private fun tagLabelFor(audioFile: AudioFile): String? {
+    val tag = audioFile.tag ?: return null
+    return when (tag) {
+        is ID3v24Tag -> "ID3v2.4"
+        is ID3v23Tag -> "ID3v2.3"
+        is ID3v22Tag -> "ID3v2.2"
+        else -> tag::class.simpleName?.removeSuffix("Tag")
+    }
+}
