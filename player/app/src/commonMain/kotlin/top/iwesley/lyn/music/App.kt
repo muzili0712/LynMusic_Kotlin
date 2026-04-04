@@ -2567,6 +2567,12 @@ private fun PlayerBottomControls(
     onPlayerIntent: (PlayerIntent) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val modeButtonSize = 42.dp
+    val modeIconSize = 22.dp
+    val skipButtonSize = 45.dp
+    val skipIconSize = 27.dp
+    val playButtonSize = 60.dp
+    val playIconSize = 42.dp
     Box(modifier = Modifier.fillMaxWidth()) {
         Card(
             modifier = Modifier
@@ -2637,27 +2643,27 @@ private fun PlayerBottomControls(
                                 horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(28.dp)) {
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(modeButtonSize)) {
                                     Icon(
                                         playbackModeIcon(snapshot.mode),
                                         null,
-                                        modifier = Modifier.size(15.dp),
+                                        modifier = Modifier.size(modeIconSize),
                                         tint = Color.White.copy(alpha = 0.92f),
                                     )
                                 }
-                                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(30.dp)) {
-                                    Icon(Icons.Rounded.SkipPrevious, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(skipButtonSize)) {
+                                    Icon(Icons.Rounded.SkipPrevious, null, modifier = Modifier.size(skipIconSize), tint = Color.White.copy(alpha = 0.92f))
                                 }
-                                IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(40.dp)) {
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(playButtonSize)) {
                                     Icon(
                                         if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
                                         null,
-                                        modifier = Modifier.size(28.dp),
+                                        modifier = Modifier.size(playIconSize),
                                         tint = Color.White.copy(alpha = 0.96f),
                                     )
                                 }
-                                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(30.dp)) {
-                                    Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(skipButtonSize)) {
+                                    Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(skipIconSize), tint = Color.White.copy(alpha = 0.92f))
                                 }
                             }
                             Row(
@@ -2686,27 +2692,27 @@ private fun PlayerBottomControls(
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(28.dp)) {
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(modeButtonSize)) {
                                 Icon(
                                     playbackModeIcon(snapshot.mode),
                                     null,
-                                    modifier = Modifier.size(15.dp),
+                                    modifier = Modifier.size(modeIconSize),
                                     tint = Color.White.copy(alpha = 0.92f),
                                 )
                             }
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(30.dp)) {
-                                Icon(Icons.Rounded.SkipPrevious, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(skipButtonSize)) {
+                                Icon(Icons.Rounded.SkipPrevious, null, modifier = Modifier.size(skipIconSize), tint = Color.White.copy(alpha = 0.92f))
                             }
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(40.dp)) {
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(playButtonSize)) {
                                 Icon(
                                     if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
                                     null,
-                                    modifier = Modifier.size(28.dp),
+                                    modifier = Modifier.size(playIconSize),
                                     tint = Color.White.copy(alpha = 0.96f),
                                 )
                             }
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(30.dp)) {
-                                Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.92f))
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(skipButtonSize)) {
+                                Icon(Icons.Rounded.SkipNext, null, modifier = Modifier.size(skipIconSize), tint = Color.White.copy(alpha = 0.92f))
                             }
                             QueueToggleButton(
                                 onClick = onOpenQueue,
