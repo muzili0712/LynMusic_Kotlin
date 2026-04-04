@@ -1270,7 +1270,10 @@ private fun MiniPlayerBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        VinylPlaceholder(vinylSize = 50.dp)
+        VinylPlaceholder(
+            vinylSize = 50.dp,
+            artworkLocator = state.snapshot.currentDisplayArtworkLocator,
+        )
         Column(modifier = Modifier.weight(1f)) {
             Text(state.snapshot.currentDisplayTitle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(state.snapshot.currentDisplayArtistName ?: "未知艺人", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
