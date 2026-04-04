@@ -108,6 +108,35 @@ class MusicTagsStoreTest {
     }
 
     @Test
+    fun `embedded lyrics field participates in draft save and reset`() = runTest {
+        val track = sampleTrack()
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(track),
+            snapshots = mapOf(track.id to sampleSnapshot(embeddedLyrics = "旧歌词")),
+        )
+        val store = createStore(repository, testScheduler)
+
+        advanceUntilIdle()
+        assertEquals("旧歌词", store.state.value.draft.embeddedLyrics)
+
+        store.dispatch(MusicTagsIntent.EmbeddedLyricsChanged("新的第一行\n新的第二行"))
+        advanceUntilIdle()
+        assertTrue(store.state.value.isDirty)
+
+        store.dispatch(MusicTagsIntent.ResetDraft)
+        advanceUntilIdle()
+        assertEquals("旧歌词", store.state.value.draft.embeddedLyrics)
+
+        store.dispatch(MusicTagsIntent.EmbeddedLyricsChanged("新的第一行\n新的第二行"))
+        store.dispatch(MusicTagsIntent.Save)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("新的第一行\n新的第二行", state.draft.embeddedLyrics)
+        assertFalse(state.isDirty)
+    }
+
+    @Test
     fun `refresh selected reloads track metadata from repository`() = runTest {
         val track = sampleTrack()
         val refreshedSnapshot = sampleSnapshot(
@@ -270,6 +299,7 @@ private class FakeMusicTagsRepository(
             genre = patch.genre ?: snapshot.genre,
             comment = patch.comment ?: snapshot.comment,
             composer = patch.composer ?: snapshot.composer,
+            embeddedLyrics = patch.embeddedLyrics ?: snapshot.embeddedLyrics,
             isCompilation = patch.isCompilation ?: snapshot.isCompilation,
             trackNumber = patch.trackNumber ?: snapshot.trackNumber,
             discNumber = patch.discNumber ?: snapshot.discNumber,
@@ -320,6 +350,7 @@ private fun sampleSnapshot(
     albumTitle: String = "静茹 & 情歌",
     trackNumber: Int = 1,
     discNumber: Int = 1,
+    embeddedLyrics: String? = null,
     artworkLocator: String? = "/tmp/artwork.png",
 ): AudioTagSnapshot {
     return AudioTagSnapshot(
@@ -335,6 +366,7 @@ private fun sampleSnapshot(
         tagLabel = "ID3v2.3",
         trackNumber = trackNumber,
         discNumber = discNumber,
+        embeddedLyrics = embeddedLyrics,
         artworkLocator = artworkLocator,
     )
 }

@@ -444,6 +444,13 @@ private fun MusicTagsEditorPane(
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.ComposerChanged(it)) },
                     )
+                    MusicTagsField(
+                        label = "嵌入歌词",
+                        value = state.draft.embeddedLyrics,
+                        readOnly = readOnly,
+                        onValueChange = { onMusicTagsIntent(MusicTagsIntent.EmbeddedLyricsChanged(it)) },
+                        minLines = 8,
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,

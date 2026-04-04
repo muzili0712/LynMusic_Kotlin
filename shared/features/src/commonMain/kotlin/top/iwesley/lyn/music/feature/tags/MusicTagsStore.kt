@@ -26,6 +26,7 @@ data class MusicTagsDraft(
     val albumArtist: String = "",
     val composer: String = "",
     val discNumber: String = "",
+    val embeddedLyrics: String = "",
     val isCompilation: Boolean = false,
     val artworkLocator: String? = null,
     val pendingArtworkBytes: ByteArray? = null,
@@ -68,6 +69,7 @@ sealed interface MusicTagsIntent {
     data class AlbumArtistChanged(val value: String) : MusicTagsIntent
     data class ComposerChanged(val value: String) : MusicTagsIntent
     data class DiscNumberChanged(val value: String) : MusicTagsIntent
+    data class EmbeddedLyricsChanged(val value: String) : MusicTagsIntent
     data class CompilationChanged(val value: Boolean) : MusicTagsIntent
     data object PickArtwork : MusicTagsIntent
     data object ClearArtwork : MusicTagsIntent
@@ -167,6 +169,7 @@ class MusicTagsStore(
             is MusicTagsIntent.AlbumArtistChanged -> updateDraft { copy(albumArtist = intent.value) }
             is MusicTagsIntent.ComposerChanged -> updateDraft { copy(composer = intent.value) }
             is MusicTagsIntent.DiscNumberChanged -> updateDraft { copy(discNumber = intent.value) }
+            is MusicTagsIntent.EmbeddedLyricsChanged -> updateDraft { copy(embeddedLyrics = intent.value) }
             is MusicTagsIntent.CompilationChanged -> updateDraft { copy(isCompilation = intent.value) }
         }
     }
@@ -408,6 +411,7 @@ private fun AudioTagSnapshot.toDraft(): MusicTagsDraft {
         albumArtist = albumArtist.orEmpty(),
         composer = composer.orEmpty(),
         discNumber = discNumber?.toString().orEmpty(),
+        embeddedLyrics = embeddedLyrics.orEmpty(),
         isCompilation = isCompilation,
         artworkLocator = artworkLocator,
         pendingArtworkBytes = null,
@@ -432,6 +436,7 @@ private fun MusicTagsDraft.toPatch(): AudioTagPatch {
         genre = genre.trim().ifBlank { null },
         comment = comment.trim().ifBlank { null },
         composer = composer.trim().ifBlank { null },
+        embeddedLyrics = embeddedLyrics.trimEnd().ifBlank { null },
         isCompilation = isCompilation,
         trackNumber = trackNumber.trim().toIntOrNull(),
         discNumber = discNumber.trim().toIntOrNull(),
@@ -454,5 +459,6 @@ private fun MusicTagsDraft.isDirtyComparedTo(snapshot: AudioTagSnapshot): Boolea
         albumArtist != snapshot.albumArtist.orEmpty() ||
         composer != snapshot.composer.orEmpty() ||
         discNumber != snapshot.discNumber?.toString().orEmpty() ||
+        embeddedLyrics != snapshot.embeddedLyrics.orEmpty() ||
         isCompilation != snapshot.isCompilation
 }
