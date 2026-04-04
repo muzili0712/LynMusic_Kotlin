@@ -614,7 +614,7 @@ private fun LibraryTab(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 42.dp, bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             item {
                 OutlinedTextField(
@@ -723,7 +723,7 @@ private fun FavoritesTab(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 42.dp, bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             item {
                 OutlinedTextField(
@@ -1615,7 +1615,7 @@ private fun QueueDrawer(
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             itemsIndexed(state.snapshot.queue, key = { _, item -> item.id }) { index, track ->
                                 QueueTrackRow(
@@ -3057,21 +3057,13 @@ private fun QueueTrackRow(
     isPlaying: Boolean,
     onClick: () -> Unit,
 ) {
-    ElevatedCard(
-        onClick = onClick,
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = if (isCurrent) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-            } else {
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
-            },
-        ),
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -3095,6 +3087,7 @@ private fun QueueTrackRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
+                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     buildString {
@@ -3110,6 +3103,13 @@ private fun QueueTrackRow(
             }
             Text(formatDuration(track.durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 42.dp)
+                .height(1.dp)
+                .background(Color.White.copy(alpha = 0.08f)),
+        )
     }
 }
 
@@ -3121,15 +3121,13 @@ private fun TrackRow(
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
 ) {
-    ElevatedCard(
-        onClick = onClick,
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)),
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -3145,6 +3143,13 @@ private fun TrackRow(
             )
             Text(formatDuration(track.durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 88.dp)
+                .height(1.dp)
+                .background(Color.White.copy(alpha = 0.08f)),
+        )
     }
 }
 
