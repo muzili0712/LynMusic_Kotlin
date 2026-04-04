@@ -144,8 +144,11 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppTab
+import top.iwesley.lyn.music.core.model.ArtworkTintTheme
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
+import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
+import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
@@ -154,6 +157,8 @@ import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.argbWithAlpha
+import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
 import top.iwesley.lyn.music.data.repository.DefaultPlaybackRepository
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.feature.importing.ImportIntent
@@ -2420,6 +2425,11 @@ private fun LyricsShareOverlay(
 ) {
     val lyrics = state.lyrics ?: return
     val previewBitmap = rememberPlatformImageBitmap(state.sharePreviewBytes)
+    val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
+    val artworkTintTheme = rememberVinylArtworkPalette(
+        artworkBitmap = artworkBitmap,
+        enabled = state.selectedLyricsShareTemplate == LyricsShareTemplate.ARTWORK_TINT,
+    )?.toArtworkTintTheme()
     val primaryTextColor = Color.White.copy(alpha = 0.96f)
     val secondaryTextColor = Color.White.copy(alpha = 0.74f)
     val bannerMessage = state.sharePreviewError ?: state.shareMessage
@@ -2485,8 +2495,19 @@ private fun LyricsShareOverlay(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        TextButton(onClick = { onPlayerIntent(PlayerIntent.DismissLyricsShare) }) {
-                            Text("关闭", color = primaryTextColor)
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            LyricsShareTemplateToggle(
+                                selectedTemplate = state.selectedLyricsShareTemplate,
+                                onTemplateChanged = {
+                                    onPlayerIntent(PlayerIntent.LyricsShareTemplateChanged(it))
+                                },
+                            )
+                            TextButton(onClick = { onPlayerIntent(PlayerIntent.DismissLyricsShare) }) {
+                                Text("关闭", color = primaryTextColor)
+                            }
                         }
                     }
                     bannerMessage?.let { message ->
@@ -2513,6 +2534,7 @@ private fun LyricsShareOverlay(
                             LyricsSharePreviewPane(
                                 state = state,
                                 previewBitmap = previewBitmap,
+                                artworkTintTheme = artworkTintTheme,
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight(),
@@ -2528,6 +2550,7 @@ private fun LyricsShareOverlay(
                             LyricsSharePreviewPane(
                                 state = state,
                                 previewBitmap = previewBitmap,
+                                artworkTintTheme = artworkTintTheme,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(0.48f),
@@ -2673,6 +2696,43 @@ private fun LyricsShareSelectionPane(
 }
 
 @Composable
+private fun LyricsShareTemplateToggle(
+    selectedTemplate: LyricsShareTemplate,
+    onTemplateChanged: (LyricsShareTemplate) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White.copy(alpha = 0.08f))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LyricsShareTemplate.entries.forEach { template ->
+            val selected = template == selectedTemplate
+            TextButton(
+                onClick = { onTemplateChanged(template) },
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.textButtonColors(
+                    containerColor = if (selected) Color.White.copy(alpha = 0.14f) else Color.Transparent,
+                    contentColor = if (selected) Color.White else Color.White.copy(alpha = 0.68f),
+                ),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = when (template) {
+                        LyricsShareTemplate.NOTE -> "便签"
+                        LyricsShareTemplate.ARTWORK_TINT -> "封面取色"
+                    },
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun LyricsShareSelectableLine(
     text: String,
     selected: Boolean,
@@ -2723,6 +2783,7 @@ private fun LyricsShareSelectableLine(
 private fun LyricsSharePreviewPane(
     state: PlayerState,
     previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    artworkTintTheme: ArtworkTintTheme?,
     modifier: Modifier = Modifier,
 ) {
     val shareCardModel = state.shareCardModel
@@ -2734,7 +2795,7 @@ private fun LyricsSharePreviewPane(
             title = "预览",
             subtitle = when {
                 state.isShareRendering && previewBitmap != null -> "正在更新预览，旧图会暂时保留。"
-                state.isShareRendering -> "正在生成便签风歌词卡片。"
+                state.isShareRendering -> "正在生成分享图片。"
                 state.selectedLyricsLineIndices.isEmpty() -> "请先选择至少一句歌词。"
                 state.hasFreshSharePreview -> "当前预览会用于复制和保存。"
                 else -> "选句后会自动刷新预览。"
@@ -2773,10 +2834,18 @@ private fun LyricsSharePreviewPane(
                     }
 
                     else -> {
-                        LyricsShareNoteCard(
-                            model = shareCardModel,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        when (shareCardModel.template) {
+                            LyricsShareTemplate.NOTE -> LyricsShareNoteCard(
+                                model = shareCardModel,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+
+                            LyricsShareTemplate.ARTWORK_TINT -> LyricsShareArtworkTintCard(
+                                model = shareCardModel,
+                                artworkTintTheme = artworkTintTheme ?: shareCardModel.artworkTintTheme,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
                 if (state.isShareRendering && shareCardModel != null) {
@@ -2868,6 +2937,147 @@ private fun LyricsShareNoteCard(
                         text = LyricsShareCardSpec.BRAND_TEXT,
                         style = MaterialTheme.typography.labelLarge,
                         color = secondaryTextColor.copy(alpha = 0.85f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareArtworkTintCard(
+    model: LyricsShareCardModel,
+    artworkTintTheme: ArtworkTintTheme?,
+    modifier: Modifier = Modifier,
+) {
+    val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
+    val backgroundColor = composeColorFromArgb(LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB)
+    val topTint = composeColorFromArgb(
+        argbWithAlpha(
+            artworkTintTheme?.innerGlowColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
+            if (artworkTintTheme != null) 0.22f else 0f,
+        ),
+    )
+    val midTint = composeColorFromArgb(
+        argbWithAlpha(
+            artworkTintTheme?.glowColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
+            if (artworkTintTheme != null) 0.18f else 0f,
+        ),
+    )
+    val accentTint = composeColorFromArgb(
+        argbWithAlpha(
+            artworkTintTheme?.rimColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
+            if (artworkTintTheme != null) 0.12f else 0f,
+        ),
+    )
+    val primaryTextColor = composeColorFromArgb(LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB)
+    val secondaryTextColor = composeColorFromArgb(LyricsShareArtworkTintSpec.TEXT_SECONDARY_ARGB)
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(30.dp),
+        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(backgroundColor)
+                .padding(horizontal = 28.dp, vertical = 30.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                topTint,
+                                midTint,
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                accentTint,
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.Start,
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .size(108.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color.White.copy(alpha = 0.10f))
+                        .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(24.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (artworkBitmap != null) {
+                        Image(
+                            bitmap = artworkBitmap,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.size(42.dp),
+                        )
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    model.lyricsLines.forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = primaryTextColor,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = model.title.ifBlank { "当前歌曲" },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人",
+                        color = secondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = LyricsShareCardSpec.BRAND_TEXT,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = secondaryTextColor,
                     )
                 }
             }
@@ -3871,6 +4081,14 @@ private data class VinylArtworkPalette(
     val innerGlowColor: Color,
 )
 
+private fun VinylArtworkPalette.toArtworkTintTheme(): ArtworkTintTheme {
+    return ArtworkTintTheme(
+        rimColorArgb = rimColor.toArgbInt(),
+        glowColorArgb = glowColor.toArgbInt(),
+        innerGlowColorArgb = innerGlowColor.toArgbInt(),
+    )
+}
+
 @Composable
 private fun rememberVinylArtworkPalette(
     artworkBitmap: androidx.compose.ui.graphics.ImageBitmap?,
@@ -3888,94 +4106,42 @@ private fun rememberVinylArtworkPalette(
 private fun deriveVinylArtworkPalette(
     artworkBitmap: androidx.compose.ui.graphics.ImageBitmap,
 ): VinylArtworkPalette? {
-    val pixelMap = artworkBitmap.toPixelMap()
-    val stepX = max(1, pixelMap.width / 24)
-    val stepY = max(1, pixelMap.height / 24)
-    val binCount = 18
-    val bins = Array(binCount) { ColorAccumulator() }
-    for (y in 0 until pixelMap.height step stepY) {
-        for (x in 0 until pixelMap.width step stepX) {
-            val color = pixelMap[x, y]
-            if (color.alpha < 0.35f) continue
-            val hsl = color.toHsl()
-            val saturation = hsl[1]
-            val lightness = hsl[2]
-            if (saturation < 0.16f) continue
-            if (lightness < 0.12f || lightness > 0.84f) continue
-            val weight = saturation * (1f - abs(lightness - 0.52f)).coerceAtLeast(0.18f)
-            if (weight <= 0f) continue
-            val binIndex = (((hsl[0] / 360f) * binCount).toInt()).coerceIn(0, binCount - 1)
-            bins[binIndex].add(color, weight)
-        }
-    }
-    val dominant = bins.maxByOrNull { it.weight }?.takeIf { it.weight > 0f }?.averageColor() ?: return null
-    val hsl = dominant.toHsl()
-    val safeHue = hsl[0]
-    val safeSaturation = min(max(hsl[1], 0.24f), 0.58f)
+    val theme = deriveArtworkTintTheme(sampleImageBitmapPixels(artworkBitmap)) ?: return null
     return VinylArtworkPalette(
-        rimColor = colorFromHsl(safeHue, safeSaturation, 0.64f).copy(alpha = 1f),
-        glowColor = colorFromHsl(safeHue, safeSaturation, 0.42f).copy(alpha = 1f),
-        innerGlowColor = colorFromHsl(safeHue, safeSaturation * 0.82f, 0.56f).copy(alpha = 1f),
+        rimColor = composeColorFromArgb(theme.rimColorArgb),
+        glowColor = composeColorFromArgb(theme.glowColorArgb),
+        innerGlowColor = composeColorFromArgb(theme.innerGlowColorArgb),
     )
 }
 
-private class ColorAccumulator {
-    var red = 0f
-    var green = 0f
-    var blue = 0f
-    var weight = 0f
-
-    fun add(color: Color, sampleWeight: Float) {
-        red += color.red * sampleWeight
-        green += color.green * sampleWeight
-        blue += color.blue * sampleWeight
-        weight += sampleWeight
-    }
-
-    fun averageColor(): Color {
-        if (weight <= 0f) return Color.Unspecified
-        return Color(
-            red = red / weight,
-            green = green / weight,
-            blue = blue / weight,
-            alpha = 1f,
-        )
+private fun sampleImageBitmapPixels(artworkBitmap: androidx.compose.ui.graphics.ImageBitmap): List<Int> {
+    val pixelMap = artworkBitmap.toPixelMap()
+    val stepX = max(1, pixelMap.width / 24)
+    val stepY = max(1, pixelMap.height / 24)
+    return buildList {
+        for (y in 0 until pixelMap.height step stepY) {
+            for (x in 0 until pixelMap.width step stepX) {
+                add(pixelMap[x, y].toArgbInt())
+            }
+        }
     }
 }
 
-private fun Color.toHsl(): FloatArray {
-    val maxValue = max(red, max(green, blue))
-    val minValue = min(red, min(green, blue))
-    val delta = maxValue - minValue
-    val lightness = (maxValue + minValue) / 2f
-    if (delta == 0f) return floatArrayOf(0f, 0f, lightness)
-    val saturation = delta / (1f - abs(2f * lightness - 1f))
-    val hue = when (maxValue) {
-        red -> 60f * (((green - blue) / delta) % 6f)
-        green -> 60f * (((blue - red) / delta) + 2f)
-        else -> 60f * (((red - green) / delta) + 4f)
-    }.let { if (it < 0f) it + 360f else it }
-    return floatArrayOf(hue, saturation, lightness)
+private fun composeColorFromArgb(argb: Int): Color {
+    return Color(
+        red = ((argb ushr 16) and 0xFF) / 255f,
+        green = ((argb ushr 8) and 0xFF) / 255f,
+        blue = (argb and 0xFF) / 255f,
+        alpha = ((argb ushr 24) and 0xFF) / 255f,
+    )
 }
 
-private fun colorFromHsl(
-    hue: Float,
-    saturation: Float,
-    lightness: Float,
-): Color {
-    val chroma = (1f - abs(2f * lightness - 1f)) * saturation
-    val hueSegment = (hue / 60f) % 6f
-    val secondary = chroma * (1f - abs(hueSegment % 2f - 1f))
-    val (r1, g1, b1) = when {
-        hueSegment < 1f -> Triple(chroma, secondary, 0f)
-        hueSegment < 2f -> Triple(secondary, chroma, 0f)
-        hueSegment < 3f -> Triple(0f, chroma, secondary)
-        hueSegment < 4f -> Triple(0f, secondary, chroma)
-        hueSegment < 5f -> Triple(secondary, 0f, chroma)
-        else -> Triple(chroma, 0f, secondary)
-    }
-    val match = lightness - chroma / 2f
-    return Color(r1 + match, g1 + match, b1 + match, 1f)
+private fun Color.toArgbInt(): Int {
+    val alphaInt = (alpha * 255f).roundToInt().coerceIn(0, 255)
+    val redInt = (red * 255f).roundToInt().coerceIn(0, 255)
+    val greenInt = (green * 255f).roundToInt().coerceIn(0, 255)
+    val blueInt = (blue * 255f).roundToInt().coerceIn(0, 255)
+    return (alphaInt shl 24) or (redInt shl 16) or (greenInt shl 8) or blueInt
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

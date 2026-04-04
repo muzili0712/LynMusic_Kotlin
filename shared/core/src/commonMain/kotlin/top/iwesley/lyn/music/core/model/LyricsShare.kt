@@ -1,9 +1,16 @@
 package top.iwesley.lyn.music.core.model
 
+enum class LyricsShareTemplate {
+    NOTE,
+    ARTWORK_TINT,
+}
+
 data class LyricsShareCardModel(
     val title: String,
     val artistName: String? = null,
     val artworkLocator: String? = null,
+    val template: LyricsShareTemplate = LyricsShareTemplate.NOTE,
+    val artworkTintTheme: ArtworkTintTheme? = null,
     val lyricsLines: List<String>,
 )
 
@@ -82,6 +89,55 @@ object LyricsShareCardSpec {
     private const val LYRICS_ROW_HEIGHT_PX: Int = 78
     private const val FOOTER_HEIGHT_PX: Int = 138
     private const val BRAND_HEIGHT_PX: Int = 40
+}
+
+object LyricsShareArtworkTintSpec {
+    const val IMAGE_WIDTH_PX: Int = 1080
+    const val IMAGE_MIN_HEIGHT_PX: Int = 1280
+    const val IMAGE_MAX_HEIGHT_PX: Int = 1960
+    const val OUTER_PADDING_PX: Int = 86
+    const val ARTWORK_SIZE_PX: Int = 196
+    const val ARTWORK_RADIUS_PX: Int = 42
+    const val ARTWORK_TOP_GAP_PX: Int = 82
+    const val LYRICS_TOP_GAP_PX: Int = 74
+    const val FOOTER_TOP_GAP_PX: Int = 72
+    const val BRAND_TOP_GAP_PX: Int = 52
+    const val LYRICS_FONT_SIZE_PX: Float = 64f
+    const val TITLE_FONT_SIZE_PX: Float = 54f
+    const val META_FONT_SIZE_PX: Float = 34f
+    const val BRAND_FONT_SIZE_PX: Float = 30f
+    const val DEFAULT_BACKGROUND_ARGB: Int = 0xFF232325.toInt()
+    const val TEXT_PRIMARY_ARGB: Int = 0xFFFFFFFF.toInt()
+    const val TEXT_SECONDARY_ARGB: Int = 0x99FFFFFF.toInt()
+    const val PLACEHOLDER_ARGB: Int = 0x22FFFFFF
+    const val ARTWORK_SHADOW_ARGB: Int = 0x33000000
+
+    fun estimateImageHeightPx(lyricsLines: List<String>): Int {
+        val estimatedRows = lyricsLines
+            .map { line ->
+                val length = line.trim().length.coerceAtLeast(1)
+                (length + CHARS_PER_ROW_ESTIMATE - 1) / CHARS_PER_ROW_ESTIMATE
+            }
+            .sum()
+            .coerceAtLeast(1)
+        val contentHeight =
+            OUTER_PADDING_PX +
+                ARTWORK_TOP_GAP_PX +
+                ARTWORK_SIZE_PX +
+                LYRICS_TOP_GAP_PX +
+                estimatedRows * LYRICS_ROW_HEIGHT_PX +
+                FOOTER_TOP_GAP_PX +
+                FOOTER_HEIGHT_PX +
+                BRAND_TOP_GAP_PX +
+                BRAND_HEIGHT_PX +
+                OUTER_PADDING_PX
+        return contentHeight.coerceIn(IMAGE_MIN_HEIGHT_PX, IMAGE_MAX_HEIGHT_PX)
+    }
+
+    private const val CHARS_PER_ROW_ESTIMATE: Int = 12
+    private const val LYRICS_ROW_HEIGHT_PX: Int = 82
+    private const val FOOTER_HEIGHT_PX: Int = 128
+    private const val BRAND_HEIGHT_PX: Int = 38
 }
 
 fun buildLyricsShareSuggestedName(title: String): String {

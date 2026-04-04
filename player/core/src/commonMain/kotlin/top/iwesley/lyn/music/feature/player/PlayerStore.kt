@@ -4,14 +4,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
+import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
+import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
-import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.buildLyricsShareSuggestedName
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
-import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
@@ -33,10 +34,12 @@ data class PlayerState(
     val manualWorkflowSongResults: List<WorkflowSongCandidate> = emptyList(),
     val manualLyricsError: String? = null,
     val isLyricsShareVisible: Boolean = false,
+    val selectedLyricsShareTemplate: LyricsShareTemplate = LyricsShareTemplate.NOTE,
     val selectedLyricsLineIndices: Set<Int> = emptySet(),
     val shareCardModel: LyricsShareCardModel? = null,
     val sharePreviewBytes: ByteArray? = null,
     val sharePreviewSelection: Set<Int> = emptySet(),
+    val sharePreviewTemplate: LyricsShareTemplate? = null,
     val sharePreviewError: String? = null,
     val isShareRendering: Boolean = false,
     val isShareSaving: Boolean = false,
@@ -44,7 +47,9 @@ data class PlayerState(
     val shareMessage: String? = null,
 ) {
     val hasFreshSharePreview: Boolean
-        get() = sharePreviewBytes != null && sharePreviewSelection == selectedLyricsLineIndices
+        get() = sharePreviewBytes != null &&
+            sharePreviewSelection == selectedLyricsLineIndices &&
+            sharePreviewTemplate == selectedLyricsShareTemplate
 }
 
 sealed interface PlayerIntent {
@@ -68,6 +73,7 @@ sealed interface PlayerIntent {
     data class ApplyWorkflowSongCandidate(val candidate: WorkflowSongCandidate) : PlayerIntent
     data object OpenLyricsShare : PlayerIntent
     data object DismissLyricsShare : PlayerIntent
+    data class LyricsShareTemplateChanged(val template: LyricsShareTemplate) : PlayerIntent
     data class ToggleLyricsLineSelection(val index: Int) : PlayerIntent
     data object ClearLyricsSelection : PlayerIntent
     data object BuildLyricsSharePreview : PlayerIntent
@@ -177,6 +183,7 @@ class PlayerStore(
             is PlayerIntent.ApplyWorkflowSongCandidate -> applyWorkflowSongCandidate(intent.candidate)
             PlayerIntent.OpenLyricsShare -> openLyricsShare()
             PlayerIntent.DismissLyricsShare -> dismissLyricsShare()
+            is PlayerIntent.LyricsShareTemplateChanged -> updateLyricsShareTemplate(intent.template)
             is PlayerIntent.ToggleLyricsLineSelection -> toggleLyricsLineSelection(intent.index)
             PlayerIntent.ClearLyricsSelection -> clearLyricsSelection()
             PlayerIntent.BuildLyricsSharePreview -> rebuildLyricsSharePreview()
@@ -249,9 +256,15 @@ class PlayerStore(
                 manualLyricsError = null,
                 isLyricsShareVisible = true,
                 selectedLyricsLineIndices = defaultSelection,
-                shareCardModel = deriveLyricsShareCardModel(snapshot, lyrics, defaultSelection),
+                shareCardModel = deriveLyricsShareCardModel(
+                    snapshot = snapshot,
+                    lyrics = lyrics,
+                    selectedLineIndices = defaultSelection,
+                    template = it.selectedLyricsShareTemplate,
+                ),
                 sharePreviewBytes = null,
                 sharePreviewSelection = emptySet(),
+                sharePreviewTemplate = null,
                 sharePreviewError = null,
                 isShareRendering = false,
                 isShareSaving = false,
@@ -269,6 +282,32 @@ class PlayerStore(
         updateState { it.clearLyricsShareState() }
     }
 
+    private suspend fun updateLyricsShareTemplate(template: LyricsShareTemplate) {
+        if (template == state.value.selectedLyricsShareTemplate) return
+        invalidateLyricsSharePreviewRequests()
+        updateState { current ->
+            val snapshot = current.snapshot
+            val lyrics = current.lyrics
+            current.copy(
+                selectedLyricsShareTemplate = template,
+                shareCardModel = deriveLyricsShareCardModel(
+                    snapshot = snapshot,
+                    lyrics = lyrics,
+                    selectedLineIndices = current.selectedLyricsLineIndices,
+                    template = template,
+                ),
+                sharePreviewError = null,
+                isShareRendering = false,
+                isShareSaving = false,
+                isShareCopying = false,
+                shareMessage = null,
+            )
+        }
+        if (state.value.isLyricsShareVisible && state.value.selectedLyricsLineIndices.isNotEmpty()) {
+            rebuildLyricsSharePreview()
+        }
+    }
+
     private suspend fun toggleLyricsLineSelection(index: Int) {
         val lyrics = state.value.lyrics ?: return
         val line = lyrics.lines.getOrNull(index)?.text?.trim().orEmpty()
@@ -283,7 +322,12 @@ class PlayerStore(
             val snapshot = it.snapshot
             it.copy(
                 selectedLyricsLineIndices = updatedSelection,
-                shareCardModel = deriveLyricsShareCardModel(snapshot, lyrics, updatedSelection),
+                shareCardModel = deriveLyricsShareCardModel(
+                    snapshot = snapshot,
+                    lyrics = lyrics,
+                    selectedLineIndices = updatedSelection,
+                    template = it.selectedLyricsShareTemplate,
+                ),
                 sharePreviewError = null,
                 isShareRendering = false,
                 isShareSaving = false,
@@ -304,6 +348,7 @@ class PlayerStore(
                 shareCardModel = null,
                 sharePreviewBytes = null,
                 sharePreviewSelection = emptySet(),
+                sharePreviewTemplate = null,
                 sharePreviewError = null,
                 isShareRendering = false,
                 isShareSaving = false,
@@ -417,13 +462,19 @@ class PlayerStore(
     private suspend fun rebuildLyricsSharePreview(): ByteArray? {
         val snapshot = state.value.snapshot
         val lyrics = state.value.lyrics
-        val model = deriveLyricsShareCardModel(snapshot, lyrics, state.value.selectedLyricsLineIndices)
+        val model = deriveLyricsShareCardModel(
+            snapshot = snapshot,
+            lyrics = lyrics,
+            selectedLineIndices = state.value.selectedLyricsLineIndices,
+            template = state.value.selectedLyricsShareTemplate,
+        )
         if (!state.value.isLyricsShareVisible || model == null) {
             updateState {
                 it.copy(
                     shareCardModel = model,
                     sharePreviewBytes = null,
                     sharePreviewSelection = emptySet(),
+                    sharePreviewTemplate = null,
                     sharePreviewError = null,
                     isShareRendering = false,
                 )
@@ -447,6 +498,7 @@ class PlayerStore(
                         shareCardModel = model,
                         sharePreviewBytes = bytes,
                         sharePreviewSelection = it.selectedLyricsLineIndices,
+                        sharePreviewTemplate = model.template,
                         sharePreviewError = null,
                         isShareRendering = false,
                     )
@@ -515,6 +567,7 @@ class PlayerStore(
         snapshot: PlaybackSnapshot,
         lyrics: LyricsDocument?,
         selectedLineIndices: Set<Int>,
+        template: LyricsShareTemplate,
     ): LyricsShareCardModel? {
         val selectedLines = lyrics?.lines.orEmpty()
             .mapIndexedNotNull { index, line ->
@@ -526,6 +579,7 @@ class PlayerStore(
             title = snapshot.currentDisplayTitle.ifBlank { snapshot.currentTrack?.title.orEmpty() },
             artistName = snapshot.currentDisplayArtistName ?: snapshot.currentTrack?.artistName,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
+            template = template,
             lyricsLines = selectedLines,
         )
     }
@@ -564,6 +618,7 @@ private fun PlayerState.clearLyricsShareState(): PlayerState {
         shareCardModel = null,
         sharePreviewBytes = null,
         sharePreviewSelection = emptySet(),
+        sharePreviewTemplate = null,
         sharePreviewError = null,
         isShareRendering = false,
         isShareSaving = false,

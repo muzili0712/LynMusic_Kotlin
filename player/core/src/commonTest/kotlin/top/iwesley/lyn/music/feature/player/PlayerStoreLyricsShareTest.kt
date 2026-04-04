@@ -23,6 +23,7 @@ import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
+import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
@@ -154,6 +155,47 @@ class PlayerStoreLyricsShareTest {
     }
 
     @Test
+    fun `switching lyrics share template rebuilds preview with selected template`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val shareService = FakeLyricsSharePlatformService(
+            previewResults = ArrayDeque(
+                listOf(
+                    PreviewResponse.Immediate(Result.success(FakeLyricsSharePlatformService.previewBytes)),
+                    PreviewResponse.Immediate(Result.success(byteArrayOf(0x05, 0x06, 0x07))),
+                ),
+            ),
+        )
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_500L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(syncedLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.LyricsShareTemplateChanged(LyricsShareTemplate.ARTWORK_TINT))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(LyricsShareTemplate.ARTWORK_TINT, state.selectedLyricsShareTemplate)
+        assertEquals(LyricsShareTemplate.ARTWORK_TINT, state.sharePreviewTemplate)
+        assertEquals(LyricsShareTemplate.ARTWORK_TINT, shareService.lastPreviewModel?.template)
+        assertEquals(byteArrayOf(0x05, 0x06, 0x07).toList(), state.sharePreviewBytes?.toList())
+        assertTrue(state.hasFreshSharePreview)
+        assertEquals(2, shareService.buildPreviewCalls)
+        scope.cancel()
+    }
+
+    @Test
     fun `track change dismisses lyrics share and clears preview`() = runTest {
         val firstTrack = sampleTrack("track-1", "第一首")
         val secondTrack = sampleTrack("track-2", "第二首")
@@ -176,6 +218,8 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
         store.dispatch(PlayerIntent.OpenLyricsShare)
         advanceUntilIdle()
+        store.dispatch(PlayerIntent.LyricsShareTemplateChanged(LyricsShareTemplate.ARTWORK_TINT))
+        advanceUntilIdle()
 
         playbackRepository.updateSnapshot(
             PlaybackSnapshot(
@@ -189,6 +233,7 @@ class PlayerStoreLyricsShareTest {
         val state = store.state.value
         assertFalse(state.isLyricsShareVisible)
         assertTrue(state.selectedLyricsLineIndices.isEmpty())
+        assertEquals(LyricsShareTemplate.ARTWORK_TINT, state.selectedLyricsShareTemplate)
         assertNull(state.shareCardModel)
         assertNull(state.sharePreviewBytes)
         scope.cancel()

@@ -7,9 +7,11 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Shader
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -30,10 +32,15 @@ import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.math.max
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
+import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
+import top.iwesley.lyn.music.core.model.LyricsShareTemplate
+import top.iwesley.lyn.music.core.model.argbWithAlpha
+import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
 import kotlin.coroutines.resume
 
 class AndroidLyricsSharePlatformService(
@@ -162,6 +169,16 @@ class AndroidLyricsSharePlatformService(
     }
 
     private fun renderLyricsShareBitmap(
+        model: LyricsShareCardModel,
+        artworkBitmap: Bitmap?,
+    ): ByteArray {
+        return when (model.template) {
+            LyricsShareTemplate.NOTE -> renderNoteLyricsShareBitmap(model, artworkBitmap)
+            LyricsShareTemplate.ARTWORK_TINT -> renderArtworkTintLyricsShareBitmap(model, artworkBitmap)
+        }
+    }
+
+    private fun renderNoteLyricsShareBitmap(
         model: LyricsShareCardModel,
         artworkBitmap: Bitmap?,
     ): ByteArray {
@@ -330,6 +347,206 @@ class AndroidLyricsSharePlatformService(
             output.toByteArray()
         }
     }
+
+    private fun renderArtworkTintLyricsShareBitmap(
+        model: LyricsShareCardModel,
+        artworkBitmap: Bitmap?,
+    ): ByteArray {
+        val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX
+        val theme = model.artworkTintTheme ?: sampleArtworkTintTheme(artworkBitmap)
+        val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB
+        }
+        val topGradientPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                0f,
+                0f,
+                0f,
+                LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX.toFloat(),
+                intArrayOf(
+                    argbWithAlpha(
+                        theme?.innerGlowColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
+                        if (theme != null) 0.22f else 0f,
+                    ),
+                    argbWithAlpha(
+                        theme?.glowColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
+                        if (theme != null) 0.18f else 0f,
+                    ),
+                    0x00000000,
+                ),
+                floatArrayOf(0f, 0.46f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+        }
+        val accentGradientPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                0f,
+                LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX * 0.22f,
+                width.toFloat(),
+                LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX.toFloat(),
+                intArrayOf(
+                    0x00000000,
+                    argbWithAlpha(
+                        theme?.rimColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
+                        if (theme != null) 0.12f else 0f,
+                    ),
+                    0x00000000,
+                ),
+                floatArrayOf(0f, 0.58f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+        }
+        val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = LyricsShareArtworkTintSpec.PLACEHOLDER_ARGB
+        }
+        val artworkShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = LyricsShareArtworkTintSpec.ARTWORK_SHADOW_ARGB
+        }
+        val lyricsPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB
+            textSize = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX
+            isFakeBoldText = true
+        }
+        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB
+            textSize = LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX
+            isFakeBoldText = true
+        }
+        val artistPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = LyricsShareArtworkTintSpec.TEXT_SECONDARY_ARGB
+            textSize = LyricsShareArtworkTintSpec.META_FONT_SIZE_PX
+        }
+        val brandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = LyricsShareArtworkTintSpec.TEXT_SECONDARY_ARGB
+            textSize = LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX
+            textAlign = Paint.Align.LEFT
+        }
+
+        val availableWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2
+        val lyricsLayout = createTextLayout(
+            text = model.lyricsLines.joinToString("\n"),
+            paint = lyricsPaint,
+            widthPx = availableWidth,
+            alignment = Layout.Alignment.ALIGN_NORMAL,
+        )
+        val titleLayout = createTextLayout(
+            text = model.title.ifBlank { "当前歌曲" },
+            paint = titlePaint,
+            widthPx = availableWidth,
+            alignment = Layout.Alignment.ALIGN_NORMAL,
+        )
+        val artistLayout = createTextLayout(
+            text = model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人",
+            paint = artistPaint,
+            widthPx = availableWidth,
+            alignment = Layout.Alignment.ALIGN_NORMAL,
+        )
+        val contentHeight =
+            LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
+                LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX +
+                LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX +
+                LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX +
+                lyricsLayout.height +
+                LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX +
+                titleLayout.height +
+                artistLayout.height +
+                LyricsShareArtworkTintSpec.BRAND_TOP_GAP_PX +
+                brandPaint.textSize.toInt() +
+                LyricsShareArtworkTintSpec.OUTER_PADDING_PX
+        val height = contentHeight
+            .coerceIn(LyricsShareArtworkTintSpec.IMAGE_MIN_HEIGHT_PX, LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX)
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), topGradientPaint)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), accentGradientPaint)
+
+        val artworkLeft = LyricsShareArtworkTintSpec.OUTER_PADDING_PX.toFloat()
+        val artworkTop = (LyricsShareArtworkTintSpec.OUTER_PADDING_PX + LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX).toFloat()
+        val shadowRect = RectF(
+            artworkLeft,
+            artworkTop + 10f,
+            artworkLeft + LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX,
+            artworkTop + 10f + LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX,
+        )
+        canvas.drawRoundRect(
+            shadowRect,
+            LyricsShareArtworkTintSpec.ARTWORK_RADIUS_PX.toFloat(),
+            LyricsShareArtworkTintSpec.ARTWORK_RADIUS_PX.toFloat(),
+            artworkShadowPaint,
+        )
+        val artworkRect = RectF(
+            artworkLeft,
+            artworkTop,
+            artworkLeft + LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX,
+            artworkTop + LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX,
+        )
+        val artworkPath = Path().apply {
+            addRoundRect(
+                artworkRect,
+                LyricsShareArtworkTintSpec.ARTWORK_RADIUS_PX.toFloat(),
+                LyricsShareArtworkTintSpec.ARTWORK_RADIUS_PX.toFloat(),
+                Path.Direction.CW,
+            )
+        }
+        canvas.save()
+        canvas.clipPath(artworkPath)
+        if (artworkBitmap != null) {
+            canvas.drawBitmap(artworkBitmap, null, artworkRect, Paint(Paint.ANTI_ALIAS_FLAG))
+        } else {
+            canvas.drawRoundRect(
+                artworkRect,
+                LyricsShareArtworkTintSpec.ARTWORK_RADIUS_PX.toFloat(),
+                LyricsShareArtworkTintSpec.ARTWORK_RADIUS_PX.toFloat(),
+                placeholderPaint,
+            )
+        }
+        canvas.restore()
+
+        var cursorY = artworkRect.bottom + LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX
+        canvas.save()
+        canvas.translate(artworkLeft, cursorY)
+        lyricsLayout.draw(canvas)
+        canvas.restore()
+        cursorY += lyricsLayout.height + LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX
+
+        canvas.save()
+        canvas.translate(artworkLeft, cursorY)
+        titleLayout.draw(canvas)
+        canvas.restore()
+        cursorY += titleLayout.height.toFloat()
+
+        canvas.save()
+        canvas.translate(artworkLeft, cursorY)
+        artistLayout.draw(canvas)
+        canvas.restore()
+
+        val brandText = LyricsShareCardSpec.BRAND_TEXT
+        val brandBaseline = height - LyricsShareArtworkTintSpec.OUTER_PADDING_PX.toFloat()
+        val brandX = width / 2f - brandPaint.measureText(brandText) / 2f
+        canvas.drawText(brandText, brandX, brandBaseline, brandPaint)
+
+        return ByteArrayOutputStream().use { output ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            output.toByteArray()
+        }
+    }
+}
+
+private fun sampleArtworkTintTheme(artworkBitmap: Bitmap?): top.iwesley.lyn.music.core.model.ArtworkTintTheme? {
+    if (artworkBitmap == null) return null
+    val stepX = max(1, artworkBitmap.width / 24)
+    val stepY = max(1, artworkBitmap.height / 24)
+    return deriveArtworkTintTheme(
+        buildList {
+            for (y in 0 until artworkBitmap.height step stepY) {
+                for (x in 0 until artworkBitmap.width step stepX) {
+                    add(artworkBitmap.getPixel(x, y))
+                }
+            }
+        },
+    )
 }
 
 private fun createTextLayout(
