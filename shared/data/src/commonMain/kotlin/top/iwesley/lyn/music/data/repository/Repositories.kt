@@ -1262,7 +1262,7 @@ class DefaultLyricsRepository(
 private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
 private const val LYRICS_LOG_TAG = "Lyrics"
-private const val EMBEDDED_LYRICS_SOURCE_ID = "embedded-tag"
+internal const val EMBEDDED_LYRICS_SOURCE_ID = "embedded-tag"
 
 private fun newId(prefix: String): String = "$prefix-${now()}-${Random.nextInt(1000, 9999)}"
 

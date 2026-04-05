@@ -11,6 +11,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.data.db.AlbumEntity
 import top.iwesley.lyn.music.data.db.ArtistEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.db.LyricsCacheEntity
 import top.iwesley.lyn.music.data.db.TrackEntity
 
 data class MusicTagSaveResult(
@@ -89,6 +90,7 @@ class RoomMusicTagsRepository(
             artworkLocator = snapshot.artworkLocator,
             modifiedAt = updatedAt,
         )
+        syncEmbeddedLyricsCache(track.id, snapshot.embeddedLyrics, updatedAt)
         rebuildLibrarySummaries(database)
         return database.trackDao().getByIds(listOf(track.id)).firstOrNull()?.toDomain()
             ?: track.copy(
@@ -100,6 +102,43 @@ class RoomMusicTagsRepository(
                 artworkLocator = snapshot.artworkLocator,
                 modifiedAt = updatedAt,
             )
+    }
+
+    private suspend fun syncEmbeddedLyricsCache(
+        trackId: String,
+        embeddedLyrics: String?,
+        updatedAt: Long,
+    ) {
+        val normalizedLyrics = embeddedLyrics?.trim()?.takeIf { it.isNotBlank() }
+        val existing = database.lyricsCacheDao().getByTrack(trackId)
+            .firstOrNull { it.sourceId == EMBEDDED_LYRICS_SOURCE_ID }
+        when {
+            normalizedLyrics == null && existing != null -> {
+                database.lyricsCacheDao().deleteByTrackIdAndSourceId(trackId, EMBEDDED_LYRICS_SOURCE_ID)
+            }
+
+            normalizedLyrics != null && existing == null -> {
+                database.lyricsCacheDao().upsert(
+                    LyricsCacheEntity(
+                        trackId = trackId,
+                        sourceId = EMBEDDED_LYRICS_SOURCE_ID,
+                        rawPayload = normalizedLyrics,
+                        updatedAt = updatedAt,
+                    ),
+                )
+            }
+
+            normalizedLyrics != null && existing != null && existing.rawPayload != normalizedLyrics -> {
+                database.lyricsCacheDao().upsert(
+                    LyricsCacheEntity(
+                        trackId = trackId,
+                        sourceId = EMBEDDED_LYRICS_SOURCE_ID,
+                        rawPayload = normalizedLyrics,
+                        updatedAt = updatedAt,
+                    ),
+                )
+            }
+        }
     }
 }
 

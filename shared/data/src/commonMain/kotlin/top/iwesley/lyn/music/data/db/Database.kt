@@ -322,6 +322,9 @@ interface LyricsCacheDao {
     @Query("SELECT * FROM lyrics_cache WHERE trackId = :trackId ORDER BY updatedAt DESC")
     suspend fun getByTrack(trackId: String): List<LyricsCacheEntity>
 
+    @Query("DELETE FROM lyrics_cache WHERE trackId = :trackId AND sourceId = :sourceId")
+    suspend fun deleteByTrackIdAndSourceId(trackId: String, sourceId: String)
+
     @Query("DELETE FROM lyrics_cache WHERE trackId LIKE :trackIdPrefix")
     suspend fun deleteByTrackIdPrefix(trackIdPrefix: String)
 
