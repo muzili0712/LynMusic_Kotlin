@@ -79,6 +79,7 @@ import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.smbj.SMBClient
 import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.share.DiskShare
+import com.hierynomus.smbj.share.File as SmbRemoteFile
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -416,13 +417,129 @@ private class AndroidImportSourceGateway(
             if (isDirectory) {
                 collectSambaTracks(share, baseDirectory, childRelative, sourceId, sink)
             } else if (isSupportedAudio(name)) {
-                sink += top.iwesley.lyn.music.core.model.ImportedTrackCandidate(
-                    title = name.substringBeforeLast('.'),
-                    mediaLocator = buildSambaLocator(sourceId, childRelative),
-                    relativePath = childRelative,
-                    sizeBytes = runCatching { info.endOfFile }.getOrDefault(0L),
-                )
+                val sizeBytes = runCatching { info.endOfFile }.getOrDefault(0L)
+                sink += runCatching {
+                    resolveAndroidSambaScanCandidate(
+                        share = share,
+                        sourceId = sourceId,
+                        relativePath = childRelative,
+                        remotePath = childPath,
+                        sizeBytes = sizeBytes,
+                    )
+                }.onFailure { throwable ->
+                    logger.warn(SAMBA_LOG_TAG) {
+                        "metadata-failed source=$sourceId remotePath=$childPath reason=${throwable.message.orEmpty()}"
+                    }
+                }.getOrElse {
+                    buildAndroidRemoteFallbackCandidate(
+                        sourceId = sourceId,
+                        relativePath = childRelative,
+                        sizeBytes = sizeBytes,
+                    )
+                }
             }
+        }
+    }
+
+    private fun resolveAndroidSambaScanCandidate(
+        share: DiskShare,
+        sourceId: String,
+        relativePath: String,
+        remotePath: String,
+        sizeBytes: Long,
+    ): top.iwesley.lyn.music.core.model.ImportedTrackCandidate {
+        val fallback = buildAndroidRemoteFallbackCandidate(
+            sourceId = sourceId,
+            relativePath = relativePath,
+            sizeBytes = sizeBytes,
+        )
+        if (sizeBytes <= 0L) return fallback
+        share.openFile(
+            remotePath,
+            setOf(AccessMask.GENERIC_READ),
+            null,
+            SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN,
+            null,
+        ).use { smbFile ->
+            val initialHeadBytes = sizeBytes
+                .coerceAtMost(RemoteAudioMetadataProbe.HEAD_PROBE_BYTES)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
+            var totalProbeBytes = initialHeadBytes.toLong()
+            var headBytes = readSambaBytes(smbFile, 0L, initialHeadBytes)
+            val requiredHeadBytes = RemoteAudioMetadataProbe.requiredExpandedHeadBytes(relativePath, headBytes)
+            if (requiredHeadBytes != null && requiredHeadBytes > headBytes.size) {
+                if (requiredHeadBytes > RemoteAudioMetadataProbe.MAX_HEAD_PROBE_BYTES) {
+                    logger.info(SAMBA_LOG_TAG) {
+                        "metadata-skip source=$sourceId remotePath=$remotePath reason=head-too-large requested=$requiredHeadBytes"
+                    }
+                    return fallback
+                }
+                val expandedHeadBytes = requiredHeadBytes
+                    .coerceAtMost(sizeBytes)
+                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                    .toInt()
+                totalProbeBytes = expandedHeadBytes.toLong()
+                headBytes = readSambaBytes(smbFile, 0L, expandedHeadBytes)
+                logger.debug(SAMBA_LOG_TAG) {
+                    "metadata-range-expand source=$sourceId remotePath=$remotePath bytes=${headBytes.size}"
+                }
+            }
+            val tailBytes = if (RemoteAudioMetadataProbe.shouldReadTail(relativePath)) {
+                val requestedTailBytes = sizeBytes
+                    .coerceAtMost(RemoteAudioMetadataProbe.TAIL_PROBE_BYTES)
+                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                    .toInt()
+                if (totalProbeBytes + requestedTailBytes > RemoteAudioMetadataProbe.MAX_TOTAL_PROBE_BYTES) {
+                    logger.info(SAMBA_LOG_TAG) {
+                        "metadata-skip source=$sourceId remotePath=$remotePath reason=tail-over-budget requested=$requestedTailBytes"
+                    }
+                    null
+                } else {
+                    totalProbeBytes += requestedTailBytes
+                    readSambaBytes(
+                        file = smbFile,
+                        fileOffset = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
+                        length = requestedTailBytes,
+                    )
+                }
+            } else {
+                null
+            }
+            logger.debug(SAMBA_LOG_TAG) {
+                "metadata-range-read source=$sourceId remotePath=$remotePath head=${headBytes.size} tail=${tailBytes?.size ?: 0}"
+            }
+            val metadata = RemoteAudioMetadataProbe.parse(
+                relativePath = relativePath,
+                headBytes = headBytes,
+                tailBytes = tailBytes,
+            )
+            if (metadata == null || !metadata.hasMeaningfulMetadata(relativePath)) {
+                logger.info(SAMBA_LOG_TAG) {
+                    "metadata-miss source=$sourceId remotePath=$remotePath"
+                }
+                return fallback
+            }
+            val candidate = top.iwesley.lyn.music.core.model.ImportedTrackCandidate(
+                title = metadata.title?.trim()?.takeIf { it.isNotBlank() } ?: relativePath.substringAfterLast('/').substringBeforeLast('.'),
+                artistName = metadata.artistName?.trim()?.takeIf { it.isNotBlank() },
+                albumTitle = metadata.albumTitle?.trim()?.takeIf { it.isNotBlank() },
+                durationMs = metadata.durationMs?.coerceAtLeast(0L) ?: 0L,
+                trackNumber = metadata.trackNumber,
+                discNumber = metadata.discNumber,
+                mediaLocator = buildSambaLocator(sourceId, relativePath),
+                relativePath = relativePath,
+                artworkLocator = metadata.artworkBytes?.takeIf { it.isNotEmpty() }?.let { bytes ->
+                    storeAndroidArtwork(relativePath, bytes)
+                },
+                embeddedLyrics = metadata.embeddedLyrics?.trim()?.takeIf { it.isNotBlank() },
+                sizeBytes = sizeBytes,
+            )
+            logger.info(SAMBA_LOG_TAG) {
+                "metadata-hit source=$sourceId remotePath=$remotePath title=${candidate.title} artist=${candidate.artistName.orEmpty()} album=${candidate.albumTitle.orEmpty()}"
+            }
+            return candidate
         }
     }
 }
@@ -706,6 +823,37 @@ private fun joinSegments(left: String, right: String): String {
         .joinToString("/")
 }
 
+private fun buildAndroidRemoteFallbackCandidate(
+    sourceId: String,
+    relativePath: String,
+    sizeBytes: Long = 0L,
+): top.iwesley.lyn.music.core.model.ImportedTrackCandidate {
+    return top.iwesley.lyn.music.core.model.ImportedTrackCandidate(
+        title = relativePath.substringAfterLast('/').substringBeforeLast('.'),
+        mediaLocator = buildSambaLocator(sourceId, relativePath),
+        relativePath = relativePath,
+        sizeBytes = sizeBytes,
+    )
+}
+
+private fun readSambaBytes(
+    file: SmbRemoteFile,
+    fileOffset: Long,
+    length: Int,
+): ByteArray {
+    if (length <= 0) return ByteArray(0)
+    val buffer = ByteArray(length)
+    var totalRead = 0
+    var currentOffset = fileOffset
+    while (totalRead < length) {
+        val read = file.read(buffer, currentOffset, totalRead, length - totalRead)
+        if (read <= 0) break
+        totalRead += read
+        currentOffset += read.toLong()
+    }
+    return if (totalRead == buffer.size) buffer else buffer.copyOf(totalRead)
+}
+
 private const val SAMBA_LOG_TAG = "Samba"
 private const val METADATA_LOG_TAG = "Metadata"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
@@ -741,6 +889,16 @@ private fun buildMetadataLogMessage(
         append(candidate.discNumber?.toString().orEmpty())
         append(" artwork=")
         append(candidate.artworkLocator != null)
-        append(" lyrics=android-unavailable")
+        append(" lyrics=")
+        append(candidate.embeddedLyrics.toLyricsPreview())
     }
+}
+
+private fun String?.toLyricsPreview(maxLength: Int = 80): String {
+    val text = this?.lineSequence()
+        ?.map { it.trim() }
+        ?.firstOrNull { it.isNotBlank() }
+        .orEmpty()
+    if (text.isBlank()) return "none"
+    return text.take(maxLength)
 }

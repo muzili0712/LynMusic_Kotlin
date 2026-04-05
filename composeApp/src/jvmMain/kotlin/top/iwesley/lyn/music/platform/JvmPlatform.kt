@@ -82,6 +82,7 @@ import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.smbj.SMBClient
 import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.share.DiskShare
+import com.hierynomus.smbj.share.File as SmbRemoteFile
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
 import uk.co.caprica.vlcj.log.LogEventListener
@@ -366,12 +367,121 @@ private class JvmImportSourceGateway(
             if (isDirectory) {
                 collectSambaTracks(share, baseDirectory, childRelative, sourceId, sink)
             } else if (isSupportedAudio(name)) {
-                sink += ImportedCandidateFactory.fromRemotePath(
-                    sourceId = sourceId,
-                    relativePath = childRelative,
-                    sizeBytes = runCatching { fileInfo.endOfFile }.getOrDefault(0L),
-                )
+                val sizeBytes = runCatching { fileInfo.endOfFile }.getOrDefault(0L)
+                sink += runCatching {
+                    resolveJvmSambaScanCandidate(
+                        share = share,
+                        sourceId = sourceId,
+                        relativePath = childRelative,
+                        remotePath = childPath,
+                        sizeBytes = sizeBytes,
+                    )
+                }.onFailure { throwable ->
+                    logger.warn(SAMBA_LOG_TAG) {
+                        "metadata-failed source=$sourceId remotePath=$childPath reason=${throwable.message.orEmpty()}"
+                    }
+                }.getOrElse {
+                    ImportedCandidateFactory.fromRemotePath(
+                        sourceId = sourceId,
+                        relativePath = childRelative,
+                        sizeBytes = sizeBytes,
+                    )
+                }
             }
+        }
+    }
+
+    private fun resolveJvmSambaScanCandidate(
+        share: DiskShare,
+        sourceId: String,
+        relativePath: String,
+        remotePath: String,
+        sizeBytes: Long,
+    ): top.iwesley.lyn.music.core.model.ImportedTrackCandidate {
+        val fallback = ImportedCandidateFactory.fromRemotePath(
+            sourceId = sourceId,
+            relativePath = relativePath,
+            sizeBytes = sizeBytes,
+        )
+        if (sizeBytes <= 0L) return fallback
+        share.openFile(
+            remotePath,
+            setOf(AccessMask.GENERIC_READ),
+            null,
+            SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN,
+            null,
+        ).use { smbFile ->
+            val initialHeadBytes = sizeBytes
+                .coerceAtMost(RemoteAudioMetadataProbe.HEAD_PROBE_BYTES)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
+            var totalProbeBytes = initialHeadBytes.toLong()
+            var headBytes = readSambaBytes(smbFile, 0L, initialHeadBytes)
+            val requiredHeadBytes = RemoteAudioMetadataProbe.requiredExpandedHeadBytes(relativePath, headBytes)
+            if (requiredHeadBytes != null && requiredHeadBytes > headBytes.size) {
+                if (requiredHeadBytes > RemoteAudioMetadataProbe.MAX_HEAD_PROBE_BYTES) {
+                    logger.info(SAMBA_LOG_TAG) {
+                        "metadata-skip source=$sourceId remotePath=$remotePath reason=head-too-large requested=$requiredHeadBytes"
+                    }
+                    return fallback
+                }
+                val expandedHeadBytes = requiredHeadBytes
+                    .coerceAtMost(sizeBytes)
+                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                    .toInt()
+                totalProbeBytes = expandedHeadBytes.toLong()
+                headBytes = readSambaBytes(smbFile, 0L, expandedHeadBytes)
+                logger.debug(SAMBA_LOG_TAG) {
+                    "metadata-range-expand source=$sourceId remotePath=$remotePath bytes=${headBytes.size}"
+                }
+            }
+            val tailBytes = if (RemoteAudioMetadataProbe.shouldReadTail(relativePath)) {
+                val requestedTailBytes = sizeBytes
+                    .coerceAtMost(RemoteAudioMetadataProbe.TAIL_PROBE_BYTES)
+                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                    .toInt()
+                if (totalProbeBytes + requestedTailBytes > RemoteAudioMetadataProbe.MAX_TOTAL_PROBE_BYTES) {
+                    logger.info(SAMBA_LOG_TAG) {
+                        "metadata-skip source=$sourceId remotePath=$remotePath reason=tail-over-budget requested=$requestedTailBytes"
+                    }
+                    null
+                } else {
+                    totalProbeBytes += requestedTailBytes
+                    readSambaBytes(
+                        file = smbFile,
+                        fileOffset = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
+                        length = requestedTailBytes,
+                    )
+                }
+            } else {
+                null
+            }
+            logger.debug(SAMBA_LOG_TAG) {
+                "metadata-range-read source=$sourceId remotePath=$remotePath head=${headBytes.size} tail=${tailBytes?.size ?: 0}"
+            }
+            val metadata = RemoteAudioMetadataProbe.parse(
+                relativePath = relativePath,
+                headBytes = headBytes,
+                tailBytes = tailBytes,
+            )
+            if (metadata == null || !metadata.hasMeaningfulMetadata(relativePath)) {
+                logger.info(SAMBA_LOG_TAG) {
+                    "metadata-miss source=$sourceId remotePath=$remotePath"
+                }
+                return fallback
+            }
+            val candidate = ImportedCandidateFactory.fromRemoteMetadata(
+                sourceId = sourceId,
+                relativePath = relativePath,
+                sizeBytes = sizeBytes,
+                metadata = metadata,
+                storeArtwork = { bytes -> storeJvmRemoteArtwork(relativePath, bytes) },
+            )
+            logger.info(SAMBA_LOG_TAG) {
+                "metadata-hit source=$sourceId remotePath=$remotePath title=${candidate.title} artist=${candidate.artistName.orEmpty()} album=${candidate.albumTitle.orEmpty()}"
+            }
+            return candidate
         }
     }
 }
@@ -805,6 +915,62 @@ private object ImportedCandidateFactory {
             sizeBytes = sizeBytes,
         )
     }
+
+    fun fromRemoteMetadata(
+        sourceId: String,
+        relativePath: String,
+        sizeBytes: Long,
+        metadata: RemoteAudioMetadata,
+        storeArtwork: (ByteArray) -> String?,
+    ): top.iwesley.lyn.music.core.model.ImportedTrackCandidate {
+        val fallbackTitle = relativePath.substringAfterLast('/').substringBeforeLast('.')
+        return top.iwesley.lyn.music.core.model.ImportedTrackCandidate(
+            title = metadata.title?.trim()?.takeIf { it.isNotBlank() } ?: fallbackTitle,
+            artistName = metadata.artistName?.trim()?.takeIf { it.isNotBlank() },
+            albumTitle = metadata.albumTitle?.trim()?.takeIf { it.isNotBlank() },
+            durationMs = metadata.durationMs?.coerceAtLeast(0L) ?: 0L,
+            trackNumber = metadata.trackNumber,
+            discNumber = metadata.discNumber,
+            mediaLocator = buildSambaLocator(sourceId, relativePath),
+            relativePath = relativePath,
+            artworkLocator = metadata.artworkBytes?.takeIf { it.isNotEmpty() }?.let(storeArtwork),
+            embeddedLyrics = metadata.embeddedLyrics?.trim()?.takeIf { it.isNotBlank() },
+            sizeBytes = sizeBytes,
+        )
+    }
+}
+
+private fun readSambaBytes(
+    file: SmbRemoteFile,
+    fileOffset: Long,
+    length: Int,
+): ByteArray {
+    if (length <= 0) return ByteArray(0)
+    val buffer = ByteArray(length)
+    var totalRead = 0
+    var currentOffset = fileOffset
+    while (totalRead < length) {
+        val read = file.read(buffer, currentOffset, totalRead, length - totalRead)
+        if (read <= 0) break
+        totalRead += read
+        currentOffset += read.toLong()
+    }
+    return if (totalRead == buffer.size) buffer else buffer.copyOf(totalRead)
+}
+
+private fun storeJvmRemoteArtwork(relativePath: String, bytes: ByteArray): String? {
+    if (bytes.isEmpty()) return null
+    val fileName = buildString {
+        append(relativePath.hashCode().toUInt().toString(16))
+        append('-')
+        append(bytes.contentHashCode().toUInt().toString(16))
+        append(".img")
+    }
+    val target = File(jvmRemoteArtworkDirectory, fileName)
+    if (!target.exists() || target.length() != bytes.size.toLong()) {
+        target.writeBytes(bytes)
+    }
+    return target.absolutePath
 }
 
 private fun joinSegments(left: String, right: String): String {
@@ -819,6 +985,10 @@ private const val MAX_RECENT_VLC_LOGS = 8
 private fun buildSambaCacheFileName(sourceId: String, remotePath: String): String {
     val sanitized = remotePath.replace(Regex("[^A-Za-z0-9._-]"), "_")
     return "$sourceId-$sanitized"
+}
+
+private val jvmRemoteArtworkDirectory = File(File(System.getProperty("user.home")), ".lynmusic/artwork").apply {
+    mkdirs()
 }
 
 internal const val SAMBA_LOG_TAG = "Samba"
