@@ -2297,65 +2297,61 @@ private fun ManualLyricsSearchResultsPane(
                         if (state.manualLyricsResults.isNotEmpty()) {
                             Text("直接歌词结果", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
                             state.manualLyricsResults.forEach { candidate ->
-                                ElevatedCard(
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onPlayerIntent(PlayerIntent.ApplyManualLyricsCandidate(candidate)) },
-                                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White.copy(alpha = 0.06f)),
-                                    shape = RoundedCornerShape(20.dp),
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .clickable { onPlayerIntent(PlayerIntent.ApplyManualLyricsCandidate(candidate)) }
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
+                                    TrackArtworkThumbnail(
+                                        artworkLocator = null,
+                                        modifier = Modifier.size(56.dp),
+                                    )
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
-                                        TrackArtworkThumbnail(
-                                            artworkLocator = null,
-                                            modifier = Modifier.size(56.dp),
-                                        )
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Text(
-                                                    candidate.sourceName,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = primaryTextColor,
-                                                )
-                                                Text(
-                                                    "${if (candidate.document.isSynced) "同步" else "纯文本"} · ${candidate.document.lines.size} 行",
-                                                    color = secondaryTextColor,
-                                                )
-                                            }
-                                            candidate.title?.takeIf { it.isNotBlank() }?.let { title ->
-                                                Text(
-                                                    title,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    color = primaryTextColor,
-                                                    fontWeight = FontWeight.Medium,
-                                                )
-                                            }
-                                            manualLyricsCandidateMetadata(candidate)?.let { metadata ->
-                                                Text(
-                                                    metadata,
-                                                    color = secondaryTextColor,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                            }
                                             Text(
-                                                manualLyricsPreview(candidate),
-                                                color = primaryTextColor.copy(alpha = 0.84f),
-                                                maxLines = 2,
+                                                candidate.sourceName,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = primaryTextColor,
+                                            )
+                                            Text(
+                                                "${if (candidate.document.isSynced) "同步" else "纯文本"} · ${candidate.document.lines.size} 行",
+                                                color = secondaryTextColor,
+                                            )
+                                        }
+                                        candidate.title?.takeIf { it.isNotBlank() }?.let { title ->
+                                            Text(
+                                                title,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = primaryTextColor,
+                                                fontWeight = FontWeight.Medium,
+                                            )
+                                        }
+                                        manualLyricsCandidateMetadata(candidate)?.let { metadata ->
+                                            Text(
+                                                metadata,
+                                                color = secondaryTextColor,
+                                                maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
                                         }
+                                        Text(
+                                            manualLyricsPreview(candidate),
+                                            color = primaryTextColor.copy(alpha = 0.84f),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
                                     }
                                 }
                             }
@@ -2363,57 +2359,53 @@ private fun ManualLyricsSearchResultsPane(
                         if (state.manualWorkflowSongResults.isNotEmpty()) {
                             Text("Workflow 歌曲候选", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
                             state.manualWorkflowSongResults.forEach { candidate ->
-                                ElevatedCard(
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onPlayerIntent(PlayerIntent.ApplyWorkflowSongCandidate(candidate)) },
-                                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White.copy(alpha = 0.06f)),
-                                    shape = RoundedCornerShape(20.dp),
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .clickable { onPlayerIntent(PlayerIntent.ApplyWorkflowSongCandidate(candidate)) }
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
+                                    TrackArtworkThumbnail(
+                                        artworkLocator = candidate.imageUrl,
+                                        modifier = Modifier.size(56.dp),
+                                    )
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
-                                        TrackArtworkThumbnail(
-                                            artworkLocator = candidate.imageUrl,
-                                            modifier = Modifier.size(56.dp),
-                                        )
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Text(
-                                                    candidate.sourceName,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = primaryTextColor,
-                                                )
-                                                candidate.durationSeconds?.let { seconds ->
-                                                    Text(
-                                                        formatLyricsCandidateDuration(seconds),
-                                                        color = secondaryTextColor,
-                                                    )
-                                                }
-                                            }
                                             Text(
-                                                candidate.title,
+                                                candidate.sourceName,
                                                 style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.SemiBold,
                                                 color = primaryTextColor,
-                                                fontWeight = FontWeight.Medium,
                                             )
-                                            Text(
-                                                manualWorkflowCandidatePreview(candidate),
-                                                color = primaryTextColor.copy(alpha = 0.84f),
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
+                                            candidate.durationSeconds?.let { seconds ->
+                                                Text(
+                                                    formatLyricsCandidateDuration(seconds),
+                                                    color = secondaryTextColor,
+                                                )
+                                            }
                                         }
+                                        Text(
+                                            candidate.title,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = primaryTextColor,
+                                            fontWeight = FontWeight.Medium,
+                                        )
+                                        Text(
+                                            manualWorkflowCandidatePreview(candidate),
+                                            color = primaryTextColor.copy(alpha = 0.84f),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
                                     }
                                 }
                             }
