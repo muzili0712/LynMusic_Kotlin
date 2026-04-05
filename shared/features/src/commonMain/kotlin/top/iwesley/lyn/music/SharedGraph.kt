@@ -14,6 +14,7 @@ import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
@@ -38,6 +39,7 @@ data class SharedRuntimeServices(
     val importSourceGateway: ImportSourceGateway,
     val secureCredentialStore: SecureCredentialStore,
     val sambaCachePreferencesStore: SambaCachePreferencesStore,
+    val themePreferencesStore: ThemePreferencesStore,
     val librarySourceFilterPreferencesStore: LibrarySourceFilterPreferencesStore,
     val lyricsHttpClient: LyricsHttpClient,
     val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
@@ -76,6 +78,7 @@ fun buildSharedGraph(
     val settingsRepository = DefaultSettingsRepository(
         database = database,
         sambaCachePreferencesStore = runtimeServices.sambaCachePreferencesStore,
+        themePreferencesStore = runtimeServices.themePreferencesStore,
     )
     NavidromeLocatorRuntime.install(
         object : top.iwesley.lyn.music.core.model.NavidromeLocatorResolver {

@@ -35,6 +35,14 @@ import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
+import top.iwesley.lyn.music.core.model.ThemePreferencesStore
+import top.iwesley.lyn.music.core.model.AppThemeId
+import top.iwesley.lyn.music.core.model.AppThemeTextPalette
+import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
+import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
@@ -105,6 +113,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             importSourceGateway = IosImportSourceGateway(navidromeHttpClient),
             secureCredentialStore = secureStore,
             sambaCachePreferencesStore = appPreferencesStore,
+            themePreferencesStore = appPreferencesStore,
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createIosArtworkCacheStore(),
@@ -216,15 +225,21 @@ private class IosKeychainCredentialStore : SecureCredentialStore {
     }
 }
 
-private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, LibrarySourceFilterPreferencesStore {
+private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, LibrarySourceFilterPreferencesStore {
     private val defaults = NSUserDefaults.standardUserDefaults
     private val mutableUseSambaCache = MutableStateFlow(
         if (defaults.objectForKey(KEY_USE_SAMBA_CACHE) == null) true else defaults.boolForKey(KEY_USE_SAMBA_CACHE),
     )
     private val mutableLibrarySourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER))
     private val mutableFavoritesSourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_FAVORITES_SOURCE_FILTER))
+    private val mutableSelectedTheme = MutableStateFlow(readSelectedTheme())
+    private val mutableCustomThemeTokens = MutableStateFlow(readCustomThemeTokens())
+    private val mutableTextPalettePreferences = MutableStateFlow(readTextPalettePreferences())
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
+    override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
+    override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
+    override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
     override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
     override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
 
@@ -243,9 +258,70 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
         mutableFavoritesSourceFilter.value = filter
     }
 
+    override suspend fun setSelectedTheme(themeId: AppThemeId) {
+        defaults.setObject(themeId.name, KEY_SELECTED_THEME)
+        mutableSelectedTheme.value = themeId
+    }
+
+    override suspend fun setCustomThemeTokens(tokens: AppThemeTokens) {
+        defaults.setInteger(tokens.backgroundArgb.toLong(), KEY_CUSTOM_THEME_BACKGROUND_ARGB)
+        defaults.setInteger(tokens.accentArgb.toLong(), KEY_CUSTOM_THEME_ACCENT_ARGB)
+        defaults.setInteger(tokens.focusArgb.toLong(), KEY_CUSTOM_THEME_FOCUS_ARGB)
+        mutableCustomThemeTokens.value = tokens
+    }
+
+    override suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette) {
+        defaults.setObject(palette.name, textPaletteKey(themeId))
+        mutableTextPalettePreferences.value = mutableTextPalettePreferences.value.withThemePalette(themeId, palette)
+    }
+
     private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
         val name = defaults.stringForKey(key)
         return LibrarySourceFilter.entries.firstOrNull { it.name == name } ?: LibrarySourceFilter.ALL
+    }
+
+    private fun readSelectedTheme(): AppThemeId {
+        val name = defaults.stringForKey(KEY_SELECTED_THEME)
+        return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Classic
+    }
+
+    private fun readCustomThemeTokens(): AppThemeTokens {
+        val defaultTokens = defaultCustomThemeTokens()
+        return AppThemeTokens(
+            backgroundArgb = readIntPreference(KEY_CUSTOM_THEME_BACKGROUND_ARGB, defaultTokens.backgroundArgb),
+            accentArgb = readIntPreference(KEY_CUSTOM_THEME_ACCENT_ARGB, defaultTokens.accentArgb),
+            focusArgb = readIntPreference(KEY_CUSTOM_THEME_FOCUS_ARGB, defaultTokens.focusArgb),
+        )
+    }
+
+    private fun readTextPalettePreferences(): AppThemeTextPalettePreferences {
+        val defaults = defaultThemeTextPalettePreferences()
+        return AppThemeTextPalettePreferences(
+            classic = readTextPalette(textPaletteKey(AppThemeId.Classic), defaults.classic),
+            forest = readTextPalette(textPaletteKey(AppThemeId.Forest), defaults.forest),
+            ocean = readTextPalette(textPaletteKey(AppThemeId.Ocean), defaults.ocean),
+            sand = readTextPalette(textPaletteKey(AppThemeId.Sand), defaults.sand),
+            custom = readTextPalette(textPaletteKey(AppThemeId.Custom), defaults.custom),
+        )
+    }
+
+    private fun readTextPalette(key: String, fallback: AppThemeTextPalette): AppThemeTextPalette {
+        val name = defaults.stringForKey(key)
+        return AppThemeTextPalette.entries.firstOrNull { it.name == name } ?: fallback
+    }
+
+    private fun readIntPreference(key: String, fallback: Int): Int {
+        return if (defaults.objectForKey(key) == null) fallback else defaults.integerForKey(key).toInt()
+    }
+
+    private fun textPaletteKey(themeId: AppThemeId): String {
+        return when (themeId) {
+            AppThemeId.Classic -> KEY_THEME_TEXT_PALETTE_CLASSIC
+            AppThemeId.Forest -> KEY_THEME_TEXT_PALETTE_FOREST
+            AppThemeId.Ocean -> KEY_THEME_TEXT_PALETTE_OCEAN
+            AppThemeId.Sand -> KEY_THEME_TEXT_PALETTE_SAND
+            AppThemeId.Custom -> KEY_THEME_TEXT_PALETTE_CUSTOM
+        }
     }
 }
 
@@ -318,3 +394,12 @@ private const val IOS_KEYCHAIN_SERVICE = "top.iwesley.lyn.music.credentials"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"
+private const val KEY_SELECTED_THEME = "selected_theme"
+private const val KEY_CUSTOM_THEME_BACKGROUND_ARGB = "custom_theme_background_argb"
+private const val KEY_CUSTOM_THEME_ACCENT_ARGB = "custom_theme_accent_argb"
+private const val KEY_CUSTOM_THEME_FOCUS_ARGB = "custom_theme_focus_argb"
+private const val KEY_THEME_TEXT_PALETTE_CLASSIC = "theme_text_palette_classic"
+private const val KEY_THEME_TEXT_PALETTE_FOREST = "theme_text_palette_forest"
+private const val KEY_THEME_TEXT_PALETTE_OCEAN = "theme_text_palette_ocean"
+private const val KEY_THEME_TEXT_PALETTE_SAND = "theme_text_palette_sand"
+private const val KEY_THEME_TEXT_PALETTE_CUSTOM = "theme_text_palette_custom"

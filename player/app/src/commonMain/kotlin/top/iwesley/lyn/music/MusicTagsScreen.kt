@@ -43,6 +43,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -77,6 +78,7 @@ import top.iwesley.lyn.music.feature.tags.MusicTagsRowMetadata
 import top.iwesley.lyn.music.feature.tags.MusicTagsState
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
+import top.iwesley.lyn.music.ui.mainShellColors
 
 private val MusicTagsTableWidth = 940.dp
 
@@ -286,6 +288,7 @@ private fun MusicTagsTrackPane(
     onActivateTrack: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(28.dp),
@@ -318,7 +321,7 @@ private fun MusicTagsTrackPane(
                             .fillMaxSize()
                             .border(
                                 width = 1.dp,
-                                color = Color.White.copy(alpha = 0.08f),
+                                color = shellColors.cardBorder,
                                 shape = RoundedCornerShape(20.dp),
                             )
                             .clip(RoundedCornerShape(20.dp))
@@ -809,6 +812,7 @@ private fun MusicTagsTableCell(
 private fun MusicTagsArtworkPreview(
     artworkContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
 ) {
+    val shellColors = mainShellColors
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.28f)),
@@ -820,7 +824,7 @@ private fun MusicTagsArtworkPreview(
                 .padding(12.dp)
                 .border(
                     width = 1.dp,
-                    color = Color.White.copy(alpha = 0.08f),
+                    color = shellColors.cardBorder,
                     shape = RoundedCornerShape(20.dp),
                 )
                 .clip(RoundedCornerShape(20.dp))
@@ -842,6 +846,7 @@ private fun MusicTagsField(
     minLines: Int = 1,
     resetKey: Any? = null,
 ) {
+    val shellColors = mainShellColors
     ImeAwareOutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -850,6 +855,11 @@ private fun MusicTagsField(
         modifier = modifier,
         minLines = minLines,
         shape = RoundedCornerShape(18.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = shellColors.cardBorder,
+            unfocusedBorderColor = shellColors.cardBorder,
+            disabledBorderColor = shellColors.cardBorder,
+        ),
         resetKey = resetKey,
     )
 }

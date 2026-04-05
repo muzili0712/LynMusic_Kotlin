@@ -4,11 +4,20 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 import kotlin.time.Clock
+import top.iwesley.lyn.music.core.model.AppThemeId
+import top.iwesley.lyn.music.core.model.AppThemeTextPalette
+import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
+import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
+import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.formatThemeHexColor
+import top.iwesley.lyn.music.core.model.parseThemeHexColor
+import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LRCLIB_SYNCED_JSON_MAP_EXTRACTOR
 import top.iwesley.lyn.music.data.repository.SettingsRepository
@@ -26,6 +35,13 @@ import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceId
 data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = true,
+    val selectedTheme: AppThemeId = AppThemeId.Classic,
+    val customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
+    val textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
+    val customBackgroundHex: String = formatThemeHexColor(defaultCustomThemeTokens().backgroundArgb),
+    val customAccentHex: String = formatThemeHexColor(defaultCustomThemeTokens().accentArgb),
+    val customFocusHex: String = formatThemeHexColor(defaultCustomThemeTokens().focusArgb),
+    val themeInputError: String? = null,
     val lrcApiUrl: String = "",
     val hasLrcApiSource: Boolean = false,
     val musicmatchUserToken: String = "",
@@ -48,6 +64,11 @@ data class SettingsState(
 
 sealed interface SettingsIntent {
     data class UseSambaCacheChanged(val value: Boolean) : SettingsIntent
+    data class ThemeSelected(val value: AppThemeId) : SettingsIntent
+    data class ThemeTextPaletteSelected(val themeId: AppThemeId, val value: AppThemeTextPalette) : SettingsIntent
+    data class CustomThemeBackgroundChanged(val value: String) : SettingsIntent
+    data class CustomThemeAccentChanged(val value: String) : SettingsIntent
+    data class CustomThemeFocusChanged(val value: String) : SettingsIntent
     data class SelectConfig(val config: LyricsSourceConfig?) : SettingsIntent
     data class SelectLrcApi(val config: LyricsSourceConfig?) : SettingsIntent
     data class SelectMusicmatch(val config: WorkflowLyricsSourceConfig?) : SettingsIntent
@@ -72,6 +93,8 @@ sealed interface SettingsIntent {
     data object ClearLrcApi : SettingsIntent
     data object SaveMusicmatch : SettingsIntent
     data object ClearMusicmatch : SettingsIntent
+    data object SaveCustomTheme : SettingsIntent
+    data object ResetCustomTheme : SettingsIntent
     data class ToggleSourceEnabled(val sourceId: String, val enabled: Boolean) : SettingsIntent
     data class DeleteSource(val sourceId: String) : SettingsIntent
     data object Save : SettingsIntent
@@ -121,6 +144,29 @@ class SettingsStore(
                 updateState { state -> state.copy(useSambaCache = enabled) }
             }
         }
+        scope.launch {
+            repository.selectedTheme.collect { themeId ->
+                updateState { state -> state.copy(selectedTheme = themeId) }
+            }
+        }
+        scope.launch {
+            repository.customThemeTokens.collect { tokens ->
+                updateState { state ->
+                    state.copy(
+                        customThemeTokens = tokens,
+                        customBackgroundHex = formatThemeHexColor(tokens.backgroundArgb),
+                        customAccentHex = formatThemeHexColor(tokens.accentArgb),
+                        customFocusHex = formatThemeHexColor(tokens.focusArgb),
+                        themeInputError = null,
+                    )
+                }
+            }
+        }
+        scope.launch {
+            repository.textPalettePreferences.collect { preferences ->
+                updateState { state -> state.copy(textPalettePreferences = preferences) }
+            }
+        }
     }
 
     override suspend fun handleIntent(intent: SettingsIntent) {
@@ -130,34 +176,38 @@ class SettingsStore(
                 updateState { it.copy(useSambaCache = intent.value) }
             }
 
+            is SettingsIntent.ThemeSelected -> {
+                repository.setSelectedTheme(intent.value)
+                updateState { it.copy(selectedTheme = intent.value, themeInputError = null) }
+            }
+
+            is SettingsIntent.ThemeTextPaletteSelected -> {
+                repository.setTextPalette(intent.themeId, intent.value)
+                updateState {
+                    it.copy(
+                        textPalettePreferences = it.textPalettePreferences.withThemePalette(intent.themeId, intent.value),
+                    )
+                }
+            }
+
+            is SettingsIntent.CustomThemeBackgroundChanged -> updateState {
+                it.copy(customBackgroundHex = intent.value, themeInputError = null)
+            }
+
+            is SettingsIntent.CustomThemeAccentChanged -> updateState {
+                it.copy(customAccentHex = intent.value, themeInputError = null)
+            }
+
+            is SettingsIntent.CustomThemeFocusChanged -> updateState {
+                it.copy(customFocusHex = intent.value, themeInputError = null)
+            }
+
             is SettingsIntent.SelectConfig -> updateState {
                 val config = intent.config
                 when {
                     config != null && isManagedLrcApiSource(config) -> it.enterLrcApiState(config)
                     config != null -> config.toState()
-                    it.editingId != null -> {
-                        it.copy(
-                            editingId = null,
-                            lrcApiUrl = it.lrcApiUrl,
-                            hasLrcApiSource = it.hasLrcApiSource,
-                            musicmatchUserToken = it.musicmatchUserToken,
-                            hasMusicmatchSource = it.hasMusicmatchSource,
-                            message = null,
-                        )
-                    }
-
-                    else -> {
-                        SettingsState(
-                            sources = it.sources,
-                            useSambaCache = it.useSambaCache,
-                            lrcApiUrl = it.lrcApiUrl,
-                            hasLrcApiSource = it.hasLrcApiSource,
-                            musicmatchUserToken = it.musicmatchUserToken,
-                            hasMusicmatchSource = it.hasMusicmatchSource,
-                            workflowJsonInput = it.workflowJsonInput,
-                            editingWorkflowId = it.editingWorkflowId,
-                        )
-                    }
+                    else -> it.clearDirectEditor(message = null)
                 }
             }
 
@@ -375,6 +425,39 @@ class SettingsStore(
                 }
             }
 
+            SettingsIntent.SaveCustomTheme -> {
+                val tokens = state.value.parseCustomThemeDraft().getOrElse { error ->
+                    updateState { it.copy(themeInputError = error.message ?: "颜色格式不正确。") }
+                    return
+                }
+                repository.setCustomThemeTokens(tokens)
+                updateState {
+                    it.copy(
+                        customThemeTokens = tokens,
+                        customBackgroundHex = formatThemeHexColor(tokens.backgroundArgb),
+                        customAccentHex = formatThemeHexColor(tokens.accentArgb),
+                        customFocusHex = formatThemeHexColor(tokens.focusArgb),
+                        themeInputError = null,
+                        message = "自定义主题已保存。",
+                    )
+                }
+            }
+
+            SettingsIntent.ResetCustomTheme -> {
+                val tokens = defaultCustomThemeTokens()
+                repository.setCustomThemeTokens(tokens)
+                updateState {
+                    it.copy(
+                        customThemeTokens = tokens,
+                        customBackgroundHex = formatThemeHexColor(tokens.backgroundArgb),
+                        customAccentHex = formatThemeHexColor(tokens.accentArgb),
+                        customFocusHex = formatThemeHexColor(tokens.focusArgb),
+                        themeInputError = null,
+                        message = "自定义主题已重置。",
+                    )
+                }
+            }
+
             is SettingsIntent.ToggleSourceEnabled -> {
                 repository.setLyricsSourceEnabled(intent.sourceId, intent.enabled)
                 updateState {
@@ -390,7 +473,7 @@ class SettingsStore(
                     val shouldClearLrcApi = intent.sourceId == MANAGED_LRCAPI_SOURCE_ID
                     val shouldClearMusicmatch = intent.sourceId == MANAGED_MUSICMATCH_SOURCE_ID
                     if (shouldClearDirect) {
-                        SettingsState(
+                        it.clearDirectEditor(
                             sources = it.sources,
                             useSambaCache = it.useSambaCache,
                             lrcApiUrl = if (shouldClearLrcApi) "" else it.lrcApiUrl,
@@ -433,7 +516,7 @@ class SettingsStore(
                 val editingId = state.value.editingId ?: return
                 repository.deleteLyricsSource(editingId)
                 updateState {
-                    SettingsState(
+                    it.clearDirectEditor(
                         sources = it.sources,
                         useSambaCache = it.useSambaCache,
                         lrcApiUrl = it.lrcApiUrl,
@@ -472,13 +555,9 @@ class SettingsStore(
             sources: List<LyricsSourceDefinition> = state.value.sources,
             message: String? = null,
     ): SettingsState {
-        return SettingsState(
+        return state.value.copy(
             sources = sources,
             useSambaCache = state.value.useSambaCache,
-            lrcApiUrl = state.value.lrcApiUrl,
-            hasLrcApiSource = state.value.hasLrcApiSource,
-            musicmatchUserToken = state.value.musicmatchUserToken,
-            hasMusicmatchSource = state.value.hasMusicmatchSource,
             editingId = id,
             name = name,
             method = method,
@@ -490,8 +569,6 @@ class SettingsStore(
             extractor = extractor,
             priority = priority.toString(),
             enabled = enabled,
-            workflowJsonInput = state.value.workflowJsonInput,
-            editingWorkflowId = state.value.editingWorkflowId,
             message = message,
         )
     }
@@ -511,11 +588,72 @@ class SettingsStore(
     private fun SettingsState.enterLrcApiState(config: LyricsSourceConfig?): SettingsState {
         return copy(
             editingId = null,
+            name = "",
+            method = RequestMethod.GET,
+            urlTemplate = "",
+            headersTemplate = "",
+            queryTemplate = "",
+            bodyTemplate = "",
+            responseFormat = LyricsResponseFormat.JSON,
+            extractor = LRCLIB_SYNCED_JSON_MAP_EXTRACTOR,
+            priority = "0",
+            enabled = true,
             lrcApiUrl = config?.let(::extractManagedLrcApiUrl).orEmpty(),
             hasLrcApiSource = config != null,
             workflowJsonInput = "",
             editingWorkflowId = null,
             message = null,
+        )
+    }
+
+    private fun SettingsState.parseCustomThemeDraft(): Result<AppThemeTokens> {
+        val background = parseThemeHexColor(customBackgroundHex)
+            ?: return Result.failure(IllegalArgumentException("主背景色格式不正确，请使用 #RRGGBB。"))
+        val accent = parseThemeHexColor(customAccentHex)
+            ?: return Result.failure(IllegalArgumentException("主色格式不正确，请使用 #RRGGBB。"))
+        val focus = parseThemeHexColor(customFocusHex)
+            ?: return Result.failure(IllegalArgumentException("选中 / 落焦色格式不正确，请使用 #RRGGBB。"))
+        return Result.success(
+            AppThemeTokens(
+                backgroundArgb = background,
+                accentArgb = accent,
+                focusArgb = focus,
+            ),
+        )
+    }
+
+    private fun SettingsState.clearDirectEditor(
+        sources: List<LyricsSourceDefinition> = this.sources,
+        useSambaCache: Boolean = this.useSambaCache,
+        lrcApiUrl: String = this.lrcApiUrl,
+        hasLrcApiSource: Boolean = this.hasLrcApiSource,
+        musicmatchUserToken: String = this.musicmatchUserToken,
+        hasMusicmatchSource: Boolean = this.hasMusicmatchSource,
+        workflowJsonInput: String = this.workflowJsonInput,
+        editingWorkflowId: String? = this.editingWorkflowId,
+        message: String? = this.message,
+    ): SettingsState {
+        return copy(
+            sources = sources,
+            useSambaCache = useSambaCache,
+            lrcApiUrl = lrcApiUrl,
+            hasLrcApiSource = hasLrcApiSource,
+            musicmatchUserToken = musicmatchUserToken,
+            hasMusicmatchSource = hasMusicmatchSource,
+            editingId = null,
+            name = "",
+            method = RequestMethod.GET,
+            urlTemplate = "",
+            headersTemplate = "",
+            queryTemplate = "",
+            bodyTemplate = "",
+            responseFormat = LyricsResponseFormat.JSON,
+            extractor = LRCLIB_SYNCED_JSON_MAP_EXTRACTOR,
+            priority = "0",
+            enabled = true,
+            workflowJsonInput = workflowJsonInput,
+            editingWorkflowId = editingWorkflowId,
+            message = message,
         )
     }
 }

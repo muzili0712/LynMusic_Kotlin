@@ -1,55 +1,116 @@
 package top.iwesley.lyn.music.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import top.iwesley.lyn.music.core.model.AppThemePalette
+import top.iwesley.lyn.music.core.model.AppThemeTextPalette
+import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.CLASSIC_APP_THEME_TOKENS
+import top.iwesley.lyn.music.core.model.deriveAppThemePalette
 
-private val DarkPalette = darkColorScheme(
-    primary = Color(0xFFFF6B6B),
-    onPrimary = Color(0xFF290000),
-    secondary = Color(0xFFFFA94D),
-    onSecondary = Color(0xFF331500),
-    tertiary = Color(0xFFFFD8A8),
-    background = Color(0xFF120B0D),
-    onBackground = Color(0xFFF8ECEA),
-    surface = Color(0xFF1B1114),
-    onSurface = Color(0xFFF8ECEA),
-    surfaceVariant = Color(0xFF352227),
-    onSurfaceVariant = Color(0xFFE4C9C5),
-    outline = Color(0xFF9C7476),
+@Immutable
+data class MainShellColors(
+    val appGradientTop: Color,
+    val navContainer: Color,
+    val cardContainer: Color,
+    val cardBorder: Color,
+    val selectedContainer: Color,
+    val selectedBorder: Color,
+    val secondaryText: Color,
+    val heroGlow: Color,
 )
 
-private val LightPalette = lightColorScheme(
-    primary = Color(0xFFE03131),
-    onPrimary = Color(0xFFFFFFFF),
-    secondary = Color(0xFFF76707),
-    onSecondary = Color(0xFFFFFFFF),
-    tertiary = Color(0xFFFFC078),
-    background = Color(0xFFFFF8F7),
-    onBackground = Color(0xFF2B1718),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF2B1718),
-    surfaceVariant = Color(0xFFFCE4E1),
-    onSurfaceVariant = Color(0xFF5F4346),
-    outline = Color(0xFFB38A8A),
-)
+private val LocalMainShellColors = staticCompositionLocalOf {
+    deriveAppThemePalette(
+        tokens = CLASSIC_APP_THEME_TOKENS,
+        textPalette = AppThemeTextPalette.White,
+    ).toMainShellColors()
+}
+
+val mainShellColors: MainShellColors
+    @Composable
+    @ReadOnlyComposable
+    get() = LocalMainShellColors.current
 
 @Composable
 fun LynMusicTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeTokens: AppThemeTokens = CLASSIC_APP_THEME_TOKENS,
+    textPalette: AppThemeTextPalette = AppThemeTextPalette.White,
     content: @Composable () -> Unit,
 ) {
+    val palette = remember(themeTokens, textPalette) {
+        deriveAppThemePalette(
+            tokens = themeTokens,
+            textPalette = textPalette,
+        )
+    }
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkPalette else LightPalette,
+        colorScheme = palette.toColorScheme(),
         typography = Typography(),
-        content = content,
-    )
+    ) {
+        CompositionLocalProvider(
+            LocalContentColor provides Color(palette.onBackgroundArgb),
+            LocalMainShellColors provides palette.toMainShellColors(),
+        ) {
+            content()
+        }
+    }
 }
 
 val ColorScheme.heroGlow: Color
-    get() = if (background.red < 0.2f) Color(0x66FF6B6B) else Color(0x33E03131)
+    @Composable
+    @ReadOnlyComposable
+    get() = mainShellColors.heroGlow
+
+private fun AppThemePalette.toColorScheme(): ColorScheme {
+    return darkColorScheme(
+        primary = Color(primaryArgb),
+        onPrimary = Color(onPrimaryArgb),
+        primaryContainer = Color(selectedContainerArgb),
+        onPrimaryContainer = Color(onBackgroundArgb),
+        secondary = Color(secondaryArgb),
+        onSecondary = Color(onSecondaryArgb),
+        secondaryContainer = Color(selectedContainerArgb),
+        onSecondaryContainer = Color(onBackgroundArgb),
+        tertiary = Color(tertiaryArgb),
+        onTertiary = Color(onTertiaryArgb),
+        tertiaryContainer = Color(cardContainerArgb),
+        onTertiaryContainer = Color(onSurfaceArgb),
+        background = Color(backgroundArgb),
+        onBackground = Color(onBackgroundArgb),
+        surface = Color(surfaceArgb),
+        onSurface = Color(onSurfaceArgb),
+        surfaceVariant = Color(surfaceVariantArgb),
+        onSurfaceVariant = Color(onSurfaceVariantArgb),
+        surfaceTint = Color(primaryArgb),
+        inverseSurface = Color(onSurfaceArgb),
+        inverseOnSurface = Color(surfaceArgb),
+        inversePrimary = Color(secondaryArgb),
+        outline = Color(outlineArgb),
+        outlineVariant = Color(cardBorderArgb),
+        scrim = Color(0x99000000.toInt()),
+    )
+}
+
+private fun AppThemePalette.toMainShellColors(): MainShellColors {
+    return MainShellColors(
+        appGradientTop = Color(appGradientTopArgb),
+        navContainer = Color(navContainerArgb),
+        cardContainer = Color(cardContainerArgb),
+        cardBorder = Color(cardBorderArgb),
+        selectedContainer = Color(selectedContainerArgb),
+        selectedBorder = Color(selectedBorderArgb),
+        secondaryText = Color(secondaryTextArgb),
+        heroGlow = Color(heroGlowArgb),
+    )
+}

@@ -90,6 +90,7 @@ import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.heroGlow
+import top.iwesley.lyn.music.ui.mainShellColors
 
 @Composable
 internal fun PlayerDrawerHost(
@@ -204,6 +205,7 @@ internal fun QueueDrawer(
     modifier: Modifier = Modifier,
 ) {
     if (state.snapshot.currentTrack == null) return
+    val shellColors = mainShellColors
     val listState = rememberLazyListState()
     LaunchedEffect(state.isQueueVisible, state.snapshot.currentIndex, state.snapshot.queue.size) {
         if (state.isQueueVisible && state.snapshot.currentIndex in state.snapshot.queue.indices) {
@@ -220,7 +222,7 @@ internal fun QueueDrawer(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.42f))
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f))
                     .clickable { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) },
             )
             Card(
@@ -229,7 +231,8 @@ internal fun QueueDrawer(
                     .fillMaxHeight()
                     .width(if (compact) 340.dp else 420.dp),
                 shape = RoundedCornerShape(topStart = 30.dp, bottomStart = 30.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
+                colors = CardDefaults.cardColors(containerColor = shellColors.cardContainer),
+                border = BorderStroke(1.dp, shellColors.cardBorder),
             ) {
                 Column(
                     modifier = Modifier
@@ -511,13 +514,6 @@ private fun PlayerOverlay(
             if (state.isLyricsShareVisible) {
                 LyricsShareOverlay(
                     platform = platform,
-                    state = state,
-                    onPlayerIntent = onPlayerIntent,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            if (state.isManualLyricsSearchVisible) {
-                ManualLyricsSearchOverlay(
                     state = state,
                     onPlayerIntent = onPlayerIntent,
                     modifier = Modifier.fillMaxSize(),
@@ -1113,6 +1109,7 @@ private fun QueueTrackRow(
     isPlaying: Boolean,
     onClick: () -> Unit,
 ) {
+    val shellColors = mainShellColors
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -1133,7 +1130,7 @@ private fun QueueTrackRow(
             } else {
                 Text(
                     text = (index + 1).toString().padStart(2, '0'),
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -1167,7 +1164,7 @@ private fun QueueTrackRow(
                 .fillMaxWidth()
                 .padding(start = 42.dp)
                 .height(1.dp)
-                .background(Color.White.copy(alpha = 0.08f)),
+                .background(shellColors.cardBorder),
         )
     }
 }

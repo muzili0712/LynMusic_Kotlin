@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -71,6 +72,7 @@ import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -84,6 +86,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -146,7 +149,11 @@ import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppTab
 import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
+import top.iwesley.lyn.music.core.model.AppThemeId
+import top.iwesley.lyn.music.core.model.AppThemeTextPalette
+import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.ArtworkTintTheme
+import top.iwesley.lyn.music.core.model.CLASSIC_APP_THEME_TOKENS
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
@@ -161,7 +168,12 @@ import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
+import top.iwesley.lyn.music.core.model.deriveAppThemePalette
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
+import top.iwesley.lyn.music.core.model.parseThemeHexColor
+import top.iwesley.lyn.music.core.model.presetThemeTokens
+import top.iwesley.lyn.music.core.model.resolveAppThemeTextPalette
+import top.iwesley.lyn.music.core.model.resolveAppThemeTokens
 import top.iwesley.lyn.music.data.repository.DefaultPlaybackRepository
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.feature.importing.ImportIntent
@@ -191,6 +203,7 @@ import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.LynMusicTheme
 import top.iwesley.lyn.music.ui.heroGlow
+import top.iwesley.lyn.music.ui.mainShellColors
 
 class LynMusicAppComponent(
     val platform: PlatformDescriptor,
@@ -257,24 +270,32 @@ fun App(component: LynMusicAppComponent) {
     val playerState by component.playerStore.state.collectAsState()
     val settingsState by component.settingsStore.state.collectAsState()
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.Library) }
+    val shellThemeTokens = remember(settingsState.selectedTheme, settingsState.customThemeTokens) {
+        resolveAppThemeTokens(
+            themeId = settingsState.selectedTheme,
+            customThemeTokens = settingsState.customThemeTokens,
+        )
+    }
+    val shellTextPalette = remember(settingsState.selectedTheme, settingsState.textPalettePreferences) {
+        resolveAppThemeTextPalette(
+            themeId = settingsState.selectedTheme,
+            preferences = settingsState.textPalettePreferences,
+        )
+    }
 
-    LynMusicTheme {
+    LynMusicTheme(
+        themeTokens = shellThemeTokens,
+        textPalette = shellTextPalette,
+    ) {
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize(),
         ) {
             val compact = maxWidth < 900.dp
+            val shellColors = mainShellColors
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.background,
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                MaterialTheme.colorScheme.background,
-                            ),
-                        ),
-                    ),
+                    .background(MaterialTheme.colorScheme.background),
             ) {
                 if (compact) {
                     MobileShell(
@@ -316,28 +337,40 @@ fun App(component: LynMusicAppComponent) {
                     )
                 }
 
-                PlayerDrawerHost(
-                    visible = playerState.isExpanded,
-                    platform = component.platform,
-                    state = playerState,
-                    onPlayerIntent = component.playerStore::dispatch,
-                    isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
-                    onToggleFavorite = {
-                        playerState.snapshot.currentTrack?.let { track ->
-                            component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(track))
-                        }
-                    },
-                    onOpenQueue = {
-                        component.playerStore.dispatch(PlayerIntent.QueueVisibilityChanged(true))
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                LynMusicTheme(
+                    themeTokens = CLASSIC_APP_THEME_TOKENS,
+                    textPalette = AppThemeTextPalette.White,
+                ) {
+                    PlayerDrawerHost(
+                        visible = playerState.isExpanded,
+                        platform = component.platform,
+                        state = playerState,
+                        onPlayerIntent = component.playerStore::dispatch,
+                        isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
+                        onToggleFavorite = {
+                            playerState.snapshot.currentTrack?.let { track ->
+                                component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(track))
+                            }
+                        },
+                        onOpenQueue = {
+                            component.playerStore.dispatch(PlayerIntent.QueueVisibilityChanged(true))
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
                 QueueDrawer(
                     state = playerState,
                     compact = compact,
                     onPlayerIntent = component.playerStore::dispatch,
                     modifier = Modifier.fillMaxSize(),
                 )
+                if (playerState.isManualLyricsSearchVisible) {
+                    ManualLyricsSearchOverlay(
+                        state = playerState,
+                        onPlayerIntent = component.playerStore::dispatch,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }
@@ -362,24 +395,30 @@ private fun MobileShell(
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
 ) {
+    val shellColors = mainShellColors
     Scaffold(
         bottomBar = {
             Column(
                 modifier = Modifier.navigationBarsPadding(),
             ) {
-                MiniPlayerBarVisibility(
-                    visible = playerState.snapshot.currentTrack != null && !playerState.isExpanded,
-                    state = playerState,
-                    onPlayerIntent = onPlayerIntent,
-                    isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
-                    onToggleFavorite = {
-                        playerState.snapshot.currentTrack?.let { track ->
-                            onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
-                        }
-                    },
-                    onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
-                )
-                NavigationBar {
+                LynMusicTheme(
+                    themeTokens = CLASSIC_APP_THEME_TOKENS,
+                    textPalette = AppThemeTextPalette.White,
+                ) {
+                    MiniPlayerBarVisibility(
+                        visible = playerState.snapshot.currentTrack != null && !playerState.isExpanded,
+                        state = playerState,
+                        onPlayerIntent = onPlayerIntent,
+                        isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
+                        onToggleFavorite = {
+                            playerState.snapshot.currentTrack?.let { track ->
+                                onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
+                            }
+                        },
+                        onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
+                    )
+                }
+                NavigationBar(containerColor = shellColors.navContainer) {
                     listOf(
                         Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
                         Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
@@ -392,6 +431,13 @@ private fun MobileShell(
                             onClick = { onTabSelected(tab) },
                             icon = { Icon(icon, contentDescription = label) },
                             label = { Text(label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                indicatorColor = shellColors.selectedContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
                         )
                     }
                 }
@@ -480,19 +526,24 @@ private fun DesktopShell(
                 onSettingsIntent = onSettingsIntent,
                 modifier = Modifier.weight(1f),
             )
-            MiniPlayerBarVisibility(
-                visible = playerState.snapshot.currentTrack != null && !playerState.isExpanded,
-                state = playerState,
-                onPlayerIntent = onPlayerIntent,
-                isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
-                onToggleFavorite = {
-                    playerState.snapshot.currentTrack?.let { track ->
-                        onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
-                    }
-                },
-                onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
-                compact = false,
-            )
+            LynMusicTheme(
+                themeTokens = CLASSIC_APP_THEME_TOKENS,
+                textPalette = AppThemeTextPalette.White,
+            ) {
+                MiniPlayerBarVisibility(
+                    visible = playerState.snapshot.currentTrack != null && !playerState.isExpanded,
+                    state = playerState,
+                    onPlayerIntent = onPlayerIntent,
+                    isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
+                    onToggleFavorite = {
+                        playerState.snapshot.currentTrack?.let { track ->
+                            onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
+                        }
+                    },
+                    onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
+                    compact = false,
+                )
+            }
         }
     }
 }
@@ -502,9 +553,11 @@ private fun DesktopNav(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
 ) {
+    val shellColors = mainShellColors
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+        colors = CardDefaults.cardColors(containerColor = shellColors.navContainer),
         shape = RoundedCornerShape(28.dp),
+        border = BorderStroke(1.dp, shellColors.cardBorder),
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -517,21 +570,35 @@ private fun DesktopNav(
                 Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
                 Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
             ).forEach { (tab, icon, label) ->
+                val selected = selectedTab == tab
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(18.dp))
                         .background(
-                            if (selectedTab == tab) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                            if (selected) MaterialTheme.colorScheme.secondary
                             else Color.Transparent,
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = if (selected) MaterialTheme.colorScheme.secondary else Color.Transparent,
+                            shape = RoundedCornerShape(18.dp),
                         )
                         .clickable { onTabSelected(tab) }
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary)
+                    Icon(
+                        icon,
+                        contentDescription = label,
+                        tint = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.primary,
+                    )
                     Spacer(Modifier.width(12.dp))
-                    Text(label, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        label,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurface,
+                    )
                 }
             }
         }
@@ -545,23 +612,17 @@ private fun HeroHeader(
     compact: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
+    val shellColors = mainShellColors
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(32.dp),
-        colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.7f)),
+        colors = CardDefaults.cardColors(containerColor = shellColors.cardContainer),
+        border = BorderStroke(1.dp, shellColors.cardBorder),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            colors.heroGlow,
-                            colors.secondary.copy(alpha = 0.15f),
-                            colors.surface.copy(alpha = 0.15f),
-                        ),
-                    ),
-                )
+                .background(MaterialTheme.colorScheme.background)
                 .padding(if (compact) 18.dp else 22.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -572,15 +633,15 @@ private fun HeroHeader(
                 )
                 Text(
                     text = "本地音乐与自定义歌词 API 的多端播放器",
-                    color = colors.onSurfaceVariant,
+                    color = shellColors.secondaryText,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AssistChip(
+                    MainShellAssistChip(
                         onClick = {},
                         label = { Text(platform.name) },
                         leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
                     )
-                    AssistChip(
+                    MainShellAssistChip(
                         onClick = {},
                         label = { Text(snapshot.queue.size.toString() + " 首队列") },
                         leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
@@ -856,6 +917,13 @@ private fun LibraryBrowserTab(
         selectedAlbumId = null
     }
 
+    val shellColors = mainShellColors
+    val searchFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = shellColors.cardBorder,
+        unfocusedBorderColor = shellColors.cardBorder,
+        disabledBorderColor = shellColors.cardBorder,
+    )
+
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
@@ -870,6 +938,7 @@ private fun LibraryBrowserTab(
                     label = { Text(strings.searchLabel) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(22.dp),
+                    colors = searchFieldColors,
                 )
             }
             item {
@@ -882,6 +951,7 @@ private fun LibraryBrowserTab(
                     DropdownMenu(
                         expanded = sourceFilterMenuExpanded,
                         onDismissRequest = { sourceFilterMenuExpanded = false },
+                        containerColor = mainShellColors.navContainer,
                     ) {
                         state.availableSourceFilters.forEach { filter ->
                             DropdownMenuItem(
@@ -1215,12 +1285,13 @@ private fun LibraryFastScrollbar(
             },
         contentAlignment = Alignment.TopCenter,
     ) {
+        val shellColors = mainShellColors
         Box(
             modifier = Modifier
                 .fillMaxHeight()
                 .width(4.dp)
                 .clip(RoundedCornerShape(999.dp))
-                .background(Color.White.copy(alpha = 0.10f)),
+                .background(shellColors.cardBorder),
         )
         Box(
             modifier = Modifier
@@ -1228,8 +1299,11 @@ private fun LibraryFastScrollbar(
                 .height(thumbHeightDp)
                 .width(8.dp)
                 .clip(RoundedCornerShape(999.dp))
-                .background(Color.White.copy(alpha = 0.82f))
-                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)), RoundedCornerShape(999.dp)),
+                .background(MaterialTheme.colorScheme.secondary)
+                .border(
+                    BorderStroke(1.dp, MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.18f)),
+                    RoundedCornerShape(999.dp),
+                ),
         )
     }
 }
@@ -1240,6 +1314,12 @@ private fun SourcesTab(
     onImportIntent: (ImportIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
+    val importFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = shellColors.cardBorder,
+        unfocusedBorderColor = shellColors.cardBorder,
+        disabledBorderColor = shellColors.cardBorder,
+    )
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1251,7 +1331,7 @@ private fun SourcesTab(
         state.message?.let { message ->
             BannerCard(message = message, onDismiss = { onImportIntent(ImportIntent.ClearMessage) })
         }
-        ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
             Column(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1268,7 +1348,7 @@ private fun SourcesTab(
                 }
             }
         }
-        ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
             Column(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1283,6 +1363,7 @@ private fun SourcesTab(
                     label = { Text("名称") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
+                    colors = importFieldColors,
                 )
                 ImeAwareOutlinedTextField(
                     value = state.navidromeBaseUrl,
@@ -1290,6 +1371,7 @@ private fun SourcesTab(
                     label = { Text("服务器地址") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
+                    colors = importFieldColors,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ImeAwareOutlinedTextField(
@@ -1298,6 +1380,7 @@ private fun SourcesTab(
                         label = { Text("用户名") },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
+                        colors = importFieldColors,
                     )
                     ImeAwareOutlinedTextField(
                         value = state.navidromePassword,
@@ -1305,6 +1388,7 @@ private fun SourcesTab(
                         label = { Text("密码") },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
+                        colors = importFieldColors,
                     )
                 }
                 Button(
@@ -1317,7 +1401,7 @@ private fun SourcesTab(
                 }
             }
         }
-        ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
             Column(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1326,9 +1410,9 @@ private fun SourcesTab(
                 if (!state.capabilities.supportsSambaImport) {
                     Text("当前平台建议通过系统 Files 挂载 SMB 后，再用本地文件夹方式接入。")
                 }
-                ImeAwareOutlinedTextField(value = state.sambaLabel, onValueChange = { onImportIntent(ImportIntent.SambaLabelChanged(it)) }, label = { Text("名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                ImeAwareOutlinedTextField(value = state.sambaLabel, onValueChange = { onImportIntent(ImportIntent.SambaLabelChanged(it)) }, label = { Text("名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = importFieldColors)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ImeAwareOutlinedTextField(value = state.sambaServer, onValueChange = { onImportIntent(ImportIntent.SambaServerChanged(it)) }, label = { Text("服务器地址") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.sambaServer, onValueChange = { onImportIntent(ImportIntent.SambaServerChanged(it)) }, label = { Text("服务器地址") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp), colors = importFieldColors)
                     ImeAwareOutlinedTextField(
                         value = state.sambaPort,
                         onValueChange = { onImportIntent(ImportIntent.SambaPortChanged(it)) },
@@ -1336,6 +1420,7 @@ private fun SourcesTab(
                         modifier = Modifier.width(140.dp),
                         shape = RoundedCornerShape(18.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = importFieldColors,
                     )
                 }
                 ImeAwareOutlinedTextField(
@@ -1344,10 +1429,11 @@ private fun SourcesTab(
                     label = { Text("路径（Share/子目录）") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
+                    colors = importFieldColors,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ImeAwareOutlinedTextField(value = state.sambaUsername, onValueChange = { onImportIntent(ImportIntent.SambaUsernameChanged(it)) }, label = { Text("用户名") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp))
-                    ImeAwareOutlinedTextField(value = state.sambaPassword, onValueChange = { onImportIntent(ImportIntent.SambaPasswordChanged(it)) }, label = { Text("密码（选填）") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.sambaUsername, onValueChange = { onImportIntent(ImportIntent.SambaUsernameChanged(it)) }, label = { Text("用户名") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp), colors = importFieldColors)
+                    ImeAwareOutlinedTextField(value = state.sambaPassword, onValueChange = { onImportIntent(ImportIntent.SambaPasswordChanged(it)) }, label = { Text("密码（选填）") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp), colors = importFieldColors)
                 }
                 Button(
                     onClick = { onImportIntent(ImportIntent.AddSambaSource) },
@@ -1359,7 +1445,7 @@ private fun SourcesTab(
                 }
             }
         }
-        ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
             Column(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1374,6 +1460,7 @@ private fun SourcesTab(
                     label = { Text("名称") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
+                    colors = importFieldColors,
                 )
                 ImeAwareOutlinedTextField(
                     value = state.webDavRootUrl,
@@ -1381,6 +1468,7 @@ private fun SourcesTab(
                     label = { Text("根 URL") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
+                    colors = importFieldColors,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ImeAwareOutlinedTextField(
@@ -1389,6 +1477,7 @@ private fun SourcesTab(
                         label = { Text("用户名（选填）") },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
+                        colors = importFieldColors,
                     )
                     ImeAwareOutlinedTextField(
                         value = state.webDavPassword,
@@ -1396,6 +1485,7 @@ private fun SourcesTab(
                         label = { Text("密码（选填）") },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
+                        colors = importFieldColors,
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1440,6 +1530,22 @@ private fun SettingsTab(
     onSettingsIntent: (SettingsIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
+    val selectedThemeTextPalette = remember(state.selectedTheme, state.textPalettePreferences) {
+        resolveAppThemeTextPalette(
+            themeId = state.selectedTheme,
+            preferences = state.textPalettePreferences,
+        )
+    }
+    val themeDisplayOrder = remember {
+        listOf(
+            AppThemeId.Classic,
+            AppThemeId.Ocean,
+            AppThemeId.Forest,
+            AppThemeId.Sand,
+            AppThemeId.Custom,
+        )
+    }
     Box(
         modifier = modifier.fillMaxSize(),
     ) {
@@ -1456,8 +1562,93 @@ private fun SettingsTab(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            SectionTitle(
+                title = "主题",
+                subtitle = "切换预置主题，自定义主界面颜色，并给每个主题单独选择黑字或白字。",
+            )
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    themeDisplayOrder.chunked(2).forEach { rowThemes ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            rowThemes.forEach { themeId ->
+                                ThemePresetCard(
+                                    themeId = themeId,
+                                    selected = state.selectedTheme == themeId,
+                                    tokens = if (themeId == AppThemeId.Custom) state.customThemeTokens else presetThemeTokens(themeId),
+                                    textPalette = resolveAppThemeTextPalette(themeId, state.textPalettePreferences),
+                                    onClick = { onSettingsIntent(SettingsIntent.ThemeSelected(themeId)) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            if (rowThemes.size == 1) {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    ThemeTextPaletteToggle(
+                        selectedTheme = state.selectedTheme,
+                        selectedPalette = selectedThemeTextPalette,
+                        onSelected = {
+                            onSettingsIntent(SettingsIntent.ThemeTextPaletteSelected(state.selectedTheme, it))
+                        },
+                    )
+                    if (state.selectedTheme == AppThemeId.Custom) {
+                        Text(
+                            text = "自定义主题",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "输入 3 个基础颜色后保存，主界面会立即切换到新的自定义配色。",
+                            color = shellColors.secondaryText,
+                        )
+                        ThemeColorField(
+                            label = "主背景色",
+                            value = state.customBackgroundHex,
+                            previewArgb = parseThemeHexColor(state.customBackgroundHex)
+                                ?: state.customThemeTokens.backgroundArgb,
+                            onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeBackgroundChanged(it)) },
+                        )
+                        ThemeColorField(
+                            label = "主色",
+                            value = state.customAccentHex,
+                            previewArgb = parseThemeHexColor(state.customAccentHex)
+                                ?: state.customThemeTokens.accentArgb,
+                            onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeAccentChanged(it)) },
+                        )
+                        ThemeColorField(
+                            label = "选中 / 落焦色",
+                            value = state.customFocusHex,
+                            previewArgb = parseThemeHexColor(state.customFocusHex)
+                                ?: state.customThemeTokens.focusArgb,
+                            onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeFocusChanged(it)) },
+                        )
+                        state.themeInputError?.let { error ->
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(onClick = { onSettingsIntent(SettingsIntent.SaveCustomTheme) }) {
+                                Text("保存自定义主题")
+                            }
+                            OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ResetCustomTheme) }) {
+                                Text("重置自定义主题")
+                            }
+                        }
+                    }
+                }
+            }
             SectionTitle(title = "歌词 API", subtitle = "声明式适配 JSON / XML / LRC / 纯文本返回。")
-            ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
                 Column(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1476,7 +1667,7 @@ private fun SettingsTab(
                     }
                 }
             }
-            ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
                 Column(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1497,7 +1688,7 @@ private fun SettingsTab(
                             fontWeight = FontWeight.Medium,
                         )
                         if (state.hasLrcApiSource) {
-                            AssistChip(
+                            MainShellAssistChip(
                                 onClick = {},
                                 label = { Text("Direct") },
                                 leadingIcon = { Icon(Icons.Rounded.CloudSync, null) },
@@ -1525,7 +1716,7 @@ private fun SettingsTab(
                     }
                 }
             }
-            ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
                 Column(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1546,7 +1737,7 @@ private fun SettingsTab(
                             fontWeight = FontWeight.Medium,
                         )
                         if (state.hasMusicmatchSource) {
-                            AssistChip(
+                            MainShellAssistChip(
                                 onClick = {},
                                 label = { Text("Workflow") },
                                 leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
@@ -1573,7 +1764,7 @@ private fun SettingsTab(
                     }
                 }
             }
-            ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
                 Column(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1613,7 +1804,7 @@ private fun SettingsTab(
                     }
                 }
             }
-            ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
                 Column(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1694,6 +1885,164 @@ private fun SettingsTab(
                     .navigationBarsPadding(),
             )
         }
+    }
+}
+
+@Composable
+private fun ThemePresetCard(
+    themeId: AppThemeId,
+    selected: Boolean,
+    tokens: AppThemeTokens,
+    textPalette: AppThemeTextPalette,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    val previewPalette = remember(tokens, textPalette) {
+        deriveAppThemePalette(
+            tokens = tokens,
+            textPalette = textPalette,
+        )
+    }
+    Card(
+        modifier = modifier
+            .clip(RoundedCornerShape(22.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(previewPalette.cardContainerArgb),
+        ),
+        border = BorderStroke(
+            width = if (selected) 2.dp else 1.dp,
+            color = if (selected) shellColors.selectedBorder else Color(previewPalette.cardBorderArgb),
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = themeDisplayName(themeId),
+                fontWeight = FontWeight.Bold,
+                color = Color(previewPalette.onSurfaceArgb),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ThemeSwatch(tokens.backgroundArgb, Modifier.weight(1f))
+                ThemeSwatch(tokens.accentArgb, Modifier.weight(1f))
+                ThemeSwatch(tokens.focusArgb, Modifier.weight(1f))
+            }
+            Text(
+                text = buildString {
+                    append(if (themeId == AppThemeId.Custom) "自定义主界面颜色" else "预置主题")
+                    append(" · ")
+                    append(themeTextPaletteLabel(textPalette))
+                },
+                color = Color(previewPalette.secondaryTextArgb),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThemeTextPaletteToggle(
+    selectedTheme: AppThemeId,
+    selectedPalette: AppThemeTextPalette,
+    onSelected: (AppThemeTextPalette) -> Unit,
+) {
+    val shellColors = mainShellColors
+    Column(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = "文字颜色",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = "${themeDisplayName(selectedTheme)}主题单独保存黑字或白字，不会影响播放界面。",
+            color = shellColors.secondaryText,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf(AppThemeTextPalette.White, AppThemeTextPalette.Black).forEach { palette ->
+                val selected = selectedPalette == palette
+                if (selected) {
+                    Button(
+                        onClick = { onSelected(palette) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(themeTextPaletteLabel(palette))
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { onSelected(palette) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(themeTextPaletteLabel(palette))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeColorField(
+    label: String,
+    value: String,
+    previewArgb: Int,
+    onValueChange: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ThemeSwatch(
+            argb = previewArgb,
+            modifier = Modifier.size(42.dp),
+        )
+        ImeAwareOutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label) },
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(18.dp),
+            singleLine = true,
+        )
+    }
+}
+
+@Composable
+private fun ThemeSwatch(
+    argb: Int,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    Box(
+        modifier = modifier
+            .height(24.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(argb))
+            .border(1.dp, shellColors.cardBorder, RoundedCornerShape(12.dp)),
+    )
+}
+
+private fun themeDisplayName(themeId: AppThemeId): String {
+    return when (themeId) {
+        AppThemeId.Classic -> "经典黑"
+        AppThemeId.Forest -> "森林"
+        AppThemeId.Ocean -> "经典白"
+        AppThemeId.Sand -> "砂岩"
+        AppThemeId.Custom -> "自定义"
+    }
+}
+
+private fun themeTextPaletteLabel(textPalette: AppThemeTextPalette): String {
+    return when (textPalette) {
+        AppThemeTextPalette.White -> "白字"
+        AppThemeTextPalette.Black -> "黑字"
     }
 }
 
@@ -3011,12 +3360,14 @@ private fun DetailSummaryCard(
     artworkLocator: String?,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+            containerColor = shellColors.cardContainer,
         ),
+        border = BorderStroke(1.dp, shellColors.cardBorder),
     ) {
         Row(
             modifier = Modifier.padding(18.dp),
@@ -3060,6 +3411,7 @@ private fun AlbumRow(
     artworkLocator: String?,
     onClick: () -> Unit,
 ) {
+    val shellColors = mainShellColors
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -3095,7 +3447,7 @@ private fun AlbumRow(
                 .fillMaxWidth()
                 .padding(start = 88.dp)
                 .height(1.dp)
-                .background(Color.White.copy(alpha = 0.08f)),
+                .background(shellColors.cardBorder),
         )
     }
 }
@@ -3106,6 +3458,7 @@ private fun ArtistRow(
     albumCount: Int,
     onClick: () -> Unit,
 ) {
+    val shellColors = mainShellColors
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -3120,9 +3473,9 @@ private fun ArtistRow(
                 modifier = Modifier
                     .size(52.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+                    .background(shellColors.cardContainer)
                     .border(
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                        border = BorderStroke(1.dp, shellColors.cardBorder),
                         shape = CircleShape,
                     ),
                 contentAlignment = Alignment.Center,
@@ -3153,7 +3506,7 @@ private fun ArtistRow(
                 .fillMaxWidth()
                 .padding(start = 88.dp)
                 .height(1.dp)
-                .background(Color.White.copy(alpha = 0.08f)),
+                .background(shellColors.cardBorder),
         )
     }
 }
@@ -3166,6 +3519,7 @@ private fun TrackRow(
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
 ) {
+    val shellColors = mainShellColors
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -3176,7 +3530,7 @@ private fun TrackRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text((index + 1).toString().padStart(2, '0'), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Text((index + 1).toString().padStart(2, '0'), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             TrackArtworkThumbnail(artworkLocator = track.artworkLocator)
             Column(modifier = Modifier.weight(1f)) {
                 Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
@@ -3193,7 +3547,7 @@ private fun TrackRow(
                 .fillMaxWidth()
                 .padding(start = 88.dp)
                 .height(1.dp)
-                .background(Color.White.copy(alpha = 0.08f)),
+                .background(shellColors.cardBorder),
         )
     }
 }
@@ -3204,13 +3558,14 @@ private fun TrackArtworkThumbnail(
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
+    val shellColors = mainShellColors
     Box(
         modifier = modifier
             .size(52.dp)
             .clip(RoundedCornerShape(1.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+            .background(shellColors.cardContainer)
             .border(
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                border = BorderStroke(1.dp, shellColors.cardBorder),
                 shape = RoundedCornerShape(1.dp),
             ),
         contentAlignment = Alignment.Center,
@@ -3234,13 +3589,58 @@ private fun TrackArtworkThumbnail(
 }
 
 @Composable
+private fun MainShellElevatedCard(
+    modifier: Modifier = Modifier,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(24.dp),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val shellColors = mainShellColors
+    Card(
+        modifier = modifier,
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = shellColors.cardContainer),
+        border = BorderStroke(1.dp, shellColors.cardBorder),
+        content = content,
+    )
+}
+
+@Composable
+private fun MainShellAssistChip(
+    onClick: () -> Unit,
+    label: @Composable () -> Unit,
+    leadingIcon: (@Composable () -> Unit)? = null,
+    enabled: Boolean = true,
+) {
+    val shellColors = mainShellColors
+    AssistChip(
+        onClick = onClick,
+        label = label,
+        leadingIcon = leadingIcon,
+        enabled = enabled,
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = shellColors.navContainer,
+            labelColor = MaterialTheme.colorScheme.onSurface,
+            leadingIconContentColor = MaterialTheme.colorScheme.primary,
+            disabledContainerColor = shellColors.cardContainer,
+            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            disabledLeadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+        border = BorderStroke(1.dp, shellColors.cardBorder),
+    )
+}
+
+@Composable
 private fun SourceCard(
     state: top.iwesley.lyn.music.core.model.SourceWithStatus,
     enabled: Boolean,
     onRescan: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    ElevatedCard(shape = RoundedCornerShape(26.dp)) {
+    val shellColors = mainShellColors
+    ElevatedCard(
+        shape = RoundedCornerShape(26.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = shellColors.cardContainer),
+    ) {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -3282,8 +3682,8 @@ private fun SourceCard(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AssistChip(onClick = {}, label = { Text("${state.indexState?.trackCount ?: 0} 首歌曲") }, leadingIcon = { Icon(Icons.Rounded.LibraryMusic, null) })
-                AssistChip(onClick = {}, label = { Text(if (state.indexState?.lastError == null) "扫描正常" else "扫描失败") }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
+                MainShellAssistChip(onClick = {}, label = { Text("${state.indexState?.trackCount ?: 0} 首歌曲") }, leadingIcon = { Icon(Icons.Rounded.LibraryMusic, null) })
+                MainShellAssistChip(onClick = {}, label = { Text(if (state.indexState?.lastError == null) "扫描正常" else "扫描失败") }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
             }
             state.indexState?.lastError?.takeIf { it.isNotBlank() }?.let {
                 Text(it, color = MaterialTheme.colorScheme.secondary)
@@ -3340,13 +3740,13 @@ private fun LyricsSourceCard(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             when (source) {
                 is LyricsSourceConfig -> {
-                    AssistChip(onClick = {}, label = { Text(source.method.name) }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
-                    AssistChip(onClick = {}, label = { Text(source.responseFormat.name) }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
+                    MainShellAssistChip(onClick = {}, label = { Text(source.method.name) }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
+                    MainShellAssistChip(onClick = {}, label = { Text(source.responseFormat.name) }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
                 }
 
                 is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> {
-                    AssistChip(onClick = {}, label = { Text("WORKFLOW") }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
-                    AssistChip(onClick = {}, label = { Text("${source.lyrics.steps.size} 步") }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
+                    MainShellAssistChip(onClick = {}, label = { Text("WORKFLOW") }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
+                    MainShellAssistChip(onClick = {}, label = { Text("${source.lyrics.steps.size} 步") }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
                 }
             }
         }
@@ -3366,13 +3766,14 @@ private fun PriorityBadge(
     priority: Int,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(999.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+            containerColor = shellColors.selectedContainer,
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+        border = BorderStroke(1.dp, shellColors.selectedBorder),
     ) {
         Text(
             text = "P$priority",
@@ -3389,9 +3790,10 @@ private fun SectionTitle(
     title: String,
     subtitle: String,
 ) {
+    val shellColors = mainShellColors
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(subtitle, color = shellColors.secondaryText)
     }
 }
 
@@ -3400,9 +3802,11 @@ private fun BannerCard(
     message: String,
     onDismiss: () -> Unit,
 ) {
+    val shellColors = mainShellColors
     Card(
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+        colors = CardDefaults.cardColors(containerColor = shellColors.selectedContainer),
+        border = BorderStroke(1.dp, shellColors.selectedBorder),
     ) {
         Row(
             modifier = Modifier
@@ -3421,18 +3825,19 @@ private fun ToastCard(
     message: String,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
     Card(
         modifier = modifier.widthIn(max = 420.dp),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1F1A17).copy(alpha = 0.94f),
+            containerColor = shellColors.navContainer,
         ),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        border = BorderStroke(1.dp, shellColors.cardBorder),
     ) {
         Text(
             text = message,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
         )
@@ -3444,7 +3849,12 @@ internal fun EmptyStateCard(
     title: String,
     body: String,
 ) {
-    Card(shape = RoundedCornerShape(28.dp)) {
+    val shellColors = mainShellColors
+    Card(
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = shellColors.cardContainer),
+        border = BorderStroke(1.dp, shellColors.cardBorder),
+    ) {
         Column(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -3464,6 +3874,8 @@ private fun StatCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
+    val selectedContentColor = MaterialTheme.colorScheme.onSecondary
     Card(
         modifier = modifier
             .clip(RoundedCornerShape(24.dp))
@@ -3471,17 +3883,17 @@ private fun StatCard(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                MaterialTheme.colorScheme.secondary
             } else {
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+                shellColors.cardContainer
             },
         ),
         border = BorderStroke(
             width = 1.dp,
             color = if (selected) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
+                MaterialTheme.colorScheme.secondary
             } else {
-                Color.White.copy(alpha = 0.06f)
+                shellColors.cardBorder
             },
         ),
     ) {
@@ -3489,9 +3901,21 @@ private fun StatCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
-            Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(
+                icon,
+                null,
+                tint = if (selected) selectedContentColor else MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = if (selected) selectedContentColor else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                title,
+                color = if (selected) selectedContentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -3714,7 +4138,8 @@ private fun <T : Enum<T>> EnumSelector(
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    ElevatedCard(modifier = modifier, shape = RoundedCornerShape(18.dp)) {
+    val shellColors = mainShellColors
+    MainShellElevatedCard(modifier = modifier, shape = RoundedCornerShape(18.dp)) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(label, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3722,7 +4147,7 @@ private fun <T : Enum<T>> EnumSelector(
                     val active = value == selected
                     Surface(
                         shape = RoundedCornerShape(18.dp),
-                        color = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface,
+                        color = if (active) shellColors.selectedContainer else shellColors.navContainer,
                         modifier = Modifier.clickable { onSelected(value) },
                     ) {
                         Text(

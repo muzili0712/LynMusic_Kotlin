@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
+import top.iwesley.lyn.music.ui.mainShellColors
 
 internal data class LyricsSearchDialogState(
     val headerTitle: String,
@@ -87,13 +88,14 @@ internal fun LyricsSearchOverlayDialog(
     onApplyWorkflowCandidate: (WorkflowSongCandidate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val primaryTextColor = Color.White.copy(alpha = 0.96f)
-    val secondaryTextColor = Color.White.copy(alpha = 0.72f)
+    val shellColors = mainShellColors
+    val primaryTextColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = shellColors.secondaryText
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.68f))
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.68f))
                 .clickable { onDismiss() },
         )
         Card(
@@ -106,10 +108,10 @@ internal fun LyricsSearchOverlayDialog(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) { },
+            ) { },
             shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF201B19)),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            colors = CardDefaults.cardColors(containerColor = shellColors.cardContainer),
+            border = BorderStroke(1.dp, shellColors.cardBorder),
         ) {
             BoxWithConstraints(
                 modifier = Modifier
@@ -141,7 +143,7 @@ internal fun LyricsSearchOverlayDialog(
                             )
                         }
                         TextButton(onClick = onDismiss) {
-                            Text(strings.dismissLabel, color = primaryTextColor)
+                            Text(strings.dismissLabel)
                         }
                     }
                     if (wideLayout) {
@@ -232,16 +234,17 @@ private fun LyricsSearchFormPane(
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val primaryTextColor = Color.White.copy(alpha = 0.96f)
-    val secondaryTextColor = Color.White.copy(alpha = 0.72f)
+    val shellColors = mainShellColors
+    val primaryTextColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = shellColors.secondaryText
     val textFieldColors = OutlinedTextFieldDefaults.colors(
         focusedTextColor = primaryTextColor,
         unfocusedTextColor = primaryTextColor,
         focusedLabelColor = secondaryTextColor,
         unfocusedLabelColor = secondaryTextColor,
-        cursorColor = primaryTextColor,
-        focusedBorderColor = Color.White.copy(alpha = 0.34f),
-        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+        cursorColor = MaterialTheme.colorScheme.primary,
+        focusedBorderColor = shellColors.selectedBorder,
+        unfocusedBorderColor = shellColors.cardBorder,
         focusedPlaceholderColor = secondaryTextColor,
         unfocusedPlaceholderColor = secondaryTextColor,
     )
@@ -258,7 +261,8 @@ private fun LyricsSearchFormPane(
                 .fillMaxWidth()
                 .weight(1f),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+            colors = CardDefaults.cardColors(containerColor = shellColors.navContainer),
+            border = BorderStroke(1.dp, shellColors.cardBorder),
         ) {
             BoxWithConstraints(
                 modifier = Modifier
@@ -333,7 +337,6 @@ private fun LyricsSearchFormPane(
                         OutlinedButton(
                             onClick = onDismiss,
                             modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
                         ) {
                             Text(strings.cancelLabel, maxLines = 1)
                         }
@@ -341,12 +344,7 @@ private fun LyricsSearchFormPane(
                             onClick = onSearch,
                             enabled = !isLoading && title.isNotBlank(),
                             modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color.White.copy(alpha = 0.14f),
-                                contentColor = primaryTextColor,
-                                disabledContainerColor = Color.White.copy(alpha = 0.08f),
-                                disabledContentColor = secondaryTextColor,
-                            ),
+                            colors = ButtonDefaults.buttonColors(),
                         ) {
                             Text(if (isLoading) strings.searchLoadingLabel else strings.searchIdleLabel, maxLines = 1)
                         }
@@ -379,8 +377,9 @@ private fun LyricsSearchResultsPane(
     onApplyWorkflowCandidate: (WorkflowSongCandidate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val primaryTextColor = Color.White.copy(alpha = 0.96f)
-    val secondaryTextColor = Color.White.copy(alpha = 0.72f)
+    val shellColors = mainShellColors
+    val primaryTextColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = shellColors.secondaryText
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -399,7 +398,8 @@ private fun LyricsSearchResultsPane(
                 .fillMaxWidth()
                 .weight(1f),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+            colors = CardDefaults.cardColors(containerColor = shellColors.navContainer),
+            border = BorderStroke(1.dp, shellColors.cardBorder),
         ) {
             when {
                 state.isLoading -> {
@@ -478,7 +478,7 @@ private fun LyricsSearchResultsPane(
                                         }
                                         Text(
                                             lyricsSearchPreview(candidate),
-                                            color = primaryTextColor.copy(alpha = 0.84f),
+                                            color = secondaryTextColor,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
                                         )
@@ -532,7 +532,7 @@ private fun LyricsSearchResultsPane(
                                         )
                                         Text(
                                             workflowSearchPreview(candidate),
-                                            color = primaryTextColor.copy(alpha = 0.84f),
+                                            color = secondaryTextColor,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
                                         )
@@ -613,9 +613,10 @@ private fun LyricsSearchSectionTitle(
     title: String,
     subtitle: String,
 ) {
+    val shellColors = mainShellColors
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(subtitle, color = shellColors.secondaryText)
     }
 }
 
@@ -624,7 +625,12 @@ private fun LyricsSearchEmptyStateCard(
     title: String,
     body: String,
 ) {
-    Card(shape = RoundedCornerShape(28.dp)) {
+    val shellColors = mainShellColors
+    Card(
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = shellColors.cardContainer),
+        border = BorderStroke(1.dp, shellColors.cardBorder),
+    ) {
         Column(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -641,13 +647,14 @@ private fun LyricsSearchArtworkThumbnail(
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
+    val shellColors = mainShellColors
     Box(
         modifier = modifier
             .size(52.dp)
             .clip(RoundedCornerShape(1.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+            .background(shellColors.cardContainer)
             .border(
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                border = BorderStroke(1.dp, shellColors.cardBorder),
                 shape = RoundedCornerShape(1.dp),
             ),
         contentAlignment = Alignment.Center,

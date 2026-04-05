@@ -29,7 +29,12 @@ import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.AppThemeId
+import top.iwesley.lyn.music.core.model.AppThemeTextPalette
+import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.SourceWithStatus
+import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
@@ -123,9 +128,15 @@ data class AppliedLyricsResult(
 interface SettingsRepository {
     val lyricsSources: Flow<List<LyricsSourceDefinition>>
     val useSambaCache: StateFlow<Boolean>
+    val selectedTheme: StateFlow<AppThemeId>
+    val customThemeTokens: StateFlow<AppThemeTokens>
+    val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences>
 
     suspend fun ensureDefaults()
     suspend fun setUseSambaCache(enabled: Boolean)
+    suspend fun setSelectedTheme(themeId: AppThemeId)
+    suspend fun setCustomThemeTokens(tokens: AppThemeTokens)
+    suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette)
     suspend fun saveLyricsSource(config: LyricsSourceConfig)
     suspend fun saveWorkflowLyricsSource(rawJson: String, editingId: String? = null): WorkflowLyricsSourceConfig
     suspend fun setLyricsSourceEnabled(sourceId: String, enabled: Boolean)
@@ -500,6 +511,7 @@ class RoomImportSourceRepository(
 class DefaultSettingsRepository(
     private val database: LynMusicDatabase,
     private val sambaCachePreferencesStore: SambaCachePreferencesStore,
+    private val themePreferencesStore: ThemePreferencesStore,
 ) : SettingsRepository {
     override val lyricsSources: Flow<List<LyricsSourceDefinition>> = combine(
         database.lyricsSourceConfigDao().observeAll(),
@@ -509,6 +521,9 @@ class DefaultSettingsRepository(
             .sortedWith(compareByDescending<LyricsSourceDefinition> { it.priority }.thenBy { it.name.lowercase() })
     }
     override val useSambaCache: StateFlow<Boolean> = sambaCachePreferencesStore.useSambaCache
+    override val selectedTheme: StateFlow<AppThemeId> = themePreferencesStore.selectedTheme
+    override val customThemeTokens: StateFlow<AppThemeTokens> = themePreferencesStore.customThemeTokens
+    override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = themePreferencesStore.textPalettePreferences
 
     override suspend fun ensureDefaults() {
         val existing = database.lyricsSourceConfigDao().getAll()
@@ -532,6 +547,18 @@ class DefaultSettingsRepository(
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         sambaCachePreferencesStore.setUseSambaCache(enabled)
+    }
+
+    override suspend fun setSelectedTheme(themeId: AppThemeId) {
+        themePreferencesStore.setSelectedTheme(themeId)
+    }
+
+    override suspend fun setCustomThemeTokens(tokens: AppThemeTokens) {
+        themePreferencesStore.setCustomThemeTokens(tokens)
+    }
+
+    override suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette) {
+        themePreferencesStore.setTextPalette(themeId, palette)
     }
 
     override suspend fun saveLyricsSource(config: LyricsSourceConfig) {

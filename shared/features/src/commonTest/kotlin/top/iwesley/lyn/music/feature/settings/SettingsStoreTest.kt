@@ -13,6 +13,11 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import top.iwesley.lyn.music.core.model.AppThemeId
+import top.iwesley.lyn.music.core.model.AppThemeTextPalette
+import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
@@ -22,6 +27,11 @@ import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.WorkflowLyricsStepConfig
 import top.iwesley.lyn.music.core.model.WorkflowRequestConfig
 import top.iwesley.lyn.music.core.model.WorkflowSearchConfig
+import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
+import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.deriveAppThemePalette
+import top.iwesley.lyn.music.core.model.resolveAppThemeTextPalette
+import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.data.repository.SettingsRepository
 import top.iwesley.lyn.music.domain.MANAGED_LRCAPI_SOURCE_ID
 import top.iwesley.lyn.music.domain.buildManagedLrcApiConfig
@@ -31,6 +41,208 @@ import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsStoreTest {
+
+    @Test
+    fun `store loads persisted theme state`() = runTest {
+        val customTokens = AppThemeTokens(
+            backgroundArgb = 0xFF101820.toInt(),
+            accentArgb = 0xFF2F9E44.toInt(),
+            focusArgb = 0xFF94D82D.toInt(),
+        )
+        val repository = FakeSettingsRepository(
+            selectedTheme = AppThemeId.Custom,
+            customThemeTokens = customTokens,
+            textPalettePreferences = defaultThemeTextPalettePreferences().withThemePalette(
+                AppThemeId.Custom,
+                AppThemeTextPalette.Black,
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(AppThemeId.Custom, state.selectedTheme)
+        assertEquals(customTokens, state.customThemeTokens)
+        assertEquals("#101820", state.customBackgroundHex)
+        assertEquals(AppThemeTextPalette.Black, state.textPalettePreferences.custom)
+        scope.cancel()
+    }
+
+    @Test
+    fun `forest theme defaults to black text palette`() = runTest {
+        val repository = FakeSettingsRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+
+        assertEquals(AppThemeTextPalette.Black, store.state.value.textPalettePreferences.forest)
+        scope.cancel()
+    }
+
+    @Test
+    fun `ocean theme defaults to black text palette`() = runTest {
+        val repository = FakeSettingsRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+
+        assertEquals(AppThemeTextPalette.Black, store.state.value.textPalettePreferences.ocean)
+        scope.cancel()
+    }
+
+    @Test
+    fun `selecting theme text palette updates repository and state`() = runTest {
+        val repository = FakeSettingsRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ThemeTextPaletteSelected(AppThemeId.Forest, AppThemeTextPalette.Black))
+        advanceUntilIdle()
+
+        assertEquals(AppThemeTextPalette.Black, store.state.value.textPalettePreferences.forest)
+        assertEquals(AppThemeTextPalette.Black, repository.currentTextPalettePreferences().forest)
+        scope.cancel()
+    }
+
+    @Test
+    fun `switching themes keeps per theme text palette choices`() = runTest {
+        val repository = FakeSettingsRepository(
+            textPalettePreferences = AppThemeTextPalettePreferences(
+                classic = AppThemeTextPalette.White,
+                forest = AppThemeTextPalette.Black,
+                ocean = AppThemeTextPalette.White,
+                sand = AppThemeTextPalette.White,
+                custom = AppThemeTextPalette.Black,
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ThemeSelected(AppThemeId.Forest))
+        advanceUntilIdle()
+        assertEquals(
+            AppThemeTextPalette.Black,
+            resolveAppThemeTextPalette(store.state.value.selectedTheme, store.state.value.textPalettePreferences),
+        )
+
+        store.dispatch(SettingsIntent.ThemeSelected(AppThemeId.Custom))
+        advanceUntilIdle()
+        assertEquals(
+            AppThemeTextPalette.Black,
+            resolveAppThemeTextPalette(store.state.value.selectedTheme, store.state.value.textPalettePreferences),
+        )
+        scope.cancel()
+    }
+
+    @Test
+    fun `selecting preset theme updates repository and state`() = runTest {
+        val repository = FakeSettingsRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ThemeSelected(AppThemeId.Forest))
+        advanceUntilIdle()
+
+        assertEquals(AppThemeId.Forest, store.state.value.selectedTheme)
+        assertEquals(AppThemeId.Forest, repository.currentSelectedTheme())
+        scope.cancel()
+    }
+
+    @Test
+    fun `saving valid custom theme updates repository and clears error`() = runTest {
+        val repository = FakeSettingsRepository(selectedTheme = AppThemeId.Custom)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.CustomThemeBackgroundChanged("#102030"))
+        store.dispatch(SettingsIntent.CustomThemeAccentChanged("#405060"))
+        store.dispatch(SettingsIntent.CustomThemeFocusChanged("#708090"))
+        store.dispatch(SettingsIntent.SaveCustomTheme)
+        advanceUntilIdle()
+
+        val expected = AppThemeTokens(
+            backgroundArgb = 0xFF102030.toInt(),
+            accentArgb = 0xFF405060.toInt(),
+            focusArgb = 0xFF708090.toInt(),
+        )
+        assertEquals(expected, repository.currentCustomThemeTokens())
+        assertEquals(expected, store.state.value.customThemeTokens)
+        assertEquals(null, store.state.value.themeInputError)
+        assertEquals("自定义主题已保存。", store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
+    fun `resetting custom theme restores classic defaults`() = runTest {
+        val repository = FakeSettingsRepository(
+            selectedTheme = AppThemeId.Custom,
+            customThemeTokens = AppThemeTokens(
+                backgroundArgb = 0xFF102030.toInt(),
+                accentArgb = 0xFF405060.toInt(),
+                focusArgb = 0xFF708090.toInt(),
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ResetCustomTheme)
+        advanceUntilIdle()
+
+        assertEquals(defaultCustomThemeTokens(), repository.currentCustomThemeTokens())
+        assertEquals(defaultCustomThemeTokens(), store.state.value.customThemeTokens)
+        assertEquals("#120B0D", store.state.value.customBackgroundHex)
+        scope.cancel()
+    }
+
+    @Test
+    fun `invalid custom theme hex sets error and does not save`() = runTest {
+        val repository = FakeSettingsRepository(selectedTheme = AppThemeId.Custom)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.CustomThemeBackgroundChanged("#12345"))
+        store.dispatch(SettingsIntent.CustomThemeAccentChanged("#ZZZZZZ"))
+        store.dispatch(SettingsIntent.CustomThemeFocusChanged("#708090"))
+        store.dispatch(SettingsIntent.SaveCustomTheme)
+        advanceUntilIdle()
+
+        assertEquals(0, repository.setCustomThemeTokensCalls)
+        assertEquals("主背景色格式不正确，请使用 #RRGGBB。", store.state.value.themeInputError)
+        scope.cancel()
+    }
+
+    @Test
+    fun `theme palette derivation preserves configured tokens and contrast`() {
+        val whiteTextPalette = deriveAppThemePalette(defaultCustomThemeTokens(), AppThemeTextPalette.White)
+        val blackTextPalette = deriveAppThemePalette(defaultCustomThemeTokens(), AppThemeTextPalette.Black)
+        val lightPalette = deriveAppThemePalette(
+            AppThemeTokens(
+                backgroundArgb = 0xFFF4EEE8.toInt(),
+                accentArgb = 0xFF1971C2.toInt(),
+                focusArgb = 0xFF3BC9DB.toInt(),
+            ),
+            AppThemeTextPalette.Black,
+        )
+
+        assertEquals(defaultCustomThemeTokens().accentArgb, whiteTextPalette.primaryArgb)
+        assertEquals(defaultCustomThemeTokens().focusArgb, whiteTextPalette.secondaryArgb)
+        assertEquals(0xFFF7F5F3.toInt(), whiteTextPalette.onBackgroundArgb)
+        assertEquals(0xFF111111.toInt(), blackTextPalette.onBackgroundArgb)
+        assertEquals(0xFFD6D1CD.toInt(), whiteTextPalette.onSurfaceVariantArgb)
+        assertEquals(0xFF4A4541.toInt(), blackTextPalette.onSurfaceVariantArgb)
+        assertEquals(0xFF111111.toInt(), lightPalette.onBackgroundArgb)
+        assertTrue(lightPalette.surfaceArgb != lightPalette.backgroundArgb)
+    }
 
     @Test
     fun `selecting direct source enters direct edit state`() = runTest {
@@ -320,19 +532,47 @@ class SettingsStoreTest {
 
 private class FakeSettingsRepository(
     sources: List<LyricsSourceDefinition> = emptyList(),
+    selectedTheme: AppThemeId = AppThemeId.Classic,
+    customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
+    textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
 ) : SettingsRepository {
     private val mutableSources = MutableStateFlow(sources)
     private val mutableUseSambaCache = MutableStateFlow(true)
+    private val mutableSelectedTheme = MutableStateFlow(selectedTheme)
+    private val mutableCustomThemeTokens = MutableStateFlow(customThemeTokens)
+    private val mutableTextPalettePreferences = MutableStateFlow(textPalettePreferences)
 
     override val lyricsSources: Flow<List<LyricsSourceDefinition>> = mutableSources.asStateFlow()
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
+    override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
+    override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
+    override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
+
+    var setCustomThemeTokensCalls: Int = 0
+        private set
 
     fun currentSources(): List<LyricsSourceDefinition> = mutableSources.value
+    fun currentSelectedTheme(): AppThemeId = mutableSelectedTheme.value
+    fun currentCustomThemeTokens(): AppThemeTokens = mutableCustomThemeTokens.value
+    fun currentTextPalettePreferences(): AppThemeTextPalettePreferences = mutableTextPalettePreferences.value
 
     override suspend fun ensureDefaults() = Unit
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         mutableUseSambaCache.value = enabled
+    }
+
+    override suspend fun setSelectedTheme(themeId: AppThemeId) {
+        mutableSelectedTheme.value = themeId
+    }
+
+    override suspend fun setCustomThemeTokens(tokens: AppThemeTokens) {
+        setCustomThemeTokensCalls += 1
+        mutableCustomThemeTokens.value = tokens
+    }
+
+    override suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette) {
+        mutableTextPalettePreferences.value = mutableTextPalettePreferences.value.withThemePalette(themeId, palette)
     }
 
     override suspend fun saveLyricsSource(config: LyricsSourceConfig) {

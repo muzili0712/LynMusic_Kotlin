@@ -8,10 +8,18 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import top.iwesley.lyn.music.core.model.AppThemeId
+import top.iwesley.lyn.music.core.model.AppThemeTextPalette
+import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
+import top.iwesley.lyn.music.core.model.ThemePreferencesStore
+import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
+import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
@@ -20,10 +28,47 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 class SettingsRepositoryTest {
 
     @Test
+    fun `theme preferences default to classic theme`() = runTest {
+        val database = createSettingsTestDatabase()
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences)
+
+        assertEquals(AppThemeId.Classic, repository.selectedTheme.value)
+        assertEquals(defaultCustomThemeTokens(), repository.customThemeTokens.value)
+        assertEquals(defaultThemeTextPalettePreferences(), repository.textPalettePreferences.value)
+        assertEquals(AppThemeTextPalette.Black, repository.textPalettePreferences.value.forest)
+        assertEquals(AppThemeTextPalette.Black, repository.textPalettePreferences.value.ocean)
+    }
+
+    @Test
+    fun `setting theme preferences writes through to preference store`() = runTest {
+        val database = createSettingsTestDatabase()
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences)
+        val customTokens = AppThemeTokens(
+            backgroundArgb = 0xFF101820.toInt(),
+            accentArgb = 0xFF2F9E44.toInt(),
+            focusArgb = 0xFFF2C078.toInt(),
+        )
+
+        repository.setSelectedTheme(AppThemeId.Ocean)
+        repository.setCustomThemeTokens(customTokens)
+        repository.setTextPalette(AppThemeId.Ocean, AppThemeTextPalette.Black)
+
+        assertEquals(AppThemeId.Ocean, preferences.selectedTheme.value)
+        assertEquals(customTokens, preferences.customThemeTokens.value)
+        assertEquals(AppThemeTextPalette.Black, preferences.textPalettePreferences.value.ocean)
+        assertEquals(AppThemeId.Ocean, repository.selectedTheme.value)
+        assertEquals(customTokens, repository.customThemeTokens.value)
+        assertEquals(AppThemeTextPalette.Black, repository.textPalettePreferences.value.ocean)
+    }
+
+    @Test
     fun `saving direct source rejects duplicate direct name ignoring case and trim`() = runTest {
         val database = createSettingsTestDatabase()
         database.lyricsSourceConfigDao().upsert(directEntity(id = "direct-1", name = "LRCLIB"))
-        val repository = DefaultSettingsRepository(database, FakeSambaCachePreferencesStore())
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences)
 
         val error = assertFailsWith<IllegalStateException> {
             repository.saveLyricsSource(
@@ -38,7 +83,8 @@ class SettingsRepositoryTest {
     fun `saving direct source rejects duplicate workflow name`() = runTest {
         val database = createSettingsTestDatabase()
         database.workflowLyricsSourceConfigDao().upsert(workflowEntity(id = "wf-1", name = "QQ Lyrics"))
-        val repository = DefaultSettingsRepository(database, FakeSambaCachePreferencesStore())
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences)
 
         val error = assertFailsWith<IllegalStateException> {
             repository.saveLyricsSource(
@@ -53,7 +99,8 @@ class SettingsRepositoryTest {
     fun `editing direct source can keep original name`() = runTest {
         val database = createSettingsTestDatabase()
         database.lyricsSourceConfigDao().upsert(directEntity(id = "direct-1", name = "My Lyrics"))
-        val repository = DefaultSettingsRepository(database, FakeSambaCachePreferencesStore())
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences)
 
         repository.saveLyricsSource(
             directConfig(
@@ -72,7 +119,8 @@ class SettingsRepositoryTest {
     fun `saving workflow rejects duplicate name across all lyrics sources`() = runTest {
         val database = createSettingsTestDatabase()
         database.lyricsSourceConfigDao().upsert(directEntity(id = "direct-1", name = "Shared Name"))
-        val repository = DefaultSettingsRepository(database, FakeSambaCachePreferencesStore())
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences)
 
         val error = assertFailsWith<IllegalStateException> {
             repository.saveWorkflowLyricsSource(
@@ -88,7 +136,8 @@ class SettingsRepositoryTest {
     fun `editing workflow can rename to unique name`() = runTest {
         val database = createSettingsTestDatabase()
         database.workflowLyricsSourceConfigDao().upsert(workflowEntity(id = "wf-1", name = "Old Workflow"))
-        val repository = DefaultSettingsRepository(database, FakeSambaCachePreferencesStore())
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences)
 
         val saved = repository.saveWorkflowLyricsSource(
             rawJson = workflowJson(id = "wf-1", name = "New Workflow"),
@@ -104,7 +153,8 @@ class SettingsRepositoryTest {
     fun `editing workflow cannot change id`() = runTest {
         val database = createSettingsTestDatabase()
         database.workflowLyricsSourceConfigDao().upsert(workflowEntity(id = "wf-1", name = "Old Workflow"))
-        val repository = DefaultSettingsRepository(database, FakeSambaCachePreferencesStore())
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences)
 
         val error = assertFailsWith<IllegalStateException> {
             repository.saveWorkflowLyricsSource(
@@ -124,11 +174,26 @@ private fun createSettingsTestDatabase(): LynMusicDatabase {
     )
 }
 
-private class FakeSambaCachePreferencesStore : SambaCachePreferencesStore {
+private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreferencesStore {
     override val useSambaCache = MutableStateFlow(true)
+    override val selectedTheme = MutableStateFlow(AppThemeId.Classic)
+    override val customThemeTokens = MutableStateFlow(defaultCustomThemeTokens())
+    override val textPalettePreferences = MutableStateFlow(defaultThemeTextPalettePreferences())
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         useSambaCache.value = enabled
+    }
+
+    override suspend fun setSelectedTheme(themeId: AppThemeId) {
+        selectedTheme.value = themeId
+    }
+
+    override suspend fun setCustomThemeTokens(tokens: AppThemeTokens) {
+        customThemeTokens.value = tokens
+    }
+
+    override suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette) {
+        textPalettePreferences.value = textPalettePreferences.value.withThemePalette(themeId, palette)
     }
 }
 
