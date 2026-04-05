@@ -377,8 +377,9 @@ class PlayerStore(
     }
 
     private suspend fun searchManualLyrics() {
-        val currentTrack = state.value.snapshot.currentTrack ?: return
-        val title = state.value.manualLyricsTitle.trim()
+        val current = state.value
+        val currentTrack = current.snapshot.currentTrack ?: return
+        val title = current.manualLyricsTitle.trim()
         if (title.isBlank()) {
             updateState {
                 it.copy(
@@ -393,9 +394,10 @@ class PlayerStore(
         }
         val searchTrack = currentTrack.copy(
             title = title,
-            artistName = state.value.manualLyricsArtistName.trim().ifBlank { null },
-            albumTitle = state.value.manualLyricsAlbumTitle.trim().ifBlank { null },
+            artistName = current.manualLyricsArtistName.trim().ifBlank { null },
+            albumTitle = current.manualLyricsAlbumTitle.trim().ifBlank { null },
         )
+        val includeTrackProvidedCandidate = current.matchesCurrentLyricsLookupTrack()
         updateState {
             it.copy(
                 isManualLyricsSearchLoading = true,
@@ -405,16 +407,18 @@ class PlayerStore(
                 manualLyricsError = null,
             )
         }
-        val directResult = runCatching { lyricsRepository.searchLyricsCandidates(searchTrack) }
+        val directResult = runCatching {
+            lyricsRepository.searchLyricsCandidates(
+                track = searchTrack,
+                includeTrackProvidedCandidate = includeTrackProvidedCandidate,
+            )
+        }
         val workflowResult = runCatching { lyricsRepository.searchWorkflowSongCandidates(searchTrack) }
-        updateState { current ->
-            val showTrackProvidedCandidate = current.matchesCurrentLyricsLookupTrack()
-            current.copy(
+        updateState { latest ->
+            latest.copy(
                 isManualLyricsSearchLoading = false,
                 hasManualLyricsSearchResult = true,
-                manualLyricsResults = directResult.getOrDefault(emptyList()).filter { candidate ->
-                    showTrackProvidedCandidate || !candidate.isTrackProvided
-                },
+                manualLyricsResults = directResult.getOrDefault(emptyList()),
                 manualWorkflowSongResults = workflowResult.getOrDefault(emptyList()),
                 manualLyricsError = directResult.exceptionOrNull()?.message ?: workflowResult.exceptionOrNull()?.message,
             )

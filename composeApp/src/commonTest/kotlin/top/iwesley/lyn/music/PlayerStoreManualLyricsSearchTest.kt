@@ -101,6 +101,7 @@ class PlayerStoreManualLyricsSearchTest {
         assertEquals("手动标题", lyricsRepository.lastSearchTrack?.title)
         assertEquals("手动歌手", lyricsRepository.lastSearchTrack?.artistName)
         assertEquals("手动专辑", lyricsRepository.lastSearchTrack?.albumTitle)
+        assertEquals(false, lyricsRepository.lastIncludeTrackProvidedCandidate)
         assertEquals(listOf(candidate), store.state.value.manualLyricsResults)
 
         store.dispatch(PlayerIntent.ApplyManualLyricsCandidate(candidate))
@@ -159,6 +160,7 @@ class PlayerStoreManualLyricsSearchTest {
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
+        assertEquals(false, lyricsRepository.lastIncludeTrackProvidedCandidate)
         assertEquals(listOf(externalCandidate), store.state.value.manualLyricsResults)
         scope.cancel()
     }
@@ -195,6 +197,7 @@ class PlayerStoreManualLyricsSearchTest {
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
+        assertEquals(true, lyricsRepository.lastIncludeTrackProvidedCandidate)
         assertEquals(listOf(currentTrackCandidate), store.state.value.manualLyricsResults)
         scope.cancel()
     }
@@ -304,6 +307,8 @@ private class FakeLyricsRepository(
 ) : LyricsRepository {
     var lastSearchTrack: Track? = null
         private set
+    var lastIncludeTrackProvidedCandidate: Boolean? = null
+        private set
     var lastWorkflowSearchTrack: Track? = null
         private set
     var appliedTrackId: String? = null
@@ -315,9 +320,14 @@ private class FakeLyricsRepository(
 
     override suspend fun getLyrics(track: Track): ResolvedLyricsResult? = null
 
-    override suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate> {
+    override suspend fun searchLyricsCandidates(track: Track, includeTrackProvidedCandidate: Boolean): List<LyricsSearchCandidate> {
         lastSearchTrack = track
-        return searchResults
+        lastIncludeTrackProvidedCandidate = includeTrackProvidedCandidate
+        return if (includeTrackProvidedCandidate) {
+            searchResults
+        } else {
+            searchResults.filter { !it.isTrackProvided }
+        }
     }
 
     override suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate> {

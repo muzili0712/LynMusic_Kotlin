@@ -18,7 +18,9 @@ import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.buildSambaLocator
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LyricsCacheEntity
 import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.TrackEntity
@@ -334,6 +336,113 @@ class DefaultLyricsRepositoryManualSearchTest {
         assertEquals(listOf("source-plain"), candidates.map { it.sourceId })
     }
 
+    @Test
+    fun `manual search samba track uses remote tag read even when canEdit is false`() = runTest {
+        val database = createTestDatabase()
+        val track = sampleSambaTrack(artworkLocator = "/tmp/scanned-cover.jpg")
+        seedSambaSource(database, track.sourceId)
+        seedTrack(database, track)
+        val gateway = FakeAudioTagGateway(
+            canEdit = false,
+            snapshot = AudioTagSnapshot(
+                title = "远端标题",
+                artistName = "远端歌手",
+                albumTitle = "远端专辑",
+                embeddedLyrics = "[00:01.00]远端歌词",
+                artworkLocator = "/tmp/remote-cover.jpg",
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = FakeLyricsHttpClient(emptyMap()),
+            secureCredentialStore = EmptySecureCredentialStore,
+            audioTagGateway = gateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val candidates = repository.searchLyricsCandidates(track)
+
+        assertEquals(1, gateway.readCount)
+        assertEquals(listOf("embedded-tag"), candidates.map { it.sourceId })
+        assertEquals("远端标题", candidates.single().title)
+        assertEquals("/tmp/remote-cover.jpg", candidates.single().artworkLocator)
+        assertTrue(candidates.single().isTrackProvided)
+    }
+
+    @Test
+    fun `manual search samba track does not fall back to cached embedded lyrics when remote read fails`() = runTest {
+        val database = createTestDatabase()
+        val track = sampleSambaTrack(artworkLocator = "/tmp/scanned-cover.jpg")
+        seedSambaSource(database, track.sourceId)
+        seedTrack(database, track)
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = "embedded-tag",
+                rawPayload = "缓存歌词第一句\n缓存歌词第二句",
+                updatedAt = 1L,
+            ),
+        )
+        val gateway = FakeAudioTagGateway(
+            canEdit = false,
+            readFailure = IllegalStateException("remote read failed"),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = FakeLyricsHttpClient(emptyMap()),
+            secureCredentialStore = EmptySecureCredentialStore,
+            audioTagGateway = gateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val candidates = repository.searchLyricsCandidates(track)
+
+        assertEquals(1, gateway.readCount)
+        assertTrue(candidates.isEmpty())
+    }
+
+    @Test
+    fun `manual search can skip track provided candidate and avoid samba remote read`() = runTest {
+        val database = createTestDatabase()
+        database.lyricsSourceConfigDao().upsert(
+            lyricsSourceConfig(
+                id = "source-plain",
+                name = "纯文本源",
+                priority = 10,
+                urlTemplate = "https://lyrics.example/plain",
+                responseFormat = LyricsResponseFormat.TEXT,
+                extractor = "text",
+            ),
+        )
+        val track = sampleSambaTrack()
+        seedSambaSource(database, track.sourceId)
+        val gateway = FakeAudioTagGateway(
+            canEdit = false,
+            snapshot = AudioTagSnapshot(
+                title = "远端标题",
+                embeddedLyrics = "远端歌词",
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = FakeLyricsHttpClient(
+                mapOf(
+                    "https://lyrics.example/plain" to Result.success(
+                        LyricsHttpResponse(statusCode = 200, body = "外部歌词"),
+                    ),
+                ),
+            ),
+            secureCredentialStore = EmptySecureCredentialStore,
+            audioTagGateway = gateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val candidates = repository.searchLyricsCandidates(track, includeTrackProvidedCandidate = false)
+
+        assertEquals(0, gateway.readCount)
+        assertEquals(listOf("source-plain"), candidates.map { it.sourceId })
+    }
+
     private fun createTestDatabase(): LynMusicDatabase {
         val path = Files.createTempFile("lynmusic-lyrics-manual", ".db")
         return buildLynMusicDatabase(
@@ -388,6 +497,25 @@ class DefaultLyricsRepositoryManualSearchTest {
         )
     }
 
+    private suspend fun seedSambaSource(database: LynMusicDatabase, sourceId: String) {
+        database.importSourceDao().upsert(
+            ImportSourceEntity(
+                id = sourceId,
+                type = "SAMBA",
+                label = "Samba",
+                rootReference = "nas.local/Media",
+                server = "nas.local",
+                shareName = "445",
+                directoryPath = "Media/Music",
+                username = "user",
+                credentialKey = null,
+                allowInsecureTls = false,
+                lastScannedAt = null,
+                createdAt = 0L,
+            ),
+        )
+    }
+
     private fun sampleTrack(artworkLocator: String? = null): Track {
         return Track(
             id = "track-1",
@@ -398,6 +526,20 @@ class DefaultLyricsRepositoryManualSearchTest {
             durationMs = 123_000L,
             mediaLocator = "file:///music/song.mp3",
             relativePath = "song.mp3",
+            artworkLocator = artworkLocator,
+        )
+    }
+
+    private fun sampleSambaTrack(artworkLocator: String? = null): Track {
+        return Track(
+            id = "track-samba-1",
+            sourceId = "samba-1",
+            title = "扫描标题",
+            artistName = "扫描歌手",
+            albumTitle = "扫描专辑",
+            durationMs = 123_000L,
+            mediaLocator = buildSambaLocator("samba-1", "Artist/Song.mp3"),
+            relativePath = "Artist/Song.mp3",
             artworkLocator = artworkLocator,
         )
     }
@@ -420,11 +562,15 @@ private class FakeAudioTagGateway(
     private val snapshot: AudioTagSnapshot? = null,
     private val readFailure: Throwable? = null,
 ) : AudioTagGateway {
+    var readCount: Int = 0
+        private set
+
     override suspend fun canEdit(track: Track): Boolean = canEdit
 
     override suspend fun canWrite(track: Track): Boolean = false
 
     override suspend fun read(track: Track): Result<AudioTagSnapshot> {
+        readCount += 1
         readFailure?.let { return Result.failure(it) }
         return snapshot?.let { Result.success(it) }
             ?: Result.failure(IllegalStateException("No snapshot configured"))

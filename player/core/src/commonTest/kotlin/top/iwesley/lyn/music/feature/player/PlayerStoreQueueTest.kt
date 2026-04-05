@@ -172,7 +172,10 @@ private class FakeQueuePlaybackRepository(
 private class NoopQueueLyricsRepository : LyricsRepository {
     override suspend fun getLyrics(track: Track): ResolvedLyricsResult? = null
 
-    override suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate> = emptyList()
+    override suspend fun searchLyricsCandidates(
+        track: Track,
+        includeTrackProvidedCandidate: Boolean,
+    ): List<LyricsSearchCandidate> = emptyList()
 
     override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
         error("Not used in queue tests")

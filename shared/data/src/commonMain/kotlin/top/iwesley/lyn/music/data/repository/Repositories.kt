@@ -45,6 +45,7 @@ import top.iwesley.lyn.music.core.model.normalizeSambaPath
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
+import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.AlbumEntity
 import top.iwesley.lyn.music.data.db.ArtistEntity
@@ -102,7 +103,7 @@ interface ImportSourceRepository {
 
 interface LyricsRepository {
     suspend fun getLyrics(track: Track): ResolvedLyricsResult?
-    suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate>
+    suspend fun searchLyricsCandidates(track: Track, includeTrackProvidedCandidate: Boolean = true): List<LyricsSearchCandidate>
     suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument
     suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate>
     suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult
@@ -744,10 +745,14 @@ class DefaultLyricsRepository(
         )
     }
 
-    override suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate> {
+    override suspend fun searchLyricsCandidates(track: Track, includeTrackProvidedCandidate: Boolean): List<LyricsSearchCandidate> {
         val trackLabel = track.logIdentity()
         val baseTrack = database.trackDao().getByIds(listOf(track.id)).firstOrNull()?.toDomain() ?: track
-        val trackProvidedCandidate = buildTrackProvidedLyricsCandidate(baseTrack)
+        val trackProvidedCandidate = if (includeTrackProvidedCandidate) {
+            buildTrackProvidedLyricsCandidate(baseTrack)
+        } else {
+            null
+        }
         val configs = enabledDirectLyricsConfigs()
         if (configs.isEmpty()) {
             return if (trackProvidedCandidate != null) {
@@ -864,8 +869,9 @@ class DefaultLyricsRepository(
     }
 
     private suspend fun buildEmbeddedTrackProvidedLyricsCandidate(track: Track): LyricsSearchCandidate? {
+        val isSambaTrack = parseSambaLocator(track.mediaLocator) != null
         val currentSnapshot = runCatching {
-            if (audioTagGateway.canEdit(track)) {
+            if (isSambaTrack || audioTagGateway.canEdit(track)) {
                 audioTagGateway.read(track).getOrThrow()
             } else {
                 null
@@ -888,10 +894,13 @@ class DefaultLyricsRepository(
                 artistName = currentSnapshot.artistName?.takeIf { it.isNotBlank() },
                 albumTitle = currentSnapshot.albumTitle?.takeIf { it.isNotBlank() },
                 durationSeconds = track.durationSecondsOrNull(),
-                artworkLocator = normalizeArtworkLocator(currentSnapshot.artworkLocator ?: track.artworkLocator),
+                artworkLocator = normalizeArtworkLocator(
+                    if (isSambaTrack) currentSnapshot.artworkLocator else (currentSnapshot.artworkLocator ?: track.artworkLocator),
+                ),
                 isTrackProvided = true,
             )
         }
+        if (isSambaTrack) return null
 
         val cached = database.lyricsCacheDao().getByTrack(track.id)
             .firstOrNull { it.sourceId == EMBEDDED_LYRICS_SOURCE_ID }

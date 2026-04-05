@@ -412,7 +412,10 @@ private class FakeLyricsShareRepository(
         return ResolvedLyricsResult(document = document, artworkLocator = track.artworkLocator)
     }
 
-    override suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate> = emptyList()
+    override suspend fun searchLyricsCandidates(
+        track: Track,
+        includeTrackProvidedCandidate: Boolean,
+    ): List<LyricsSearchCandidate> = emptyList()
 
     override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
         error("Not used in lyrics share tests")

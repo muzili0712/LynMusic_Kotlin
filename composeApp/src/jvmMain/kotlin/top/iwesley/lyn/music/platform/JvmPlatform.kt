@@ -130,7 +130,11 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             sambaCachePreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createJvmArtworkCacheStore(),
-            audioTagGateway = JvmAudioTagGateway(logger),
+            audioTagGateway = JvmAudioTagGateway(
+                database = database,
+                secureCredentialStore = secureStore,
+                logger = logger,
+            ),
             audioTagEditorPlatformService = JvmAudioTagEditorPlatformService(),
             logger = logger,
         ),
@@ -198,6 +202,8 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
 }
 
 private class JvmAudioTagGateway(
+    private val database: LynMusicDatabase,
+    private val secureCredentialStore: SecureCredentialStore,
     private val logger: DiagnosticLogger,
 ) : AudioTagGateway {
     override suspend fun canEdit(track: Track): Boolean {
@@ -209,14 +215,28 @@ private class JvmAudioTagGateway(
     }
 
     override suspend fun read(track: Track): Result<AudioTagSnapshot> {
-        return runCatching {
+        return try {
             val path = resolveJvmLocalTrackPath(track.mediaLocator)
-                ?: error("当前仅支持桌面本地文件的音频标签读取。")
-            JvmAudioTagReader.readSnapshot(
-                path = path,
-                relativePath = track.relativePath.ifBlank { path.fileName?.toString().orEmpty() },
-                logger = logger,
+            Result.success(
+                when {
+                    path != null -> JvmAudioTagReader.readSnapshot(
+                        path = path,
+                        relativePath = track.relativePath.ifBlank { path.fileName?.toString().orEmpty() },
+                        logger = logger,
+                    )
+
+                    parseSambaLocator(track.mediaLocator) != null -> readJvmSambaTrackSnapshot(
+                        database = database,
+                        secureCredentialStore = secureCredentialStore,
+                        track = track,
+                        logger = logger,
+                    )
+
+                    else -> error("当前仅支持桌面本地文件或 Samba 远端的音频标签读取。")
+                },
             )
+        } catch (throwable: Throwable) {
+            Result.failure(throwable)
         }
     }
 
@@ -270,6 +290,107 @@ private fun resolveJvmLocalTrackPath(locator: String): Path? {
             else -> Path.of(value).takeIf { it.isAbsolute }
         }
     }.getOrNull()
+}
+
+private data class JvmSambaTagReadTarget(
+    val sourceId: String,
+    val endpoint: String,
+    val server: String,
+    val port: Int,
+    val shareName: String,
+    val remotePath: String,
+    val relativePath: String,
+    val username: String,
+    val password: String,
+)
+
+private suspend fun readJvmSambaTrackSnapshot(
+    database: LynMusicDatabase,
+    secureCredentialStore: SecureCredentialStore,
+    track: Track,
+    logger: DiagnosticLogger,
+): AudioTagSnapshot {
+    val target = resolveJvmSambaTagReadTarget(
+        database = database,
+        secureCredentialStore = secureCredentialStore,
+        track = track,
+    ) ?: error("当前歌曲不是 Samba 远端媒体。")
+    logger.info(SAMBA_LOG_TAG) {
+        "tag-read-start source=${target.sourceId} endpoint=${target.endpoint} remotePath=${target.remotePath}"
+    }
+    val client = SMBClient()
+    return try {
+        client.connect(target.server, target.port).use { connection ->
+            val session = connection.authenticate(
+                AuthenticationContext(target.username, target.password.toCharArray(), ""),
+            )
+            session.use {
+                val share = session.connectShare(target.shareName) as DiskShare
+                share.use {
+                    val sizeBytes = share.getFileInformation(target.remotePath)
+                        .standardInformation
+                        .endOfFile
+                    share.openFile(
+                        target.remotePath,
+                        setOf(AccessMask.GENERIC_READ),
+                        null,
+                        SMB2ShareAccess.ALL,
+                        SMB2CreateDisposition.FILE_OPEN,
+                        null,
+                    ).use { smbFile ->
+                        val metadata = readJvmSambaRemoteMetadata(
+                            file = smbFile,
+                            sourceId = target.sourceId,
+                            relativePath = target.relativePath,
+                            remotePath = target.remotePath,
+                            sizeBytes = sizeBytes,
+                            logger = logger,
+                        ) ?: error("Samba 远端没有可解析的音频标签。")
+                        logger.info(SAMBA_LOG_TAG) {
+                            "tag-read-complete source=${target.sourceId} endpoint=${target.endpoint} remotePath=${target.remotePath} title=${metadata.title.orEmpty()}"
+                        }
+                        metadata.toAudioTagSnapshot(target.relativePath) { bytes ->
+                            storeJvmRemoteArtwork(target.relativePath, bytes)
+                        }
+                    }
+                }
+            }
+        }
+    } catch (throwable: Throwable) {
+        throw IllegalStateException("读取 Samba 远端标签失败: ${throwable.message.orEmpty()}", throwable)
+    } finally {
+        runCatching { client.close() }
+    }
+}
+
+private suspend fun resolveJvmSambaTagReadTarget(
+    database: LynMusicDatabase,
+    secureCredentialStore: SecureCredentialStore,
+    track: Track,
+): JvmSambaTagReadTarget? {
+    val samba = parseSambaLocator(track.mediaLocator) ?: return null
+    val source = database.importSourceDao().getById(samba.first) ?: error("Samba source missing")
+    val shareName = source.shareName
+    val storedPort = shareName?.toIntOrNull()
+    val storedPath = when {
+        storedPort != null -> normalizeSambaPath(source.directoryPath)
+        shareName.isNullOrBlank() -> normalizeSambaPath(source.directoryPath)
+        else -> normalizeSambaPath(joinSambaPath(shareName, source.directoryPath.orEmpty()))
+    }
+    val sambaPath = parseSambaPath(storedPath)
+        ?: error("SMB source path is missing a share name.")
+    val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
+    return JvmSambaTagReadTarget(
+        sourceId = samba.first,
+        endpoint = formatSambaEndpoint(source.server.orEmpty(), storedPort, storedPath),
+        server = source.server.orEmpty(),
+        port = storedPort ?: DEFAULT_SAMBA_PORT,
+        shareName = sambaPath.shareName,
+        remotePath = joinSambaPath(sambaPath.directoryPath, samba.second),
+        relativePath = track.relativePath.ifBlank { samba.second },
+        username = source.username.orEmpty(),
+        password = password,
+    )
 }
 
 private class JvmImportSourceGateway(
@@ -412,58 +533,13 @@ private class JvmImportSourceGateway(
             SMB2CreateDisposition.FILE_OPEN,
             null,
         ).use { smbFile ->
-            val initialHeadBytes = sizeBytes
-                .coerceAtMost(RemoteAudioMetadataProbe.HEAD_PROBE_BYTES)
-                .coerceAtMost(Int.MAX_VALUE.toLong())
-                .toInt()
-            var totalProbeBytes = initialHeadBytes.toLong()
-            var headBytes = readSambaBytes(smbFile, 0L, initialHeadBytes)
-            val requiredHeadBytes = RemoteAudioMetadataProbe.requiredExpandedHeadBytes(relativePath, headBytes)
-            if (requiredHeadBytes != null && requiredHeadBytes > headBytes.size) {
-                if (requiredHeadBytes > RemoteAudioMetadataProbe.MAX_HEAD_PROBE_BYTES) {
-                    logger.info(SAMBA_LOG_TAG) {
-                        "metadata-skip source=$sourceId remotePath=$remotePath reason=head-too-large requested=$requiredHeadBytes"
-                    }
-                    return fallback
-                }
-                val expandedHeadBytes = requiredHeadBytes
-                    .coerceAtMost(sizeBytes)
-                    .coerceAtMost(Int.MAX_VALUE.toLong())
-                    .toInt()
-                totalProbeBytes = expandedHeadBytes.toLong()
-                headBytes = readSambaBytes(smbFile, 0L, expandedHeadBytes)
-                logger.debug(SAMBA_LOG_TAG) {
-                    "metadata-range-expand source=$sourceId remotePath=$remotePath bytes=${headBytes.size}"
-                }
-            }
-            val tailBytes = if (RemoteAudioMetadataProbe.shouldReadTail(relativePath)) {
-                val requestedTailBytes = sizeBytes
-                    .coerceAtMost(RemoteAudioMetadataProbe.TAIL_PROBE_BYTES)
-                    .coerceAtMost(Int.MAX_VALUE.toLong())
-                    .toInt()
-                if (totalProbeBytes + requestedTailBytes > RemoteAudioMetadataProbe.MAX_TOTAL_PROBE_BYTES) {
-                    logger.info(SAMBA_LOG_TAG) {
-                        "metadata-skip source=$sourceId remotePath=$remotePath reason=tail-over-budget requested=$requestedTailBytes"
-                    }
-                    null
-                } else {
-                    totalProbeBytes += requestedTailBytes
-                    readSambaBytes(
-                        file = smbFile,
-                        fileOffset = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
-                        length = requestedTailBytes,
-                    )
-                }
-            } else {
-                null
-            }
-            logger.debug(SAMBA_LOG_TAG) {
-                "metadata-range-read source=$sourceId remotePath=$remotePath head=${headBytes.size} tail=${tailBytes?.size ?: 0}"
-            }
-            val metadata = RemoteAudioMetadataProbe.parse(
+            val metadata = readJvmSambaRemoteMetadata(
+                file = smbFile,
+                sourceId = sourceId,
                 relativePath = relativePath,
-                headBytes = headBytes,
-                tailBytes = tailBytes,
+                remotePath = remotePath,
+                sizeBytes = sizeBytes,
+                logger = logger,
             )
             if (metadata == null || !metadata.hasMeaningfulMetadata(relativePath)) {
                 logger.info(SAMBA_LOG_TAG) {
@@ -484,6 +560,69 @@ private class JvmImportSourceGateway(
             return candidate
         }
     }
+}
+
+private fun readJvmSambaRemoteMetadata(
+    file: SmbRemoteFile,
+    sourceId: String,
+    relativePath: String,
+    remotePath: String,
+    sizeBytes: Long,
+    logger: DiagnosticLogger,
+): RemoteAudioMetadata? {
+    val initialHeadBytes = sizeBytes
+        .coerceAtMost(RemoteAudioMetadataProbe.HEAD_PROBE_BYTES)
+        .coerceAtMost(Int.MAX_VALUE.toLong())
+        .toInt()
+    var totalProbeBytes = initialHeadBytes.toLong()
+    var headBytes = readSambaBytes(file, 0L, initialHeadBytes)
+    val requiredHeadBytes = RemoteAudioMetadataProbe.requiredExpandedHeadBytes(relativePath, headBytes)
+    if (requiredHeadBytes != null && requiredHeadBytes > headBytes.size) {
+        if (requiredHeadBytes > RemoteAudioMetadataProbe.MAX_HEAD_PROBE_BYTES) {
+            logger.info(SAMBA_LOG_TAG) {
+                "metadata-skip source=$sourceId remotePath=$remotePath reason=head-too-large requested=$requiredHeadBytes"
+            }
+            return null
+        }
+        val expandedHeadBytes = requiredHeadBytes
+            .coerceAtMost(sizeBytes)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        totalProbeBytes = expandedHeadBytes.toLong()
+        headBytes = readSambaBytes(file, 0L, expandedHeadBytes)
+        logger.debug(SAMBA_LOG_TAG) {
+            "metadata-range-expand source=$sourceId remotePath=$remotePath bytes=${headBytes.size}"
+        }
+    }
+    val tailBytes = if (RemoteAudioMetadataProbe.shouldReadTail(relativePath)) {
+        val requestedTailBytes = sizeBytes
+            .coerceAtMost(RemoteAudioMetadataProbe.TAIL_PROBE_BYTES)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        if (totalProbeBytes + requestedTailBytes > RemoteAudioMetadataProbe.MAX_TOTAL_PROBE_BYTES) {
+            logger.info(SAMBA_LOG_TAG) {
+                "metadata-skip source=$sourceId remotePath=$remotePath reason=tail-over-budget requested=$requestedTailBytes"
+            }
+            null
+        } else {
+            totalProbeBytes += requestedTailBytes
+            readSambaBytes(
+                file = file,
+                fileOffset = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
+                length = requestedTailBytes,
+            )
+        }
+    } else {
+        null
+    }
+    logger.debug(SAMBA_LOG_TAG) {
+        "metadata-range-read source=$sourceId remotePath=$remotePath head=${headBytes.size} tail=${tailBytes?.size ?: 0}"
+    }
+    return RemoteAudioMetadataProbe.parse(
+        relativePath = relativePath,
+        headBytes = headBytes,
+        tailBytes = tailBytes,
+    )
 }
 
 private class JvmPlaybackGateway(
@@ -956,6 +1095,21 @@ private fun readSambaBytes(
         currentOffset += read.toLong()
     }
     return if (totalRead == buffer.size) buffer else buffer.copyOf(totalRead)
+}
+
+private fun RemoteAudioMetadata.toAudioTagSnapshot(
+    relativePath: String,
+    storeArtwork: (ByteArray) -> String?,
+): AudioTagSnapshot {
+    return AudioTagSnapshot(
+        title = title?.trim()?.takeIf { it.isNotBlank() } ?: relativePath.substringAfterLast('/').substringBeforeLast('.'),
+        artistName = artistName?.trim()?.takeIf { it.isNotBlank() },
+        albumTitle = albumTitle?.trim()?.takeIf { it.isNotBlank() },
+        trackNumber = trackNumber,
+        discNumber = discNumber,
+        embeddedLyrics = embeddedLyrics?.trim()?.takeIf { it.isNotBlank() },
+        artworkLocator = artworkBytes?.takeIf { it.isNotEmpty() }?.let(storeArtwork),
+    )
 }
 
 private fun storeJvmRemoteArtwork(relativePath: String, bytes: ByteArray): String? {
