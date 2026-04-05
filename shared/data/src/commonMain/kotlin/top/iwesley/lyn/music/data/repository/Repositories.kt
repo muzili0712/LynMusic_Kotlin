@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.map
 import kotlin.random.Random
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.Album
+import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -30,6 +31,7 @@ import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
@@ -641,6 +643,7 @@ class DefaultLyricsRepository(
     private val database: LynMusicDatabase,
     private val httpClient: LyricsHttpClient,
     private val secureCredentialStore: SecureCredentialStore,
+    private val audioTagGateway: AudioTagGateway = UnsupportedAudioTagGateway,
     private val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
         override suspend fun cache(locator: String, cacheKey: String): String? = locator
     },
@@ -743,12 +746,19 @@ class DefaultLyricsRepository(
 
     override suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate> {
         val trackLabel = track.logIdentity()
+        val baseTrack = database.trackDao().getByIds(listOf(track.id)).firstOrNull()?.toDomain() ?: track
+        val trackProvidedCandidate = buildTrackProvidedLyricsCandidate(baseTrack)
         val configs = enabledDirectLyricsConfigs()
         if (configs.isEmpty()) {
-            logger.warn(LYRICS_LOG_TAG) { "manual-no-enabled-direct-sources track=$trackLabel" }
-            return emptyList()
+            return if (trackProvidedCandidate != null) {
+                logger.debug(LYRICS_LOG_TAG) { "manual-track-provided-only track=$trackLabel source=${trackProvidedCandidate.sourceId}" }
+                listOf(trackProvidedCandidate)
+            } else {
+                logger.warn(LYRICS_LOG_TAG) { "manual-no-enabled-direct-sources track=$trackLabel" }
+                emptyList()
+            }
         }
-        return configs.flatMap { config ->
+        val directCandidates = configs.flatMap { config ->
             requestDirectLyricsResults(
                 track = track,
                 config = config,
@@ -763,8 +773,14 @@ class DefaultLyricsRepository(
                     artistName = parsed.artistName,
                     albumTitle = parsed.albumTitle,
                     durationSeconds = parsed.durationSeconds,
+                    artworkLocator = null,
+                    isTrackProvided = false,
                 )
             }
+        }
+        return buildList {
+            trackProvidedCandidate?.let(::add)
+            addAll(directCandidates)
         }
     }
 
@@ -799,6 +815,13 @@ class DefaultLyricsRepository(
                 updatedAt = now(),
             ),
         )
+        if (candidate.isTrackProvided) {
+            normalizeArtworkLocator(candidate.artworkLocator)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { artworkLocator ->
+                    database.trackDao().updateArtworkLocator(trackId, artworkLocator)
+                }
+        }
         logger.info(LYRICS_LOG_TAG) {
             "manual-apply track=$trackId source=${candidate.sourceId} synced=${candidate.document.isSynced} " +
                 "lines=${candidate.document.lines.size}"
@@ -808,6 +831,83 @@ class DefaultLyricsRepository(
                 sourceId = candidate.sourceId,
                 rawPayload = cachedRawPayload,
             )
+    }
+
+    private suspend fun buildTrackProvidedLyricsCandidate(track: Track): LyricsSearchCandidate? {
+        return if (parseNavidromeSongLocator(track.mediaLocator) != null) {
+            buildNavidromeTrackProvidedLyricsCandidate(track)
+        } else {
+            buildEmbeddedTrackProvidedLyricsCandidate(track)
+        }
+    }
+
+    private suspend fun buildNavidromeTrackProvidedLyricsCandidate(track: Track): LyricsSearchCandidate? {
+        val document = runCatching { requestNavidromeLyricsDocument(track) }
+            .onFailure { throwable ->
+                logger.warn(LYRICS_LOG_TAG) {
+                    "manual-track-provided-navidrome-failed track=${track.logIdentity()} reason=${throwable.message.orEmpty()}"
+                }
+            }
+            .getOrNull()
+            ?: return null
+        return LyricsSearchCandidate(
+            sourceId = document.sourceId,
+            sourceName = "Navidrome",
+            document = document,
+            title = track.title.takeIf { it.isNotBlank() },
+            artistName = track.artistName?.takeIf { it.isNotBlank() },
+            albumTitle = track.albumTitle?.takeIf { it.isNotBlank() },
+            durationSeconds = track.durationSecondsOrNull(),
+            artworkLocator = normalizeArtworkLocator(track.artworkLocator),
+            isTrackProvided = true,
+        )
+    }
+
+    private suspend fun buildEmbeddedTrackProvidedLyricsCandidate(track: Track): LyricsSearchCandidate? {
+        val currentSnapshot = runCatching {
+            if (audioTagGateway.canEdit(track)) {
+                audioTagGateway.read(track).getOrThrow()
+            } else {
+                null
+            }
+        }.onFailure { throwable ->
+            logger.warn(LYRICS_LOG_TAG) {
+                "manual-track-provided-tag-read-failed track=${track.logIdentity()} reason=${throwable.message.orEmpty()}"
+            }
+        }.getOrNull()
+
+        if (currentSnapshot != null) {
+            val rawPayload = currentSnapshot.embeddedLyrics?.trim().orEmpty()
+            val document = parseCachedLyrics(EMBEDDED_LYRICS_SOURCE_ID, rawPayload)
+            if (document == null) return null
+            return LyricsSearchCandidate(
+                sourceId = EMBEDDED_LYRICS_SOURCE_ID,
+                sourceName = "歌曲标签",
+                document = document,
+                title = currentSnapshot.title.takeIf { it.isNotBlank() },
+                artistName = currentSnapshot.artistName?.takeIf { it.isNotBlank() },
+                albumTitle = currentSnapshot.albumTitle?.takeIf { it.isNotBlank() },
+                durationSeconds = track.durationSecondsOrNull(),
+                artworkLocator = normalizeArtworkLocator(currentSnapshot.artworkLocator ?: track.artworkLocator),
+                isTrackProvided = true,
+            )
+        }
+
+        val cached = database.lyricsCacheDao().getByTrack(track.id)
+            .firstOrNull { it.sourceId == EMBEDDED_LYRICS_SOURCE_ID }
+            ?.let { row -> parseCachedLyrics(row.sourceId, row.rawPayload) }
+            ?: return null
+        return LyricsSearchCandidate(
+            sourceId = EMBEDDED_LYRICS_SOURCE_ID,
+            sourceName = "歌曲标签",
+            document = cached,
+            title = track.title.takeIf { it.isNotBlank() },
+            artistName = track.artistName?.takeIf { it.isNotBlank() },
+            albumTitle = track.albumTitle?.takeIf { it.isNotBlank() },
+            durationSeconds = track.durationSecondsOrNull(),
+            artworkLocator = normalizeArtworkLocator(track.artworkLocator),
+            isTrackProvided = true,
+        )
     }
 
     override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult {
@@ -1162,6 +1262,10 @@ private fun trackIdPrefix(sourceId: String): String = "track:${sourceId}:%"
 private fun Track.logIdentity(): String {
     val artist = artistName?.takeIf { it.isNotBlank() } ?: "Unknown"
     return "\"$title\" by $artist (#$id)"
+}
+
+private fun Track.durationSecondsOrNull(): Int? {
+    return (durationMs / 1_000L).takeIf { it > 0L }?.toInt()
 }
 
 private fun DiagnosticLogger.logLyricsHttpRequest(

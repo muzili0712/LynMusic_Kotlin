@@ -7,6 +7,7 @@ import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
@@ -14,6 +15,7 @@ import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.buildNavidromeCoverLocator
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
@@ -23,6 +25,41 @@ import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
 import top.iwesley.lyn.music.domain.NAVIDROME_LYRICS_SOURCE_ID
 
 class DefaultLyricsRepositoryNavidromeTest {
+
+    @Test
+    fun `navidrome manual search prepends current track candidate from navidrome lyrics api`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        val httpClient = NavidromeRepositoryHttpClient(
+            navidromeLyricsBody = """
+                {
+                  "subsonic-response": {
+                    "status": "ok",
+                    "version": "1.16.1",
+                    "lyrics": {
+                      "value": "[00:01.00]navidrome line"
+                    }
+                  }
+                }
+            """.trimIndent(),
+            directFallbackBody = "direct line",
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = MapSecureCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val candidates = repository.searchLyricsCandidates(sampleNavidromeTrack())
+
+        assertEquals(1, candidates.size)
+        assertEquals(NAVIDROME_LYRICS_SOURCE_ID, candidates.single().sourceId)
+        assertEquals("Navidrome", candidates.single().sourceName)
+        assertTrue(candidates.single().isTrackProvided)
+        assertEquals(buildNavidromeCoverLocator("nav-source", "cover-1"), candidates.single().artworkLocator)
+        assertEquals(1, httpClient.navidromeLyricsRequests)
+    }
 
     @Test
     fun `navidrome track prefers navidrome lyrics over direct sources`() = runTest {
@@ -154,6 +191,7 @@ class DefaultLyricsRepositoryNavidromeTest {
             durationMs = 215_000L,
             mediaLocator = buildNavidromeSongLocator("nav-source", "song-1"),
             relativePath = "Artist A/Album A/Blue.flac",
+            artworkLocator = buildNavidromeCoverLocator("nav-source", "cover-1"),
         )
     }
 }

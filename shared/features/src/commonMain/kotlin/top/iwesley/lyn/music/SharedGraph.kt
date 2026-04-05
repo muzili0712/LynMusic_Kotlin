@@ -98,6 +98,7 @@ fun buildSharedGraph(
         database = database,
         httpClient = runtimeServices.lyricsHttpClient,
         secureCredentialStore = runtimeServices.secureCredentialStore,
+        audioTagGateway = runtimeServices.audioTagGateway,
         artworkCacheStore = runtimeServices.artworkCacheStore,
         logger = runtimeServices.logger,
     )

@@ -191,6 +191,8 @@ data class LyricsSearchCandidate(
     val artistName: String? = null,
     val albumTitle: String? = null,
     val durationSeconds: Int? = null,
+    val artworkLocator: String? = null,
+    val isTrackProvided: Boolean = false,
 )
 
 sealed interface LyricsSourceDefinition {

@@ -408,10 +408,13 @@ class PlayerStore(
         val directResult = runCatching { lyricsRepository.searchLyricsCandidates(searchTrack) }
         val workflowResult = runCatching { lyricsRepository.searchWorkflowSongCandidates(searchTrack) }
         updateState { current ->
+            val showTrackProvidedCandidate = current.matchesCurrentLyricsLookupTrack()
             current.copy(
                 isManualLyricsSearchLoading = false,
                 hasManualLyricsSearchResult = true,
-                manualLyricsResults = directResult.getOrDefault(emptyList()),
+                manualLyricsResults = directResult.getOrDefault(emptyList()).filter { candidate ->
+                    showTrackProvidedCandidate || !candidate.isTrackProvided
+                },
                 manualWorkflowSongResults = workflowResult.getOrDefault(emptyList()),
                 manualLyricsError = directResult.exceptionOrNull()?.message ?: workflowResult.exceptionOrNull()?.message,
             )
@@ -422,6 +425,10 @@ class PlayerStore(
         val track = state.value.snapshot.currentTrack ?: return
         val snapshot = state.value.snapshot
         val document = lyricsRepository.applyLyricsCandidate(track.id, candidate)
+        val artworkLocator = normalizeArtworkLocator(candidate.artworkLocator)
+        if (!artworkLocator.isNullOrBlank()) {
+            playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
+        }
         updateState {
             it.copy(
                 lyrics = document,
@@ -638,4 +645,11 @@ private fun PlaybackSnapshot.toLyricsLookupTrack(): Track? {
 
 private fun Track.lyricsRequestKey(): String {
     return listOf(id, title, artistName.orEmpty(), albumTitle.orEmpty()).joinToString("|")
+}
+
+private fun PlayerState.matchesCurrentLyricsLookupTrack(): Boolean {
+    val lookupTrack = snapshot.toLyricsLookupTrack() ?: return false
+    return manualLyricsTitle.trim() == lookupTrack.title.trim() &&
+        manualLyricsArtistName.trim() == lookupTrack.artistName.orEmpty().trim() &&
+        manualLyricsAlbumTitle.trim() == lookupTrack.albumTitle.orEmpty().trim()
 }

@@ -2307,7 +2307,7 @@ private fun ManualLyricsSearchResultsPane(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     TrackArtworkThumbnail(
-                                        artworkLocator = null,
+                                        artworkLocator = candidate.artworkLocator,
                                         modifier = Modifier.size(56.dp),
                                     )
                                     Column(

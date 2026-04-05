@@ -73,6 +73,7 @@ class PlayerStoreManualLyricsSearchTest {
                 sourceId = "manual-source",
                 rawPayload = "[00:01.00]第一句\n[00:02.00]第二句",
             ),
+            artworkLocator = "/tmp/manual-cover.jpg",
         )
         val playbackRepository = FakePlaybackRepository(
             PlaybackSnapshot(
@@ -112,6 +113,89 @@ class PlayerStoreManualLyricsSearchTest {
         assertEquals(0, state.highlightedLineIndex)
         assertFalse(state.isManualLyricsSearchVisible)
         assertTrue(state.manualLyricsResults.isEmpty())
+        assertEquals("/tmp/manual-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        scope.cancel()
+    }
+
+    @Test
+    fun `manual search hides current track provided candidate after form changes`() = runTest {
+        val track = sampleTrack()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val currentTrackCandidate = LyricsSearchCandidate(
+            sourceId = "embedded-tag",
+            sourceName = "歌曲标签",
+            document = LyricsDocument(
+                lines = listOf(LyricsLine(timestampMs = null, text = "当前歌曲歌词")),
+                sourceId = "embedded-tag",
+                rawPayload = "当前歌曲歌词",
+            ),
+            isTrackProvided = true,
+        )
+        val externalCandidate = LyricsSearchCandidate(
+            sourceId = "remote-source",
+            sourceName = "远程源",
+            document = LyricsDocument(
+                lines = listOf(LyricsLine(timestampMs = null, text = "外部歌词")),
+                sourceId = "remote-source",
+                rawPayload = "外部歌词",
+            ),
+        )
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository(
+            searchResults = listOf(currentTrackCandidate, externalCandidate),
+        )
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.ManualLyricsTitleChanged("另一首歌"))
+        advanceUntilIdle()
+
+        store.dispatch(PlayerIntent.SearchManualLyrics)
+        advanceUntilIdle()
+
+        assertEquals(listOf(externalCandidate), store.state.value.manualLyricsResults)
+        scope.cancel()
+    }
+
+    @Test
+    fun `manual search keeps current track provided candidate when form still matches current song`() = runTest {
+        val track = sampleTrack()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val currentTrackCandidate = LyricsSearchCandidate(
+            sourceId = "embedded-tag",
+            sourceName = "歌曲标签",
+            document = LyricsDocument(
+                lines = listOf(LyricsLine(timestampMs = null, text = "当前歌曲歌词")),
+                sourceId = "embedded-tag",
+                rawPayload = "当前歌曲歌词",
+            ),
+            isTrackProvided = true,
+        )
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository(
+            searchResults = listOf(currentTrackCandidate),
+        )
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        advanceUntilIdle()
+
+        store.dispatch(PlayerIntent.SearchManualLyrics)
+        advanceUntilIdle()
+
+        assertEquals(listOf(currentTrackCandidate), store.state.value.manualLyricsResults)
         scope.cancel()
     }
 
