@@ -5,12 +5,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.domain.NAVIDROME_LYRICS_SOURCE_ID
 import top.iwesley.lyn.music.domain.NavidromeResolvedSource
 import top.iwesley.lyn.music.domain.normalizeNavidromeBaseUrl
@@ -70,7 +72,7 @@ class NavidromeEngineTest {
                 return Result.success(
                     LyricsHttpResponse(
                         statusCode = 200,
-                        body = GET_LYRICS_JSON,
+                        body = GET_LYRICS_BY_SONG_ID_JSON,
                     ),
                 )
             }
@@ -88,7 +90,7 @@ class NavidromeEngineTest {
                 sourceId = "nav-source",
                 title = "Blue",
                 artistName = "Artist A",
-                mediaLocator = "lynmusic-navidrome://nav-source/song-1",
+                mediaLocator = buildNavidromeSongLocator("nav-source", "song-1"),
                 relativePath = "Artist A/Album A/Blue.flac",
             ),
         )
@@ -97,11 +99,46 @@ class NavidromeEngineTest {
         val parsed = requireNotNull(parseUrl(requestUrl))
         assertNotNull(lyrics)
         assertEquals(NAVIDROME_LYRICS_SOURCE_ID, lyrics.sourceId)
-        assertEquals("getLyrics", parsed.encodedPath.substringAfterLast('/'))
+        assertEquals("getLyricsBySongId", parsed.encodedPath.substringAfterLast('/'))
+        assertEquals("song-1", parsed.parameters["id"])
         assertEquals("demo", parsed.parameters["u"])
         assertEquals("json", parsed.parameters["f"])
         assertFalse(requestUrl.contains("plain-pass"))
         assertFalse(parsed.parameters.names().contains("p"))
+        assertTrue(lyrics.isSynced)
+    }
+
+    @Test
+    fun `request lyrics prefers structured lyrics by song id`() = runTest {
+        val client = RoutingNavidromeHttpClient(
+            responses = mapOf(
+                "getLyricsBySongId" to GET_LYRICS_BY_SONG_ID_JSON,
+                "getLyrics" to GET_LYRICS_JSON,
+            ),
+        )
+
+        val lyrics = requestNavidromeLyrics(
+            httpClient = client,
+            source = NavidromeResolvedSource(
+                baseUrl = "https://demo.example.com/navidrome",
+                username = "demo",
+                password = "plain-pass",
+            ),
+            track = Track(
+                id = "track-1",
+                sourceId = "nav-source",
+                title = "Blue",
+                artistName = "Artist A",
+                mediaLocator = buildNavidromeSongLocator("nav-source", "song-1"),
+                relativePath = "Artist A/Album A/Blue.flac",
+            ),
+        )
+
+        assertNotNull(lyrics)
+        assertTrue(lyrics.isSynced)
+        assertEquals(2, lyrics.lines.size)
+        assertEquals(1_000L, lyrics.lines.first().timestampMs)
+        assertEquals("first line", lyrics.lines.first().text)
     }
 }
 
@@ -196,6 +233,37 @@ private const val GET_LYRICS_JSON = """
       "artist": "Artist A",
       "title": "Blue",
       "value": "[00:01.00]blue sky\n[00:02.00]second line"
+    }
+  }
+}
+"""
+
+private const val GET_LYRICS_BY_SONG_ID_JSON = """
+{
+  "subsonic-response": {
+    "status": "ok",
+    "version": "1.16.1",
+    "openSubsonic": true,
+    "lyricsList": {
+      "structuredLyrics": [
+        {
+          "displayArtist": "Artist A",
+          "displayTitle": "Blue",
+          "lang": "und",
+          "offset": 0,
+          "synced": true,
+          "line": [
+            {
+              "start": 1000,
+              "value": "first line"
+            },
+            {
+              "start": 2000,
+              "value": "second line"
+            }
+          ]
+        }
+      ]
     }
   }
 }

@@ -20,6 +20,7 @@ import top.iwesley.lyn.music.core.model.ImportSource
 import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
+import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
@@ -170,21 +171,109 @@ suspend fun requestNavidromeLyrics(
     httpClient: LyricsHttpClient,
     source: NavidromeResolvedSource,
     track: Track,
+    logger: DiagnosticLogger = NoopDiagnosticLogger,
 ): LyricsDocument? {
+    requestNavidromeStructuredLyrics(
+        httpClient = httpClient,
+        source = source,
+        track = track,
+        logger = logger,
+    )?.let { return it }
     val payload = requestNavidromeLyricsPayload(
         httpClient = httpClient,
         source = source,
         title = track.title,
         artistName = track.artistName,
+        logger = logger,
     ) ?: return null
     val lines = parseLrc(payload).ifEmpty { parsePlainText(payload) }
     if (lines.isEmpty()) return null
-    return LyricsDocument(
+    val document = LyricsDocument(
         lines = lines,
         offsetMs = 0L,
         sourceId = NAVIDROME_LYRICS_SOURCE_ID,
         rawPayload = payload,
     )
+    logger.log(
+        level = DiagnosticLogLevel.INFO,
+        tag = "Navidrome",
+        message = buildString {
+            append("lyrics-resolved ")
+            append(formatNavidromeLyricsContext(track.title, track.artistName))
+            append(" synced=")
+            append(document.isSynced)
+            append(" lines=")
+            append(document.lines.size)
+            append('\n')
+            append("lyrics-payload:\n")
+            append(payload.ifBlank { "<empty>" })
+        },
+    )
+    return document
+}
+
+private suspend fun requestNavidromeStructuredLyrics(
+    httpClient: LyricsHttpClient,
+    source: NavidromeResolvedSource,
+    track: Track,
+    logger: DiagnosticLogger,
+): LyricsDocument? {
+    val (_, songId) = parseNavidromeSongLocator(track.mediaLocator) ?: return null
+    val response = runCatching {
+        requestNavidromeJson(
+            httpClient = httpClient,
+            source = source,
+            endpoint = "getLyricsBySongId",
+            parameters = mapOf("id" to songId),
+            logger = logger,
+            logContext = buildString {
+                append("songId=\"")
+                append(songId)
+                append("\" ")
+                append(formatNavidromeLyricsContext(track.title, track.artistName))
+            },
+        )
+    }.getOrElse { throwable ->
+        logger.log(
+            level = DiagnosticLogLevel.WARN,
+            tag = "Navidrome",
+            message = buildString {
+                append("structured-lyrics-fallback ")
+                append("songId=\"")
+                append(songId)
+                append("\" ")
+                append(formatNavidromeLyricsContext(track.title, track.artistName))
+                append(" cause=")
+                append(throwable.message.orEmpty().ifBlank { throwable::class.simpleName.orEmpty() })
+            },
+            throwable = throwable,
+        )
+        return null
+    }
+    val document = parseNavidromeStructuredLyricsDocument(response)
+        ?.takeIf { it.lines.isNotEmpty() }
+        ?: return null
+    logger.log(
+        level = DiagnosticLogLevel.INFO,
+        tag = "Navidrome",
+        message = buildString {
+            append("lyrics-resolved endpoint=getLyricsBySongId ")
+            append("songId=\"")
+            append(songId)
+            append("\" ")
+            append(formatNavidromeLyricsContext(track.title, track.artistName))
+            append(" synced=")
+            append(document.isSynced)
+            append(" lines=")
+            append(document.lines.size)
+            append(" offsetMs=")
+            append(document.offsetMs)
+            append('\n')
+            append("lyrics-payload:\n")
+            append(document.rawPayload.ifBlank { "<empty>" })
+        },
+    )
+    return document
 }
 
 suspend fun resolveNavidromeStreamUrl(
@@ -313,6 +402,7 @@ private suspend fun requestNavidromeLyricsPayload(
     source: NavidromeResolvedSource,
     title: String,
     artistName: String?,
+    logger: DiagnosticLogger = NoopDiagnosticLogger,
 ): String? {
     if (title.isBlank()) return null
     val response = requestNavidromeJson(
@@ -323,6 +413,8 @@ private suspend fun requestNavidromeLyricsPayload(
             put("title", title)
             artistName?.takeIf { it.isNotBlank() }?.let { put("artist", it) }
         },
+        logger = logger,
+        logContext = formatNavidromeLyricsContext(title, artistName),
     )
     return response["lyrics"].asObjectOrNull()
         ?.string("value")
@@ -335,6 +427,8 @@ internal suspend fun requestNavidromeJson(
     source: NavidromeResolvedSource,
     endpoint: String,
     parameters: Map<String, String> = emptyMap(),
+    logger: DiagnosticLogger = NoopDiagnosticLogger,
+    logContext: String? = null,
 ): JsonObject {
     val request = LyricsRequest(
         method = RequestMethod.GET,
@@ -347,8 +441,44 @@ internal suspend fun requestNavidromeJson(
             includeJsonFormat = true,
         ),
     )
+    if (logger !== NoopDiagnosticLogger) {
+        logger.log(
+            level = DiagnosticLogLevel.INFO,
+            tag = "Navidrome",
+            message = buildString {
+                append("request endpoint=")
+                append(endpoint)
+                logContext?.takeIf { it.isNotBlank() }?.let {
+                    append(' ')
+                    append(it)
+                }
+                append('\n')
+                append("url: ")
+                append(redactNavidromeUrlForLog(request.url))
+            },
+        )
+    }
     val response = httpClient.request(request).getOrElse { throwable ->
         throw IllegalStateException("Navidrome $endpoint 请求失败: ${throwable.message.orEmpty()}", throwable)
+    }
+    if (logger !== NoopDiagnosticLogger) {
+        logger.log(
+            level = DiagnosticLogLevel.INFO,
+            tag = "Navidrome",
+            message = buildString {
+                append("response endpoint=")
+                append(endpoint)
+                logContext?.takeIf { it.isNotBlank() }?.let {
+                    append(' ')
+                    append(it)
+                }
+                append(" status=")
+                append(response.statusCode)
+                append('\n')
+                append("body:\n")
+                append(response.body.ifBlank { "<empty>" })
+            },
+        )
     }
     require(response.statusCode in 200..299) { "Navidrome $endpoint 失败，HTTP ${response.statusCode}" }
     val root = navidromeJson.parseToJsonElement(response.body) as? JsonObject
@@ -361,6 +491,67 @@ internal suspend fun requestNavidromeJson(
         error(message)
     }
     return payload
+}
+
+private fun formatNavidromeLyricsContext(
+    title: String,
+    artistName: String?,
+): String {
+    return buildString {
+        append("title=\"")
+        append(title)
+        append('"')
+        artistName?.takeIf { it.isNotBlank() }?.let {
+            append(" artist=\"")
+            append(it)
+            append('"')
+        }
+    }
+}
+
+private fun redactNavidromeUrlForLog(url: String): String {
+    return url
+        .replace(Regex("([?&]t=)[^&]*"), "$1<redacted>")
+        .replace(Regex("([?&]s=)[^&]*"), "$1<redacted>")
+}
+
+private fun parseNavidromeStructuredLyricsDocument(payload: JsonObject): LyricsDocument? {
+    val lyricsList = payload["lyricsList"].asObjectOrNull() ?: return null
+    val entries = lyricsList["structuredLyrics"].asObjectList()
+    if (entries.isEmpty()) return null
+    val chosen = entries
+        .mapNotNull(::parseNavidromeStructuredLyricsEntry)
+        .sortedWith(
+            compareByDescending<ParsedNavidromeStructuredLyrics> { it.document.isSynced }
+                .thenByDescending { it.document.lines.size }
+        )
+        .firstOrNull()
+        ?: return null
+    return chosen.document
+}
+
+private fun parseNavidromeStructuredLyricsEntry(entry: JsonObject): ParsedNavidromeStructuredLyrics? {
+    val synced = entry.boolean("synced") ?: false
+    val offsetMs = entry.long("offset") ?: 0L
+    val lines = entry["line"].asObjectList()
+        .mapNotNull { line ->
+            val text = line.string("value")?.trim().orEmpty()
+            if (text.isBlank()) return@mapNotNull null
+            LyricsLine(
+                timestampMs = if (synced) line.long("start") else null,
+                text = text,
+            )
+        }
+    if (lines.isEmpty()) return null
+    val document = LyricsDocument(
+        lines = lines,
+        offsetMs = offsetMs,
+        sourceId = NAVIDROME_LYRICS_SOURCE_ID,
+        rawPayload = "",
+    )
+    return ParsedNavidromeStructuredLyrics(
+        document = document.copy(rawPayload = serializeLyricsDocument(document)),
+    )
 }
 
 private fun buildNavidromeRestUrl(
@@ -446,6 +637,20 @@ private fun JsonObject.string(key: String): String? {
     return (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
 }
 
+private fun JsonObject.boolean(key: String): Boolean? {
+    return string(key)?.lowercase()?.let { value ->
+        when (value) {
+            "true" -> true
+            "false" -> false
+            else -> null
+        }
+    }
+}
+
 private fun JsonObject.int(key: String): Int? = string(key)?.toIntOrNull()
 
 private fun JsonObject.long(key: String): Long? = string(key)?.toLongOrNull()
+
+private data class ParsedNavidromeStructuredLyrics(
+    val document: LyricsDocument,
+)

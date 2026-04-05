@@ -7,6 +7,7 @@ import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
@@ -31,6 +32,28 @@ class DefaultLyricsRepositoryNavidromeTest {
         val database = createTestDatabase()
         seedNavidromeSource(database)
         val httpClient = NavidromeRepositoryHttpClient(
+            navidromeStructuredLyricsBody = """
+                {
+                  "subsonic-response": {
+                    "status": "ok",
+                    "version": "1.16.1",
+                    "openSubsonic": true,
+                    "lyricsList": {
+                      "structuredLyrics": [
+                        {
+                          "synced": true,
+                          "line": [
+                            {
+                              "start": 1000,
+                              "value": "navidrome line"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+            """.trimIndent(),
             navidromeLyricsBody = """
                 {
                   "subsonic-response": {
@@ -57,8 +80,10 @@ class DefaultLyricsRepositoryNavidromeTest {
         assertEquals(NAVIDROME_LYRICS_SOURCE_ID, candidates.single().sourceId)
         assertEquals("Navidrome", candidates.single().sourceName)
         assertTrue(candidates.single().isTrackProvided)
+        assertTrue(candidates.single().document.isSynced)
         assertEquals(buildNavidromeCoverLocator("nav-source", "cover-1"), candidates.single().artworkLocator)
-        assertEquals(1, httpClient.navidromeLyricsRequests)
+        assertEquals(1, httpClient.navidromeStructuredLyricsRequests)
+        assertEquals(0, httpClient.navidromeLegacyLyricsRequests)
     }
 
     @Test
@@ -81,6 +106,28 @@ class DefaultLyricsRepositoryNavidromeTest {
             ),
         )
         val httpClient = NavidromeRepositoryHttpClient(
+            navidromeStructuredLyricsBody = """
+                {
+                  "subsonic-response": {
+                    "status": "ok",
+                    "version": "1.16.1",
+                    "openSubsonic": true,
+                    "lyricsList": {
+                      "structuredLyrics": [
+                        {
+                          "synced": true,
+                          "line": [
+                            {
+                              "start": 1000,
+                              "value": "navidrome line"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+            """.trimIndent(),
             navidromeLyricsBody = """
                 {
                   "subsonic-response": {
@@ -105,9 +152,47 @@ class DefaultLyricsRepositoryNavidromeTest {
 
         assertNotNull(result)
         assertEquals(NAVIDROME_LYRICS_SOURCE_ID, result.document.sourceId)
-        assertEquals(1, httpClient.navidromeLyricsRequests)
+        assertTrue(result.document.isSynced)
+        assertEquals(1, httpClient.navidromeStructuredLyricsRequests)
+        assertEquals(0, httpClient.navidromeLegacyLyricsRequests)
         assertEquals(0, httpClient.directRequests)
         assertEquals(listOf(NAVIDROME_LYRICS_SOURCE_ID), database.lyricsCacheDao().getByTrack("nav-track").map { it.sourceId })
+    }
+
+    @Test
+    fun `navidrome track falls back to legacy lyrics when structured endpoint is unsupported`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        val httpClient = NavidromeRepositoryHttpClient(
+            navidromeStructuredLyricsFailure = IllegalStateException("Navidrome getLyricsBySongId 失败，HTTP 404"),
+            navidromeLyricsBody = """
+                {
+                  "subsonic-response": {
+                    "status": "ok",
+                    "version": "1.16.1",
+                    "lyrics": {
+                      "value": "[00:01.00]legacy line"
+                    }
+                  }
+                }
+            """.trimIndent(),
+            directFallbackBody = "direct line",
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = MapSecureCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val result = repository.getLyrics(sampleNavidromeTrack())
+
+        assertNotNull(result)
+        assertEquals(NAVIDROME_LYRICS_SOURCE_ID, result.document.sourceId)
+        assertTrue(result.document.isSynced)
+        assertEquals(1, httpClient.navidromeStructuredLyricsRequests)
+        assertEquals(1, httpClient.navidromeLegacyLyricsRequests)
+        assertEquals(0, httpClient.directRequests)
     }
 
     @Test
@@ -130,6 +215,18 @@ class DefaultLyricsRepositoryNavidromeTest {
             ),
         )
         val httpClient = NavidromeRepositoryHttpClient(
+            navidromeStructuredLyricsBody = """
+                {
+                  "subsonic-response": {
+                    "status": "ok",
+                    "version": "1.16.1",
+                    "openSubsonic": true,
+                    "lyricsList": {
+                      "structuredLyrics": []
+                    }
+                  }
+                }
+            """.trimIndent(),
             navidromeLyricsBody = """
                 {
                   "subsonic-response": {
@@ -151,7 +248,8 @@ class DefaultLyricsRepositoryNavidromeTest {
 
         assertNotNull(result)
         assertEquals("direct-fallback", result.document.sourceId)
-        assertEquals(1, httpClient.navidromeLyricsRequests)
+        assertEquals(1, httpClient.navidromeStructuredLyricsRequests)
+        assertEquals(1, httpClient.navidromeLegacyLyricsRequests)
         assertEquals(1, httpClient.directRequests)
     }
 
@@ -197,10 +295,14 @@ class DefaultLyricsRepositoryNavidromeTest {
 }
 
 private class NavidromeRepositoryHttpClient(
+    private val navidromeStructuredLyricsBody: String? = null,
     private val navidromeLyricsBody: String,
     private val directFallbackBody: String,
+    private val navidromeStructuredLyricsFailure: Throwable? = null,
 ) : LyricsHttpClient {
-    var navidromeLyricsRequests: Int = 0
+    var navidromeStructuredLyricsRequests: Int = 0
+        private set
+    var navidromeLegacyLyricsRequests: Int = 0
         private set
     var directRequests: Int = 0
         private set
@@ -208,8 +310,14 @@ private class NavidromeRepositoryHttpClient(
     override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
         val url = requireNotNull(parseUrl(request.url))
         return when {
+            url.encodedPath.endsWith("/rest/getLyricsBySongId") -> {
+                navidromeStructuredLyricsRequests += 1
+                navidromeStructuredLyricsFailure?.let { return Result.failure(it) }
+                Result.success(LyricsHttpResponse(statusCode = 200, body = navidromeStructuredLyricsBody.orEmpty()))
+            }
+
             url.encodedPath.endsWith("/rest/getLyrics") -> {
-                navidromeLyricsRequests += 1
+                navidromeLegacyLyricsRequests += 1
                 Result.success(LyricsHttpResponse(statusCode = 200, body = navidromeLyricsBody))
             }
 

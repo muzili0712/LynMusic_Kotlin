@@ -781,6 +781,7 @@ class DefaultLyricsRepository(
                 password = password,
             ),
             track = track,
+            logger = logger,
         )
     }
 
