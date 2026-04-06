@@ -656,7 +656,6 @@ private fun PlayerBottomControls(
     onOpenQueue: () -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
     val favoriteTint = if (isFavorite) Color(0xFFE5484D) else Color.White.copy(alpha = 0.96f)
     val modeButtonSize = 42.dp
     val modeIconSize = 22.dp
@@ -665,185 +664,162 @@ private fun PlayerBottomControls(
     val playButtonSize = 60.dp
     val playIconSize = 42.dp
     Box(modifier = Modifier.fillMaxWidth()) {
-        Card(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 10.dp),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.08f)),
+                .padding(start = 12.dp, end = 12.dp, top = 20.dp, bottom = 5.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = 0.16f),
-                                colors.heroGlow.copy(alpha = 0.12f),
-                                colors.surface.copy(alpha = 0.08f),
-                            ),
-                        ),
-                    ),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 5.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                Text(
+                    text = formatDuration(snapshot.positionMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                )
+                Text(
+                    text = formatDuration(snapshot.durationMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                )
+            }
+            if (wide) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    Text(
+                        text = buildString {
+                            append(snapshot.currentDisplayTitle)
+                            append("  ")
+                            append(snapshot.currentDisplayArtistName ?: "未知艺人")
+                            append("  ")
+                            append(track.sourceId.substringBefore('-').uppercase())
+                        },
+                        modifier = Modifier.weight(0.30f),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.weight(0.40f),
+                        horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = formatDuration(snapshot.positionMs),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                        )
-                        Text(
-                            text = formatDuration(snapshot.durationMs),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                        )
-                    }
-                    if (wide) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = buildString {
-                                    append(snapshot.currentDisplayTitle)
-                                    append("  ")
-                                    append(snapshot.currentDisplayArtistName ?: "未知艺人")
-                                    append("  ")
-                                    append(track.sourceId.substringBefore('-').uppercase())
-                                },
-                                modifier = Modifier.weight(0.30f),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                        IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(modeButtonSize)) {
+                            Icon(
+                                imageVector = playbackModeIcon(snapshot.mode),
+                                contentDescription = null,
+                                modifier = Modifier.size(modeIconSize),
+                                tint = Color.White.copy(alpha = 0.92f),
                             )
-                            Row(
-                                modifier = Modifier.weight(0.40f),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(modeButtonSize)) {
-                                    Icon(
-                                        imageVector = playbackModeIcon(snapshot.mode),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(modeIconSize),
-                                        tint = Color.White.copy(alpha = 0.92f),
-                                    )
-                                }
-                                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(skipButtonSize)) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.SkipPrevious,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(skipIconSize),
-                                        tint = Color.White.copy(alpha = 0.92f),
-                                    )
-                                }
-                                IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(playButtonSize)) {
-                                    Icon(
-                                        imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(playIconSize),
-                                        tint = Color.White.copy(alpha = 0.96f),
-                                    )
-                                }
-                                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(skipButtonSize)) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.SkipNext,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(skipIconSize),
-                                        tint = Color.White.copy(alpha = 0.92f),
-                                    )
-                                }
-                            }
-                            Row(
-                                modifier = Modifier.weight(0.30f),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                QueueToggleButton(
-                                    onClick = onOpenQueue,
-                                    tint = Color.White.copy(alpha = 0.96f),
-                                )
-                                AddToPlaylistButton(
-                                    onClick = onOpenAddToPlaylist,
-                                    tint = Color.White.copy(alpha = 0.96f),
-                                )
-                                FavoriteToggleButton(
-                                    isFavorite = isFavorite,
-                                    onClick = onToggleFavorite,
-                                    tint = favoriteTint,
-                                )
-                                Box(modifier = Modifier.weight(1f)) {
-                                    PlaybackVolume(snapshot, onPlayerIntent, sliderWidthFraction = 0.5f)
-                                }
-                            }
                         }
-                    } else {
-                        PlaybackVolume(snapshot, onPlayerIntent)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(modeButtonSize)) {
-                                Icon(
-                                    imageVector = playbackModeIcon(snapshot.mode),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(modeIconSize),
-                                    tint = Color.White.copy(alpha = 0.92f),
-                                )
-                            }
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(skipButtonSize)) {
-                                Icon(
-                                    imageVector = Icons.Rounded.SkipPrevious,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(skipIconSize),
-                                    tint = Color.White.copy(alpha = 0.92f),
-                                )
-                            }
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(playButtonSize)) {
-                                Icon(
-                                    imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(playIconSize),
-                                    tint = Color.White.copy(alpha = 0.96f),
-                                )
-                            }
-                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(skipButtonSize)) {
-                                Icon(
-                                    imageVector = Icons.Rounded.SkipNext,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(skipIconSize),
-                                    tint = Color.White.copy(alpha = 0.92f),
-                                )
-                            }
-                            QueueToggleButton(
-                                onClick = onOpenQueue,
+                        IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(skipButtonSize)) {
+                            Icon(
+                                imageVector = Icons.Rounded.SkipPrevious,
+                                contentDescription = null,
+                                modifier = Modifier.size(skipIconSize),
+                                tint = Color.White.copy(alpha = 0.92f),
+                            )
+                        }
+                        IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(playButtonSize)) {
+                            Icon(
+                                imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(playIconSize),
                                 tint = Color.White.copy(alpha = 0.96f),
                             )
-                            AddToPlaylistButton(
-                                onClick = onOpenAddToPlaylist,
-                                tint = Color.White.copy(alpha = 0.96f),
-                            )
-                            FavoriteToggleButton(
-                                isFavorite = isFavorite,
-                                onClick = onToggleFavorite,
-                                tint = favoriteTint,
+                        }
+                        IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(skipButtonSize)) {
+                            Icon(
+                                imageVector = Icons.Rounded.SkipNext,
+                                contentDescription = null,
+                                modifier = Modifier.size(skipIconSize),
+                                tint = Color.White.copy(alpha = 0.92f),
                             )
                         }
                     }
+                    Row(
+                        modifier = Modifier.weight(0.30f),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        QueueToggleButton(
+                            onClick = onOpenQueue,
+                            tint = Color.White.copy(alpha = 0.96f),
+                        )
+                        AddToPlaylistButton(
+                            onClick = onOpenAddToPlaylist,
+                            tint = Color.White.copy(alpha = 0.96f),
+                        )
+                        FavoriteToggleButton(
+                            isFavorite = isFavorite,
+                            onClick = onToggleFavorite,
+                            tint = favoriteTint,
+                        )
+                        Box(modifier = Modifier.weight(1f)) {
+                            PlaybackVolume(snapshot, onPlayerIntent, sliderWidthFraction = 0.5f)
+                        }
+                    }
+                }
+            } else {
+                PlaybackVolume(snapshot, onPlayerIntent)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(modeButtonSize)) {
+                        Icon(
+                            imageVector = playbackModeIcon(snapshot.mode),
+                            contentDescription = null,
+                            modifier = Modifier.size(modeIconSize),
+                            tint = Color.White.copy(alpha = 0.92f),
+                        )
+                    }
+                    IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(skipButtonSize)) {
+                        Icon(
+                            imageVector = Icons.Rounded.SkipPrevious,
+                            contentDescription = null,
+                            modifier = Modifier.size(skipIconSize),
+                            tint = Color.White.copy(alpha = 0.92f),
+                        )
+                    }
+                    IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(playButtonSize)) {
+                        Icon(
+                            imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(playIconSize),
+                            tint = Color.White.copy(alpha = 0.96f),
+                        )
+                    }
+                    IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(skipButtonSize)) {
+                        Icon(
+                            imageVector = Icons.Rounded.SkipNext,
+                            contentDescription = null,
+                            modifier = Modifier.size(skipIconSize),
+                            tint = Color.White.copy(alpha = 0.92f),
+                        )
+                    }
+                    QueueToggleButton(
+                        onClick = onOpenQueue,
+                        tint = Color.White.copy(alpha = 0.96f),
+                    )
+                    AddToPlaylistButton(
+                        onClick = onOpenAddToPlaylist,
+                        tint = Color.White.copy(alpha = 0.96f),
+                    )
+                    FavoriteToggleButton(
+                        isFavorite = isFavorite,
+                        onClick = onToggleFavorite,
+                        tint = favoriteTint,
+                    )
                 }
             }
         }
