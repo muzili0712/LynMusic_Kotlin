@@ -44,7 +44,6 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -698,40 +697,6 @@ private fun MobilePlayerPrimaryPane(
             modifier = Modifier.fillMaxSize(),
             compact = true,
         )
-        Card(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 14.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.34f)),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text(
-                    text = state.snapshot.currentDisplayTitle,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White.copy(alpha = 0.96f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = state.snapshot.currentDisplayArtistName ?: "未知艺人",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                AssistChip(
-                    onClick = { lyricsVisible = true },
-                    label = { Text(if (state.isLyricsLoading) "正在准备歌词" else "点按唱片区查看歌词") },
-                    leadingIcon = { Icon(Icons.Rounded.GraphicEq, contentDescription = null) },
-                )
-            }
-        }
     }
 }
 
@@ -783,6 +748,139 @@ private fun PlayerBottomControls(
     val skipIconSize = 27.dp
     val playButtonSize = 60.dp
     val playIconSize = 42.dp
+    if (!wide) {
+        val mobileTopActionButtonSize = 58.dp
+        val mobileTopActionIconSize = 30.dp
+        val mobileBottomActionButtonSize = 62.dp
+        val mobileBottomActionIconSize = 32.dp
+        val mobileModeButtonSize = 54.dp
+        val mobileModeIconSize = 26.dp
+        val mobileSkipButtonSize = 58.dp
+        val mobileSkipIconSize = 32.dp
+        val mobilePlayButtonSize = 76.dp
+        val mobilePlayIconSize = 52.dp
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 5.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = snapshot.currentDisplayTitle,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White.copy(alpha = 0.96f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = snapshot.currentDisplayArtistName ?: "未知艺人",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AddToPlaylistButton(
+                        onClick = onOpenAddToPlaylist,
+                        tint = Color.White.copy(alpha = 0.96f),
+                        buttonSize = mobileTopActionButtonSize,
+                        iconSize = mobileTopActionIconSize,
+                    )
+                    FavoriteToggleButton(
+                        isFavorite = isFavorite,
+                        onClick = onToggleFavorite,
+                        tint = favoriteTint,
+                        buttonSize = mobileTopActionButtonSize,
+                        iconSize = mobileTopActionIconSize,
+                    )
+                }
+            }
+            PlaybackProgress(
+                snapshot = snapshot,
+                onPlayerIntent = onPlayerIntent,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                showTimeLabels = false,
+                floating = true,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = formatDuration(snapshot.positionMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                )
+                Text(
+                    text = formatDuration(snapshot.durationMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(mobileModeButtonSize)) {
+                    Icon(
+                        imageVector = playbackModeIcon(snapshot.mode),
+                        contentDescription = null,
+                        modifier = Modifier.size(mobileModeIconSize),
+                        tint = Color.White.copy(alpha = 0.92f),
+                    )
+                }
+                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(mobileSkipButtonSize)) {
+                    Icon(
+                        imageVector = Icons.Rounded.SkipPrevious,
+                        contentDescription = null,
+                        modifier = Modifier.size(mobileSkipIconSize),
+                        tint = Color.White.copy(alpha = 0.92f),
+                    )
+                }
+                IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(mobilePlayButtonSize)) {
+                    Icon(
+                        imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(mobilePlayIconSize),
+                        tint = Color.White.copy(alpha = 0.96f),
+                    )
+                }
+                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(mobileSkipButtonSize)) {
+                    Icon(
+                        imageVector = Icons.Rounded.SkipNext,
+                        contentDescription = null,
+                        modifier = Modifier.size(mobileSkipIconSize),
+                        tint = Color.White.copy(alpha = 0.92f),
+                    )
+                }
+                QueueToggleButton(
+                    onClick = onOpenQueue,
+                    tint = Color.White.copy(alpha = 0.96f),
+                    buttonSize = mobileBottomActionButtonSize,
+                    iconSize = mobileBottomActionIconSize,
+                )
+            }
+        }
+        return
+    }
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
@@ -888,59 +986,6 @@ private fun PlayerBottomControls(
                         }
                     }
                 }
-            } else {
-                PlaybackVolume(snapshot, onPlayerIntent)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(modeButtonSize)) {
-                        Icon(
-                            imageVector = playbackModeIcon(snapshot.mode),
-                            contentDescription = null,
-                            modifier = Modifier.size(modeIconSize),
-                            tint = Color.White.copy(alpha = 0.92f),
-                        )
-                    }
-                    IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(skipButtonSize)) {
-                        Icon(
-                            imageVector = Icons.Rounded.SkipPrevious,
-                            contentDescription = null,
-                            modifier = Modifier.size(skipIconSize),
-                            tint = Color.White.copy(alpha = 0.92f),
-                        )
-                    }
-                    IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(playButtonSize)) {
-                        Icon(
-                            imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(playIconSize),
-                            tint = Color.White.copy(alpha = 0.96f),
-                        )
-                    }
-                    IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(skipButtonSize)) {
-                        Icon(
-                            imageVector = Icons.Rounded.SkipNext,
-                            contentDescription = null,
-                            modifier = Modifier.size(skipIconSize),
-                            tint = Color.White.copy(alpha = 0.92f),
-                        )
-                    }
-                    QueueToggleButton(
-                        onClick = onOpenQueue,
-                        tint = Color.White.copy(alpha = 0.96f),
-                    )
-                    AddToPlaylistButton(
-                        onClick = onOpenAddToPlaylist,
-                        tint = Color.White.copy(alpha = 0.96f),
-                    )
-                    FavoriteToggleButton(
-                        isFavorite = isFavorite,
-                        onClick = onToggleFavorite,
-                        tint = favoriteTint,
-                    )
-                }
             }
         }
         PlaybackProgress(
@@ -961,12 +1006,15 @@ private fun PlayerBottomControls(
 private fun QueueToggleButton(
     onClick: () -> Unit,
     tint: Color = MaterialTheme.colorScheme.primary,
+    buttonSize: androidx.compose.ui.unit.Dp = 48.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 24.dp,
 ) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) {
         Icon(
             imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
             contentDescription = "播放队列",
             tint = tint,
+            modifier = Modifier.size(iconSize),
         )
     }
 }
@@ -975,12 +1023,15 @@ private fun QueueToggleButton(
 private fun AddToPlaylistButton(
     onClick: () -> Unit,
     tint: Color = MaterialTheme.colorScheme.primary,
+    buttonSize: androidx.compose.ui.unit.Dp = 48.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 24.dp,
 ) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) {
         Icon(
             imageVector = Icons.Rounded.Add,
             contentDescription = "加入歌单",
             tint = tint,
+            modifier = Modifier.size(iconSize),
         )
     }
 }

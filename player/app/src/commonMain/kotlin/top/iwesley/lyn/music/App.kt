@@ -3469,12 +3469,15 @@ internal fun FavoriteToggleButton(
     isFavorite: Boolean,
     onClick: () -> Unit,
     tint: Color = MaterialTheme.colorScheme.primary,
+    buttonSize: androidx.compose.ui.unit.Dp = 48.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 24.dp,
 ) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) {
         Icon(
             imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
             contentDescription = if (isFavorite) "取消喜欢" else "标记为喜欢",
             tint = tint,
+            modifier = Modifier.size(iconSize),
         )
     }
 }
