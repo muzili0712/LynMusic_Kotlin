@@ -28,11 +28,14 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +65,7 @@ import top.iwesley.lyn.music.core.model.PlaylistSummary
 import top.iwesley.lyn.music.core.model.SYSTEM_LIKED_PLAYLIST_ID
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.player.PlayerIntent
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsState
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
@@ -254,6 +258,18 @@ internal fun PlaylistsTab(
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     val detail = state.selectedPlaylist
+    val filteredDetail = remember(detail, state.selectedSourceFilter, state.sourceTypesById) {
+        detail?.let { playlistDetail ->
+            val filteredTracks = playlistDetail.tracks.filter { entry ->
+                matchesPlaylistSourceFilter(
+                    track = entry.track,
+                    selectedSourceFilter = state.selectedSourceFilter,
+                    sourceTypesById = state.sourceTypesById,
+                )
+            }
+            playlistDetail.copy(tracks = filteredTracks)
+        }
+    }
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val wide = maxWidth >= 980.dp
         if (showCreateDialog) {
@@ -274,13 +290,17 @@ internal fun PlaylistsTab(
                     playlists = state.playlists,
                     selectedPlaylistId = state.selectedPlaylistId,
                     isRefreshing = state.isRefreshing,
+                    selectedSourceFilter = state.selectedSourceFilter,
+                    availableSourceFilters = state.availableSourceFilters,
                     onRefresh = { onPlaylistsIntent(PlaylistsIntent.Refresh) },
+                    onSourceFilterChanged = { onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it)) },
                     onCreate = { showCreateDialog = true },
                     onSelect = { onPlaylistsIntent(PlaylistsIntent.SelectPlaylist(it)) },
                     modifier = Modifier.weight(0.36f).fillMaxHeight(),
                 )
                 PlaylistDetailPane(
-                    detail = detail,
+                    detail = filteredDetail,
+                    hasTracksOutsideFilter = detail?.tracks?.isNotEmpty() == true && filteredDetail?.tracks?.isEmpty() == true,
                     onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
                     onPlayAll = { tracks ->
                         if (tracks.isNotEmpty()) {
@@ -304,14 +324,18 @@ internal fun PlaylistsTab(
                 playlists = state.playlists,
                 selectedPlaylistId = state.selectedPlaylistId,
                 isRefreshing = state.isRefreshing,
+                selectedSourceFilter = state.selectedSourceFilter,
+                availableSourceFilters = state.availableSourceFilters,
                 onRefresh = { onPlaylistsIntent(PlaylistsIntent.Refresh) },
+                onSourceFilterChanged = { onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it)) },
                 onCreate = { showCreateDialog = true },
                 onSelect = { onPlaylistsIntent(PlaylistsIntent.SelectPlaylist(it)) },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
             PlaylistDetailPane(
-                detail = detail,
+                detail = filteredDetail,
+                hasTracksOutsideFilter = detail.tracks.isNotEmpty() && filteredDetail?.tracks?.isEmpty() == true,
                 onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
                 onPlayAll = { tracks ->
                     if (tracks.isNotEmpty()) {
@@ -336,11 +360,15 @@ private fun PlaylistListPane(
     playlists: List<PlaylistSummary>,
     selectedPlaylistId: String?,
     isRefreshing: Boolean,
+    selectedSourceFilter: LibrarySourceFilter,
+    availableSourceFilters: List<LibrarySourceFilter>,
     onRefresh: () -> Unit,
+    onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
     onCreate: () -> Unit,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -366,6 +394,28 @@ private fun PlaylistListPane(
                     Icon(Icons.Rounded.Sync, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(if (isRefreshing) "同步中" else "同步远端")
+                }
+                Box {
+                    OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
+                        Icon(Icons.Rounded.Tune, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(playlistSourceFilterButtonLabel(selectedSourceFilter))
+                    }
+                    DropdownMenu(
+                        expanded = sourceFilterMenuExpanded,
+                        onDismissRequest = { sourceFilterMenuExpanded = false },
+                        containerColor = mainShellColors.navContainer,
+                    ) {
+                        availableSourceFilters.forEach { filter ->
+                            DropdownMenuItem(
+                                text = { Text(playlistSourceFilterMenuLabel(filter)) },
+                                onClick = {
+                                    sourceFilterMenuExpanded = false
+                                    onSourceFilterChanged(filter)
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -458,6 +508,7 @@ private fun PlaylistSummaryCard(
 @Composable
 private fun PlaylistDetailPane(
     detail: PlaylistDetail?,
+    hasTracksOutsideFilter: Boolean,
     onBack: () -> Unit,
     onPlayAll: (List<Track>) -> Unit,
     onPlayTrack: (List<Track>, Int) -> Unit,
@@ -506,8 +557,16 @@ private fun PlaylistDetailPane(
             detail == null -> Unit
             detail.tracks.isEmpty() -> item {
                 EmptyStateCard(
-                    title = "歌单还是空的",
-                    body = "从播放器把当前歌曲加入这里后，就可以直接播放和管理了。",
+                    title = if (hasTracksOutsideFilter) {
+                        "当前来源下没有歌曲"
+                    } else {
+                        "歌单还是空的"
+                    },
+                    body = if (hasTracksOutsideFilter) {
+                        "试试切回“${playlistSourceFilterButtonLabel(LibrarySourceFilter.ALL)}”，或更换其他来源筛选。"
+                    } else {
+                        "从播放器把当前歌曲加入这里后，就可以直接播放和管理了。"
+                    },
                 )
             }
 
@@ -520,6 +579,38 @@ private fun PlaylistDetailPane(
                 )
             }
         }
+    }
+}
+
+private fun matchesPlaylistSourceFilter(
+    track: Track,
+    selectedSourceFilter: LibrarySourceFilter,
+    sourceTypesById: Map<String, top.iwesley.lyn.music.core.model.ImportSourceType>,
+): Boolean {
+    if (selectedSourceFilter == LibrarySourceFilter.ALL) return true
+    return when (sourceTypesById[track.sourceId]) {
+        top.iwesley.lyn.music.core.model.ImportSourceType.LOCAL_FOLDER -> selectedSourceFilter == LibrarySourceFilter.LOCAL_FOLDER
+        top.iwesley.lyn.music.core.model.ImportSourceType.SAMBA -> selectedSourceFilter == LibrarySourceFilter.SAMBA
+        top.iwesley.lyn.music.core.model.ImportSourceType.WEBDAV -> selectedSourceFilter == LibrarySourceFilter.WEBDAV
+        top.iwesley.lyn.music.core.model.ImportSourceType.NAVIDROME -> selectedSourceFilter == LibrarySourceFilter.NAVIDROME
+        null -> false
+    }
+}
+
+private fun playlistSourceFilterButtonLabel(filter: LibrarySourceFilter): String {
+    return when (filter) {
+        LibrarySourceFilter.ALL -> "全部来源"
+        LibrarySourceFilter.LOCAL_FOLDER -> "本地文件夹"
+        LibrarySourceFilter.SAMBA -> "Samba"
+        LibrarySourceFilter.WEBDAV -> "WebDAV"
+        LibrarySourceFilter.NAVIDROME -> "Navidrome"
+    }
+}
+
+private fun playlistSourceFilterMenuLabel(filter: LibrarySourceFilter): String {
+    return when (filter) {
+        LibrarySourceFilter.ALL -> "全部"
+        else -> playlistSourceFilterButtonLabel(filter)
     }
 }
 

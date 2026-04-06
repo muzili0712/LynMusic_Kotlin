@@ -27,6 +27,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 import top.iwesley.lyn.music.data.repository.PlaylistRepository
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaylistsStoreTest {
@@ -113,6 +114,48 @@ class PlaylistsStoreTest {
         advanceUntilIdle()
 
         assertEquals("歌单已存在", store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
+    fun `source filter follows available sources and falls back to all`() = runTest {
+        val repository = FakePlaylistRepository()
+        val importSources = FakePlaylistsImportSourceRepository(
+            listOf(
+                source("local-1", ImportSourceType.LOCAL_FOLDER, "下载目录"),
+                source("nav-1", ImportSourceType.NAVIDROME, "Navidrome"),
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = PlaylistsStore(repository, importSources, scope)
+
+        advanceUntilIdle()
+        assertEquals(
+            listOf(
+                LibrarySourceFilter.ALL,
+                LibrarySourceFilter.LOCAL_FOLDER,
+                LibrarySourceFilter.NAVIDROME,
+            ),
+            store.state.value.availableSourceFilters,
+        )
+
+        store.dispatch(PlaylistsIntent.SourceFilterChanged(LibrarySourceFilter.NAVIDROME))
+        advanceUntilIdle()
+        assertEquals(LibrarySourceFilter.NAVIDROME, store.state.value.selectedSourceFilter)
+
+        importSources.updateSources(
+            listOf(source("local-1", ImportSourceType.LOCAL_FOLDER, "下载目录")),
+        )
+        advanceUntilIdle()
+
+        assertEquals(LibrarySourceFilter.ALL, store.state.value.selectedSourceFilter)
+        assertEquals(
+            listOf(
+                LibrarySourceFilter.ALL,
+                LibrarySourceFilter.LOCAL_FOLDER,
+            ),
+            store.state.value.availableSourceFilters,
+        )
         scope.cancel()
     }
 }
