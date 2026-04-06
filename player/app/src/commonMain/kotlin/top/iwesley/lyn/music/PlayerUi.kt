@@ -419,6 +419,7 @@ private fun PlayerOverlay(
             val wide = maxWidth >= 980.dp
             val useTapToRevealLyrics =
                 isMobilePlaybackPlatform(platform) &&
+                    !wide &&
                     (maxWidth < 820.dp || maxHeight < 860.dp)
             Column(
                 modifier = Modifier
