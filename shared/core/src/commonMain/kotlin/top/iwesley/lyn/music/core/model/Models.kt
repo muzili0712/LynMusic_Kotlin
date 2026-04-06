@@ -4,11 +4,19 @@ import kotlin.concurrent.Volatile
 
 enum class AppTab {
     Library,
+    Playlists,
     Favorites,
     Tags,
     Sources,
     Settings,
 }
+
+enum class PlaylistKind {
+    USER,
+    SYSTEM_LIKED,
+}
+
+const val SYSTEM_LIKED_PLAYLIST_ID = "system-liked"
 
 enum class ImportSourceType {
     LOCAL_FOLDER,
@@ -56,6 +64,36 @@ data class Track(
     val artworkLocator: String? = null,
     val sizeBytes: Long = 0L,
     val modifiedAt: Long = 0L,
+)
+
+data class PlaylistTrackEntry(
+    val track: Track,
+    val sourceLabel: String? = null,
+)
+
+data class PlaylistSummary(
+    val id: String,
+    val name: String,
+    val kind: PlaylistKind = PlaylistKind.USER,
+    val trackCount: Int = 0,
+    val updatedAt: Long = 0L,
+    val memberTrackIds: Set<String> = emptySet(),
+)
+
+data class PlaylistDetail(
+    val id: String,
+    val name: String,
+    val kind: PlaylistKind = PlaylistKind.USER,
+    val updatedAt: Long = 0L,
+    val tracks: List<PlaylistTrackEntry> = emptyList(),
+)
+
+data class PlaylistAddTarget(
+    val id: String,
+    val name: String,
+    val kind: PlaylistKind,
+    val updatedAt: Long = 0L,
+    val alreadyContainsTrack: Boolean = false,
 )
 
 data class ImportSource(

@@ -35,6 +35,7 @@ sealed interface FavoritesIntent {
     data class SearchChanged(val query: String) : FavoritesIntent
     data class SourceFilterChanged(val filter: LibrarySourceFilter) : FavoritesIntent
     data class ToggleFavorite(val track: Track) : FavoritesIntent
+    data class EnsureFavorite(val track: Track) : FavoritesIntent
     data object ClearMessage : FavoritesIntent
 }
 
@@ -99,6 +100,16 @@ class FavoritesStore(
 
             is FavoritesIntent.ToggleFavorite -> {
                 favoritesRepository.toggleFavorite(intent.track)
+                    .onSuccess {
+                        updateState { it.copy(message = null) }
+                    }
+                    .onFailure { throwable ->
+                        setMessage("更新喜欢状态失败: ${throwable.message.orEmpty()}")
+                    }
+            }
+
+            is FavoritesIntent.EnsureFavorite -> {
+                favoritesRepository.setFavorite(intent.track, favorite = true)
                     .onSuccess {
                         updateState { it.copy(message = null) }
                     }

@@ -225,6 +225,22 @@ private class FakeFavoritesRepository(
         return Result.success(isNowFavorite)
     }
 
+    override suspend fun setFavorite(track: Track, favorite: Boolean): Result<Boolean> {
+        val nextIds = mutableFavoriteTrackIds.value.toMutableSet()
+        if (favorite) {
+            nextIds.add(track.id)
+        } else {
+            nextIds.remove(track.id)
+        }
+        mutableFavoriteTrackIds.value = nextIds
+        mutableTracks.value = if (favorite) {
+            listOf(track) + mutableTracks.value.filterNot { it.id == track.id }
+        } else {
+            mutableTracks.value.filterNot { it.id == track.id }
+        }
+        return Result.success(favorite)
+    }
+
     override suspend fun refreshNavidromeFavorites(): Result<Unit> {
         refreshCalls += 1
         return Result.success(Unit)

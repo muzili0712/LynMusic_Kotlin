@@ -25,12 +25,14 @@ import top.iwesley.lyn.music.data.repository.RoomMusicTagsRepository
 import top.iwesley.lyn.music.data.repository.RoomFavoritesRepository
 import top.iwesley.lyn.music.data.repository.RoomImportSourceRepository
 import top.iwesley.lyn.music.data.repository.RoomLibraryRepository
+import top.iwesley.lyn.music.data.repository.RoomPlaylistRepository
 import top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrl
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.feature.favorites.FavoritesStore
 import top.iwesley.lyn.music.feature.importing.ImportStore
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import top.iwesley.lyn.music.feature.library.LibraryStore
+import top.iwesley.lyn.music.feature.playlists.PlaylistsStore
 import top.iwesley.lyn.music.feature.settings.SettingsStore
 import top.iwesley.lyn.music.feature.tags.MusicTagsStore
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
@@ -54,6 +56,7 @@ class SharedGraph(
     val platform: PlatformDescriptor,
     val database: LynMusicDatabase,
     val libraryStore: LibraryStore,
+    val playlistsStore: PlaylistsStore,
     val favoritesStore: FavoritesStore,
     val musicTagsStore: MusicTagsStore,
     val importStore: ImportStore,
@@ -113,6 +116,12 @@ fun buildSharedGraph(
         httpClient = runtimeServices.lyricsHttpClient,
         logger = runtimeServices.logger,
     )
+    val playlistRepository = RoomPlaylistRepository(
+        database = database,
+        secureCredentialStore = runtimeServices.secureCredentialStore,
+        httpClient = runtimeServices.lyricsHttpClient,
+        logger = runtimeServices.logger,
+    )
     val musicTagsRepository = RoomMusicTagsRepository(
         database = database,
         audioTagGateway = runtimeServices.audioTagGateway,
@@ -128,6 +137,11 @@ fun buildSharedGraph(
             importSourceRepository = importSourceRepository,
             preferencesStore = runtimeServices.librarySourceFilterPreferencesStore,
             scope = scope,
+        ),
+        playlistsStore = PlaylistsStore(
+            playlistRepository = playlistRepository,
+            importSourceRepository = importSourceRepository,
+            storeScope = scope,
         ),
         favoritesStore = FavoritesStore(
             favoritesRepository = favoritesRepository,

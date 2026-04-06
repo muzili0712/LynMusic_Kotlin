@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PauseCircle
@@ -100,6 +101,7 @@ internal fun PlayerDrawerHost(
     onPlayerIntent: (PlayerIntent) -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -141,6 +143,7 @@ internal fun PlayerDrawerHost(
                 onPlayerIntent = onPlayerIntent,
                 isFavorite = isFavorite,
                 onToggleFavorite = onToggleFavorite,
+                onOpenAddToPlaylist = onOpenAddToPlaylist,
                 onOpenQueue = onOpenQueue,
             )
         }
@@ -154,6 +157,7 @@ internal fun MiniPlayerBarVisibility(
     onPlayerIntent: (PlayerIntent) -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
     compact: Boolean = false,
 ) {
@@ -191,6 +195,7 @@ internal fun MiniPlayerBarVisibility(
             onPlayerIntent = onPlayerIntent,
             isFavorite = isFavorite,
             onToggleFavorite = onToggleFavorite,
+            onOpenAddToPlaylist = onOpenAddToPlaylist,
             onOpenQueue = onOpenQueue,
             compact = compact,
         )
@@ -290,6 +295,7 @@ private fun MiniPlayerBar(
     onPlayerIntent: (PlayerIntent) -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
     compact: Boolean = false,
 ) {
@@ -331,6 +337,7 @@ private fun MiniPlayerBar(
             isFavorite = isFavorite,
             onClick = onToggleFavorite,
         )
+        AddToPlaylistButton(onClick = onOpenAddToPlaylist)
         QueueToggleButton(onClick = onOpenQueue)
         IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) {
             Icon(Icons.Rounded.SkipPrevious, contentDescription = null)
@@ -355,6 +362,7 @@ private fun PlayerOverlay(
     onPlayerIntent: (PlayerIntent) -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
 ) {
     val track = state.snapshot.currentTrack ?: return
@@ -507,6 +515,7 @@ private fun PlayerOverlay(
                     wide = wide,
                     isFavorite = isFavorite,
                     onToggleFavorite = onToggleFavorite,
+                    onOpenAddToPlaylist = onOpenAddToPlaylist,
                     onOpenQueue = onOpenQueue,
                     onPlayerIntent = onPlayerIntent,
                 )
@@ -642,6 +651,7 @@ private fun PlayerBottomControls(
     wide: Boolean,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
 ) {
@@ -765,6 +775,10 @@ private fun PlayerBottomControls(
                                     onClick = onOpenQueue,
                                     tint = Color.White.copy(alpha = 0.96f),
                                 )
+                                AddToPlaylistButton(
+                                    onClick = onOpenAddToPlaylist,
+                                    tint = Color.White.copy(alpha = 0.96f),
+                                )
                                 FavoriteToggleButton(
                                     isFavorite = isFavorite,
                                     onClick = onToggleFavorite,
@@ -818,6 +832,10 @@ private fun PlayerBottomControls(
                                 onClick = onOpenQueue,
                                 tint = Color.White.copy(alpha = 0.96f),
                             )
+                            AddToPlaylistButton(
+                                onClick = onOpenAddToPlaylist,
+                                tint = Color.White.copy(alpha = 0.96f),
+                            )
                             FavoriteToggleButton(
                                 isFavorite = isFavorite,
                                 onClick = onToggleFavorite,
@@ -851,6 +869,20 @@ private fun QueueToggleButton(
         Icon(
             imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
             contentDescription = "播放队列",
+            tint = tint,
+        )
+    }
+}
+
+@Composable
+private fun AddToPlaylistButton(
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
+) {
+    IconButton(onClick = onClick) {
+        Icon(
+            imageVector = Icons.Rounded.Add,
+            contentDescription = "加入歌单",
             tint = tint,
         )
     }

@@ -1,0 +1,599 @@
+package top.iwesley.lyn.music
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import top.iwesley.lyn.music.core.model.PlaylistAddTarget
+import top.iwesley.lyn.music.core.model.PlaylistDetail
+import top.iwesley.lyn.music.core.model.PlaylistKind
+import top.iwesley.lyn.music.core.model.PlaylistSummary
+import top.iwesley.lyn.music.core.model.SYSTEM_LIKED_PLAYLIST_ID
+import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.feature.player.PlayerIntent
+import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
+import top.iwesley.lyn.music.feature.playlists.PlaylistsState
+import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
+import top.iwesley.lyn.music.ui.mainShellColors
+
+fun buildPlaylistAddTargets(
+    playlists: List<PlaylistSummary>,
+    favoriteTrackIds: Set<String>,
+    trackId: String?,
+): List<PlaylistAddTarget> {
+    val likedTarget = PlaylistAddTarget(
+        id = SYSTEM_LIKED_PLAYLIST_ID,
+        name = "喜欢",
+        kind = PlaylistKind.SYSTEM_LIKED,
+        updatedAt = Long.MAX_VALUE,
+        alreadyContainsTrack = trackId != null && trackId in favoriteTrackIds,
+    )
+    return listOf(likedTarget) + playlists
+        .sortedWith(compareByDescending<PlaylistSummary> { it.updatedAt }.thenBy { it.name.lowercase() })
+        .map { playlist ->
+            PlaylistAddTarget(
+                id = playlist.id,
+                name = playlist.name,
+                kind = playlist.kind,
+                updatedAt = playlist.updatedAt,
+                alreadyContainsTrack = trackId != null && trackId in playlist.memberTrackIds,
+            )
+        }
+}
+
+@Composable
+internal fun PlaylistAddDialog(
+    track: Track,
+    targets: List<PlaylistAddTarget>,
+    onDismiss: () -> Unit,
+    onAddTarget: (PlaylistAddTarget) -> Unit,
+    onCreatePlaylistAndAdd: (String) -> Unit,
+) {
+    var selectedTargetId by remember(track.id, targets) {
+        mutableStateOf(targets.firstOrNull { !it.alreadyContainsTrack }?.id)
+    }
+    var newPlaylistName by rememberSaveable(track.id) { mutableStateOf("") }
+    val selectedTarget = targets.firstOrNull { it.id == selectedTargetId && !it.alreadyContainsTrack }
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = mainShellColors.cardBorder,
+        unfocusedBorderColor = mainShellColors.cardBorder,
+        disabledBorderColor = mainShellColors.cardBorder,
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("加入歌单") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    text = buildString {
+                        append(track.title)
+                        track.artistName?.takeIf { it.isNotBlank() }?.let {
+                            append(" · ")
+                            append(it)
+                        }
+                    },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    targets.forEach { target ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable(enabled = !target.alreadyContainsTrack) {
+                                    selectedTargetId = target.id
+                                }
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = selectedTargetId == target.id,
+                                onClick = if (target.alreadyContainsTrack) null else { { selectedTargetId = target.id } },
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(target.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = if (target.alreadyContainsTrack) "已存在" else when (target.kind) {
+                                        PlaylistKind.SYSTEM_LIKED -> "加入喜欢"
+                                        PlaylistKind.USER -> "加入普通歌单"
+                                    },
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+                ImeAwareOutlinedTextField(
+                    value = newPlaylistName,
+                    onValueChange = { newPlaylistName = it },
+                    label = { Text("新建歌单") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                Button(
+                    onClick = {
+                        onCreatePlaylistAndAdd(newPlaylistName)
+                        newPlaylistName = ""
+                    },
+                    enabled = newPlaylistName.trim().isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("新建并加入")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { selectedTarget?.let(onAddTarget) },
+                enabled = selectedTarget != null,
+            ) {
+                Text("加入")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+    )
+}
+
+@Composable
+internal fun PlaylistsTab(
+    state: PlaylistsState,
+    onPlaylistsIntent: (PlaylistsIntent) -> Unit,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showCreateDialog by remember { mutableStateOf(false) }
+    val detail = state.selectedPlaylist
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val wide = maxWidth >= 980.dp
+        if (showCreateDialog) {
+            PlaylistNameDialog(
+                onDismiss = { showCreateDialog = false },
+                onConfirm = { name ->
+                    showCreateDialog = false
+                    onPlaylistsIntent(PlaylistsIntent.CreatePlaylist(name))
+                },
+            )
+        }
+        if (wide) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                PlaylistListPane(
+                    playlists = state.playlists,
+                    selectedPlaylistId = state.selectedPlaylistId,
+                    isRefreshing = state.isRefreshing,
+                    onRefresh = { onPlaylistsIntent(PlaylistsIntent.Refresh) },
+                    onCreate = { showCreateDialog = true },
+                    onSelect = { onPlaylistsIntent(PlaylistsIntent.SelectPlaylist(it)) },
+                    modifier = Modifier.weight(0.36f).fillMaxHeight(),
+                )
+                PlaylistDetailPane(
+                    detail = detail,
+                    onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
+                    onPlayAll = { tracks ->
+                        if (tracks.isNotEmpty()) {
+                            onPlayerIntent(PlayerIntent.PlayTracks(tracks, 0))
+                        }
+                    },
+                    onPlayTrack = { tracks, index ->
+                        onPlayerIntent(PlayerIntent.PlayTracks(tracks, index))
+                    },
+                    onRemoveTrack = { trackId ->
+                        detail?.id?.let { playlistId ->
+                            onPlaylistsIntent(PlaylistsIntent.RemoveTrackFromPlaylist(playlistId, trackId))
+                        }
+                    },
+                    modifier = Modifier.weight(0.64f).fillMaxHeight(),
+                    showBackButton = false,
+                )
+            }
+        } else if (detail == null) {
+            PlaylistListPane(
+                playlists = state.playlists,
+                selectedPlaylistId = state.selectedPlaylistId,
+                isRefreshing = state.isRefreshing,
+                onRefresh = { onPlaylistsIntent(PlaylistsIntent.Refresh) },
+                onCreate = { showCreateDialog = true },
+                onSelect = { onPlaylistsIntent(PlaylistsIntent.SelectPlaylist(it)) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            PlaylistDetailPane(
+                detail = detail,
+                onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
+                onPlayAll = { tracks ->
+                    if (tracks.isNotEmpty()) {
+                        onPlayerIntent(PlayerIntent.PlayTracks(tracks, 0))
+                    }
+                },
+                onPlayTrack = { tracks, index ->
+                    onPlayerIntent(PlayerIntent.PlayTracks(tracks, index))
+                },
+                onRemoveTrack = { trackId ->
+                    onPlaylistsIntent(PlaylistsIntent.RemoveTrackFromPlaylist(detail.id, trackId))
+                },
+                modifier = Modifier.fillMaxSize(),
+                showBackButton = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistListPane(
+    playlists: List<PlaylistSummary>,
+    selectedPlaylistId: String?,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+    onCreate: () -> Unit,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            PlaylistSectionTitle(
+                title = "歌单",
+                subtitle = "普通歌单支持本地歌曲和 Navidrome 歌曲混合收藏。",
+            )
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(onClick = onCreate) {
+                    Icon(Icons.Rounded.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("新建歌单")
+                }
+                OutlinedButton(onClick = onRefresh) {
+                    Icon(Icons.Rounded.Sync, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (isRefreshing) "同步中" else "同步远端")
+                }
+            }
+        }
+        if (playlists.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    title = "还没有普通歌单",
+                    body = "从播放器把当前歌曲加入歌单，或先新建一个空歌单。",
+                )
+            }
+        } else {
+            items(playlists, key = { it.id }) { playlist ->
+                PlaylistSummaryCard(
+                    playlist = playlist,
+                    selected = playlist.id == selectedPlaylistId,
+                    onClick = { onSelect(playlist.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistSummaryCard(
+    playlist: PlaylistSummary,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shellColors = mainShellColors
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.secondary else shellColors.cardContainer,
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.secondary else shellColors.cardBorder,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(shellColors.navContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.List, contentDescription = null)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    playlist.name,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${playlist.trackCount} 首歌曲",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistDetailPane(
+    detail: PlaylistDetail?,
+    onBack: () -> Unit,
+    onPlayAll: (List<Track>) -> Unit,
+    onPlayTrack: (List<Track>, Int) -> Unit,
+    onRemoveTrack: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    showBackButton: Boolean,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            if (detail == null) {
+                EmptyStateCard(
+                    title = "选择一个歌单",
+                    body = "左侧会列出普通歌单，点击后可以查看歌曲并直接播放。",
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (showBackButton) {
+                        TextButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("返回歌单列表")
+                        }
+                    }
+                    PlaylistSectionTitle(
+                        title = detail.name,
+                        subtitle = "${detail.tracks.size} 首歌曲",
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(
+                            onClick = { onPlayAll(detail.tracks.map { it.track }) },
+                            enabled = detail.tracks.isNotEmpty(),
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("播放全部")
+                        }
+                    }
+                }
+            }
+        }
+        when {
+            detail == null -> Unit
+            detail.tracks.isEmpty() -> item {
+                EmptyStateCard(
+                    title = "歌单还是空的",
+                    body = "从播放器把当前歌曲加入这里后，就可以直接播放和管理了。",
+                )
+            }
+
+            else -> itemsIndexed(detail.tracks, key = { _, item -> item.track.id }) { index, item ->
+                PlaylistTrackRow(
+                    entry = item,
+                    index = index,
+                    onClick = { onPlayTrack(detail.tracks.map { it.track }, index) },
+                    onRemove = { onRemoveTrack(item.track.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistTrackRow(
+    entry: top.iwesley.lyn.music.core.model.PlaylistTrackEntry,
+    index: Int,
+    onClick: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val shellColors = mainShellColors
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text((index + 1).toString().padStart(2, '0'), fontWeight = FontWeight.Bold)
+            PlaylistArtworkThumbnail(artworkLocator = entry.track.artworkLocator)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    entry.track.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    buildString {
+                        append(entry.track.artistName ?: "未知艺人")
+                        entry.sourceLabel?.takeIf { it.isNotBlank() }?.let {
+                            append(" · ")
+                            append(it)
+                        }
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Rounded.Delete, contentDescription = "移出歌单")
+            }
+            Text(formatDuration(entry.track.durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 88.dp)
+                .height(1.dp)
+                .background(shellColors.cardBorder),
+        )
+    }
+}
+
+@Composable
+private fun PlaylistNameDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = mainShellColors.cardBorder,
+        unfocusedBorderColor = mainShellColors.cardBorder,
+        disabledBorderColor = mainShellColors.cardBorder,
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("新建歌单") },
+        text = {
+            ImeAwareOutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("歌单名称") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = fieldColors,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name) },
+                enabled = name.trim().isNotBlank(),
+            ) {
+                Text("创建")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+    )
+}
+
+@Composable
+private fun PlaylistSectionTitle(
+    title: String,
+    subtitle: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+        Text(subtitle, color = mainShellColors.secondaryText)
+    }
+}
+
+@Composable
+private fun PlaylistArtworkThumbnail(
+    artworkLocator: String?,
+    modifier: Modifier = Modifier,
+) {
+    val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
+    Box(
+        modifier = modifier
+            .size(52.dp)
+            .clip(RoundedCornerShape(1.dp))
+            .background(mainShellColors.cardContainer)
+            .padding(0.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (artworkBitmap != null) {
+            androidx.compose.foundation.Image(
+                bitmap = artworkBitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.List,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+    }
+}

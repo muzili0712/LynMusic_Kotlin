@@ -31,6 +31,7 @@ interface FavoritesRepository {
     val favoriteTracks: Flow<List<Track>>
 
     suspend fun toggleFavorite(track: Track): Result<Boolean>
+    suspend fun setFavorite(track: Track, favorite: Boolean): Result<Boolean>
     suspend fun refreshNavidromeFavorites(): Result<Unit>
 }
 
@@ -58,15 +59,23 @@ class RoomFavoritesRepository(
     }
 
     override suspend fun toggleFavorite(track: Track): Result<Boolean> {
+        val favorite = database.favoriteTrackDao().getByTrackId(track.id) == null
+        return setFavorite(track, favorite)
+    }
+
+    override suspend fun setFavorite(track: Track, favorite: Boolean): Result<Boolean> {
         return runCatching {
             val existing = database.favoriteTrackDao().getByTrackId(track.id)
+            if ((existing != null) == favorite) {
+                return@runCatching favorite
+            }
             val navidromeSongId = parseNavidromeSongLocator(track.mediaLocator)
                 ?.takeIf { it.first == track.sourceId }
                 ?.second
             if (navidromeSongId != null) {
-                toggleNavidromeFavorite(track, navidromeSongId, existing)
+                setNavidromeFavorite(track, navidromeSongId, existing, favorite)
             } else {
-                toggleLocalFavorite(track, existing)
+                setLocalFavorite(track, existing, favorite)
             }
         }
     }
@@ -92,11 +101,12 @@ class RoomFavoritesRepository(
         }
     }
 
-    private suspend fun toggleLocalFavorite(
+    private suspend fun setLocalFavorite(
         track: Track,
         existing: FavoriteTrackEntity?,
+        favorite: Boolean,
     ): Boolean {
-        if (existing != null) {
+        if (!favorite) {
             database.favoriteTrackDao().deleteByTrackId(track.id)
             logger.info(FAVORITES_LOG_TAG) { "unfavorite-local track=${track.id} source=${track.sourceId}" }
             return false
@@ -113,21 +123,22 @@ class RoomFavoritesRepository(
         return true
     }
 
-    private suspend fun toggleNavidromeFavorite(
+    private suspend fun setNavidromeFavorite(
         track: Track,
         remoteSongId: String,
         existing: FavoriteTrackEntity?,
+        favorite: Boolean,
     ): Boolean {
         val resolvedSource = resolveNavidromeSource(track.sourceId)
             ?: error("Navidrome 来源不可用，无法更新喜欢状态。")
-        val endpoint = if (existing != null) "unstar" else "star"
+        val endpoint = if (favorite) "star" else "unstar"
         requestNavidromeJson(
             httpClient = httpClient,
             source = resolvedSource,
             endpoint = endpoint,
             parameters = mapOf("id" to remoteSongId),
         )
-        return if (existing != null) {
+        return if (!favorite) {
             database.favoriteTrackDao().deleteByTrackId(track.id)
             logger.info(FAVORITES_LOG_TAG) { "unfavorite-navidrome track=${track.id} source=${track.sourceId} song=$remoteSongId" }
             false

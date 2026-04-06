@@ -50,6 +50,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Delete
@@ -163,8 +164,13 @@ import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
+import top.iwesley.lyn.music.core.model.PlaylistAddTarget
+import top.iwesley.lyn.music.core.model.PlaylistDetail
+import top.iwesley.lyn.music.core.model.PlaylistKind
+import top.iwesley.lyn.music.core.model.PlaylistSummary
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
+import top.iwesley.lyn.music.core.model.SYSTEM_LIKED_PLAYLIST_ID
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.argbWithAlpha
@@ -193,6 +199,9 @@ import top.iwesley.lyn.music.feature.library.libraryArtistId
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.feature.player.PlayerStore
+import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
+import top.iwesley.lyn.music.feature.playlists.PlaylistsState
+import top.iwesley.lyn.music.feature.playlists.PlaylistsStore
 import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.feature.settings.SettingsStore
@@ -209,6 +218,7 @@ import top.iwesley.lyn.music.ui.mainShellColors
 class LynMusicAppComponent(
     val platform: PlatformDescriptor,
     val libraryStore: LibraryStore,
+    val playlistsStore: PlaylistsStore,
     val favoritesStore: FavoritesStore,
     val musicTagsStore: MusicTagsStore,
     val importStore: ImportStore,
@@ -241,6 +251,7 @@ fun buildPlayerAppComponent(
     return LynMusicAppComponent(
         platform = sharedGraph.platform,
         libraryStore = sharedGraph.libraryStore,
+        playlistsStore = sharedGraph.playlistsStore,
         favoritesStore = sharedGraph.favoritesStore,
         musicTagsStore = sharedGraph.musicTagsStore,
         importStore = sharedGraph.importStore,
@@ -265,12 +276,14 @@ fun App(component: LynMusicAppComponent) {
     }
 
     val libraryState by component.libraryStore.state.collectAsState()
+    val playlistsState by component.playlistsStore.state.collectAsState()
     val favoritesState by component.favoritesStore.state.collectAsState()
     val musicTagsState by component.musicTagsStore.state.collectAsState()
     val importState by component.importStore.state.collectAsState()
     val playerState by component.playerStore.state.collectAsState()
     val settingsState by component.settingsStore.state.collectAsState()
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.Library) }
+    var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
     val shellThemeTokens = remember(settingsState.selectedTheme, settingsState.customThemeTokens) {
         resolveAppThemeTokens(
             themeId = settingsState.selectedTheme,
@@ -297,6 +310,17 @@ fun App(component: LynMusicAppComponent) {
                     component.playerStore.dispatch(PlayerIntent.ClearMessage)
                 }
             }
+            playlistsState.message?.let { message ->
+                LaunchedEffect(message) {
+                    kotlinx.coroutines.delay(2_500)
+                    component.playlistsStore.dispatch(PlaylistsIntent.ClearMessage)
+                }
+            }
+            LaunchedEffect(selectedTab) {
+                if (selectedTab == AppTab.Playlists) {
+                    component.playlistsStore.dispatch(PlaylistsIntent.Refresh)
+                }
+            }
             val compact = maxWidth < 900.dp
             val shellColors = mainShellColors
             Box(
@@ -310,6 +334,7 @@ fun App(component: LynMusicAppComponent) {
                         onTabSelected = { selectedTab = it },
                         platform = component.platform,
                         libraryState = libraryState,
+                        playlistsState = playlistsState,
                         favoritesState = favoritesState,
                         musicTagsState = musicTagsState,
                         musicTagsEffects = component.musicTagsStore.effects,
@@ -317,11 +342,15 @@ fun App(component: LynMusicAppComponent) {
                         playerState = playerState,
                         settingsState = settingsState,
                         onLibraryIntent = component.libraryStore::dispatch,
+                        onPlaylistsIntent = component.playlistsStore::dispatch,
                         onFavoritesIntent = component.favoritesStore::dispatch,
                         onMusicTagsIntent = component.musicTagsStore::dispatch,
                         onImportIntent = component.importStore::dispatch,
                         onPlayerIntent = component.playerStore::dispatch,
                         onSettingsIntent = component.settingsStore::dispatch,
+                        onOpenAddToPlaylist = {
+                            pendingPlaylistTrack = playerState.snapshot.currentTrack
+                        },
                     )
                 } else {
                     DesktopShell(
@@ -329,6 +358,7 @@ fun App(component: LynMusicAppComponent) {
                         onTabSelected = { selectedTab = it },
                         platform = component.platform,
                         libraryState = libraryState,
+                        playlistsState = playlistsState,
                         favoritesState = favoritesState,
                         musicTagsState = musicTagsState,
                         musicTagsEffects = component.musicTagsStore.effects,
@@ -336,11 +366,15 @@ fun App(component: LynMusicAppComponent) {
                         playerState = playerState,
                         settingsState = settingsState,
                         onLibraryIntent = component.libraryStore::dispatch,
+                        onPlaylistsIntent = component.playlistsStore::dispatch,
                         onFavoritesIntent = component.favoritesStore::dispatch,
                         onMusicTagsIntent = component.musicTagsStore::dispatch,
                         onImportIntent = component.importStore::dispatch,
                         onPlayerIntent = component.playerStore::dispatch,
                         onSettingsIntent = component.settingsStore::dispatch,
+                        onOpenAddToPlaylist = {
+                            pendingPlaylistTrack = playerState.snapshot.currentTrack
+                        },
                     )
                 }
 
@@ -358,6 +392,9 @@ fun App(component: LynMusicAppComponent) {
                             playerState.snapshot.currentTrack?.let { track ->
                                 component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(track))
                             }
+                        },
+                        onOpenAddToPlaylist = {
+                            pendingPlaylistTrack = playerState.snapshot.currentTrack
                         },
                         onOpenQueue = {
                             component.playerStore.dispatch(PlayerIntent.QueueVisibilityChanged(true))
@@ -378,12 +415,52 @@ fun App(component: LynMusicAppComponent) {
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
+                pendingPlaylistTrack?.let { track ->
+                    PlaylistAddDialog(
+                        track = track,
+                        targets = buildPlaylistAddTargets(
+                            playlists = playlistsState.playlists,
+                            favoriteTrackIds = favoritesState.favoriteTrackIds,
+                            trackId = track.id,
+                        ),
+                        onDismiss = { pendingPlaylistTrack = null },
+                        onAddTarget = { target ->
+                            pendingPlaylistTrack = null
+                            when (target.kind) {
+                                PlaylistKind.SYSTEM_LIKED -> {
+                                    component.favoritesStore.dispatch(FavoritesIntent.EnsureFavorite(track))
+                                }
+
+                                PlaylistKind.USER -> {
+                                    component.playlistsStore.dispatch(
+                                        PlaylistsIntent.AddTrackToPlaylist(target.id, track),
+                                    )
+                                }
+                            }
+                        },
+                        onCreatePlaylistAndAdd = { name ->
+                            pendingPlaylistTrack = null
+                            component.playlistsStore.dispatch(
+                                PlaylistsIntent.CreatePlaylistAndAddTrack(name, track),
+                            )
+                        },
+                    )
+                }
                 playerState.message?.let { message ->
                     ToastCard(
                         message = message,
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .padding(horizontal = 20.dp, vertical = 24.dp)
+                            .navigationBarsPadding(),
+                    )
+                }
+                playlistsState.message?.let { message ->
+                    ToastCard(
+                        message = message,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(horizontal = 20.dp, vertical = 84.dp)
                             .navigationBarsPadding(),
                     )
                 }
@@ -398,6 +475,7 @@ private fun MobileShell(
     onTabSelected: (AppTab) -> Unit,
     platform: PlatformDescriptor,
     libraryState: LibraryState,
+    playlistsState: PlaylistsState,
     favoritesState: FavoritesState,
     musicTagsState: MusicTagsState,
     musicTagsEffects: Flow<MusicTagsEffect>,
@@ -405,11 +483,13 @@ private fun MobileShell(
     playerState: PlayerState,
     settingsState: SettingsState,
     onLibraryIntent: (LibraryIntent) -> Unit,
+    onPlaylistsIntent: (PlaylistsIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
+    onOpenAddToPlaylist: () -> Unit,
 ) {
     val shellColors = mainShellColors
     Scaffold(
@@ -431,12 +511,14 @@ private fun MobileShell(
                                 onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
                             }
                         },
+                        onOpenAddToPlaylist = onOpenAddToPlaylist,
                         onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
                     )
                 }
                 NavigationBar(containerColor = shellColors.navContainer) {
                     listOf(
                         Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
+                        Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
                         Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
                         Triple(AppTab.Tags, Icons.Rounded.Tune, "音乐标签"),
                         Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
@@ -470,12 +552,14 @@ private fun MobileShell(
                 selectedTab = selectedTab,
                 platform = platform,
                 libraryState = libraryState,
+                playlistsState = playlistsState,
                 favoritesState = favoritesState,
                 musicTagsState = musicTagsState,
                 musicTagsEffects = musicTagsEffects,
                 importState = importState,
                 settingsState = settingsState,
                 onLibraryIntent = onLibraryIntent,
+                onPlaylistsIntent = onPlaylistsIntent,
                 onFavoritesIntent = onFavoritesIntent,
                 onMusicTagsIntent = onMusicTagsIntent,
                 onImportIntent = onImportIntent,
@@ -493,6 +577,7 @@ private fun DesktopShell(
     onTabSelected: (AppTab) -> Unit,
     platform: PlatformDescriptor,
     libraryState: LibraryState,
+    playlistsState: PlaylistsState,
     favoritesState: FavoritesState,
     musicTagsState: MusicTagsState,
     musicTagsEffects: Flow<MusicTagsEffect>,
@@ -500,11 +585,13 @@ private fun DesktopShell(
     playerState: PlayerState,
     settingsState: SettingsState,
     onLibraryIntent: (LibraryIntent) -> Unit,
+    onPlaylistsIntent: (PlaylistsIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
+    onOpenAddToPlaylist: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxSize(),
@@ -529,12 +616,14 @@ private fun DesktopShell(
                 selectedTab = selectedTab,
                 platform = platform,
                 libraryState = libraryState,
+                playlistsState = playlistsState,
                 favoritesState = favoritesState,
                 musicTagsState = musicTagsState,
                 musicTagsEffects = musicTagsEffects,
                 importState = importState,
                 settingsState = settingsState,
                 onLibraryIntent = onLibraryIntent,
+                onPlaylistsIntent = onPlaylistsIntent,
                 onFavoritesIntent = onFavoritesIntent,
                 onMusicTagsIntent = onMusicTagsIntent,
                 onImportIntent = onImportIntent,
@@ -556,6 +645,7 @@ private fun DesktopShell(
                             onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
                         }
                     },
+                    onOpenAddToPlaylist = onOpenAddToPlaylist,
                     onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
                     compact = false,
                 )
@@ -581,6 +671,7 @@ private fun DesktopNav(
         ) {
             listOf(
                 Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
+                Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
                 Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
                 Triple(AppTab.Tags, Icons.Rounded.Tune, "音乐标签"),
                 Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
@@ -673,12 +764,14 @@ private fun TabContent(
     selectedTab: AppTab,
     platform: PlatformDescriptor,
     libraryState: LibraryState,
+    playlistsState: PlaylistsState,
     favoritesState: FavoritesState,
     musicTagsState: MusicTagsState,
     musicTagsEffects: Flow<MusicTagsEffect>,
     importState: ImportState,
     settingsState: SettingsState,
     onLibraryIntent: (LibraryIntent) -> Unit,
+    onPlaylistsIntent: (PlaylistsIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     onImportIntent: (ImportIntent) -> Unit,
@@ -692,6 +785,13 @@ private fun TabContent(
             favoritesState = favoritesState,
             onLibraryIntent = onLibraryIntent,
             onFavoritesIntent = onFavoritesIntent,
+            onPlayerIntent = onPlayerIntent,
+            modifier = modifier,
+        )
+
+        AppTab.Playlists -> PlaylistsTab(
+            state = playlistsState,
+            onPlaylistsIntent = onPlaylistsIntent,
             onPlayerIntent = onPlayerIntent,
             modifier = modifier,
         )

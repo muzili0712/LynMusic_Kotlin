@@ -4,6 +4,7 @@ import androidx.room.ConstructedBy
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
@@ -90,6 +91,53 @@ data class FavoriteTrackEntity(
     val sourceId: String,
     val remoteSongId: String?,
     val favoritedAt: Long,
+)
+
+@Entity(
+    tableName = "playlist",
+    indices = [
+        Index(value = ["normalizedName"], unique = true),
+    ],
+)
+data class PlaylistEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val normalizedName: String,
+    val createdLocally: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+@Entity(
+    tableName = "playlist_track",
+    primaryKeys = ["playlistId", "trackId"],
+    indices = [
+        Index(value = ["playlistId"]),
+        Index(value = ["sourceId"]),
+    ],
+)
+data class PlaylistTrackEntity(
+    val playlistId: String,
+    val trackId: String,
+    val sourceId: String,
+    val addedAt: Long,
+    val localOrdinal: Int?,
+    val remoteOrdinal: Int?,
+)
+
+@Entity(
+    tableName = "playlist_remote_binding",
+    primaryKeys = ["playlistId", "sourceId"],
+    indices = [
+        Index(value = ["sourceId"]),
+    ],
+)
+data class PlaylistRemoteBindingEntity(
+    val playlistId: String,
+    val sourceId: String,
+    val remotePlaylistId: String,
+    val remoteName: String,
+    val lastSyncedAt: Long?,
 )
 
 @Entity(tableName = "lyrics_source_config")
@@ -280,6 +328,93 @@ interface FavoriteTrackDao {
 }
 
 @Dao
+interface PlaylistDao {
+    @Query("SELECT * FROM playlist ORDER BY updatedAt DESC, name COLLATE NOCASE ASC")
+    fun observeAll(): Flow<List<PlaylistEntity>>
+
+    @Query("SELECT * FROM playlist ORDER BY updatedAt DESC, name COLLATE NOCASE ASC")
+    suspend fun getAll(): List<PlaylistEntity>
+
+    @Query("SELECT * FROM playlist WHERE id = :playlistId LIMIT 1")
+    suspend fun getById(playlistId: String): PlaylistEntity?
+
+    @Query("SELECT * FROM playlist WHERE normalizedName = :normalizedName LIMIT 1")
+    suspend fun getByNormalizedName(normalizedName: String): PlaylistEntity?
+
+    @Query("DELETE FROM playlist WHERE id = :playlistId")
+    suspend fun deleteById(playlistId: String)
+
+    @Upsert
+    suspend fun upsert(item: PlaylistEntity)
+
+    @Upsert
+    suspend fun upsertAll(items: List<PlaylistEntity>)
+}
+
+@Dao
+interface PlaylistTrackDao {
+    @Query("SELECT * FROM playlist_track")
+    fun observeAll(): Flow<List<PlaylistTrackEntity>>
+
+    @Query("SELECT * FROM playlist_track")
+    suspend fun getAll(): List<PlaylistTrackEntity>
+
+    @Query("SELECT * FROM playlist_track WHERE playlistId = :playlistId")
+    suspend fun getByPlaylistId(playlistId: String): List<PlaylistTrackEntity>
+
+    @Query("SELECT * FROM playlist_track WHERE playlistId = :playlistId AND sourceId = :sourceId")
+    suspend fun getByPlaylistIdAndSourceId(playlistId: String, sourceId: String): List<PlaylistTrackEntity>
+
+    @Query("SELECT * FROM playlist_track WHERE playlistId = :playlistId AND trackId = :trackId LIMIT 1")
+    suspend fun getByPlaylistIdAndTrackId(playlistId: String, trackId: String): PlaylistTrackEntity?
+
+    @Query("DELETE FROM playlist_track WHERE playlistId = :playlistId")
+    suspend fun deleteByPlaylistId(playlistId: String)
+
+    @Query("DELETE FROM playlist_track WHERE playlistId = :playlistId AND sourceId = :sourceId")
+    suspend fun deleteByPlaylistIdAndSourceId(playlistId: String, sourceId: String)
+
+    @Query("DELETE FROM playlist_track WHERE playlistId = :playlistId AND trackId = :trackId")
+    suspend fun deleteByPlaylistIdAndTrackId(playlistId: String, trackId: String)
+
+    @Upsert
+    suspend fun upsert(item: PlaylistTrackEntity)
+
+    @Upsert
+    suspend fun upsertAll(items: List<PlaylistTrackEntity>)
+}
+
+@Dao
+interface PlaylistRemoteBindingDao {
+    @Query("SELECT * FROM playlist_remote_binding")
+    fun observeAll(): Flow<List<PlaylistRemoteBindingEntity>>
+
+    @Query("SELECT * FROM playlist_remote_binding")
+    suspend fun getAll(): List<PlaylistRemoteBindingEntity>
+
+    @Query("SELECT * FROM playlist_remote_binding WHERE playlistId = :playlistId AND sourceId = :sourceId LIMIT 1")
+    suspend fun getByPlaylistIdAndSourceId(playlistId: String, sourceId: String): PlaylistRemoteBindingEntity?
+
+    @Query("SELECT * FROM playlist_remote_binding WHERE sourceId = :sourceId")
+    suspend fun getBySourceId(sourceId: String): List<PlaylistRemoteBindingEntity>
+
+    @Query("DELETE FROM playlist_remote_binding WHERE sourceId = :sourceId")
+    suspend fun deleteBySourceId(sourceId: String)
+
+    @Query("DELETE FROM playlist_remote_binding WHERE playlistId = :playlistId AND sourceId = :sourceId")
+    suspend fun deleteByPlaylistIdAndSourceId(playlistId: String, sourceId: String)
+
+    @Query("DELETE FROM playlist_remote_binding WHERE playlistId = :playlistId")
+    suspend fun deleteByPlaylistId(playlistId: String)
+
+    @Upsert
+    suspend fun upsert(item: PlaylistRemoteBindingEntity)
+
+    @Upsert
+    suspend fun upsertAll(items: List<PlaylistRemoteBindingEntity>)
+}
+
+@Dao
 interface LyricsSourceConfigDao {
     @Query("SELECT * FROM lyrics_source_config ORDER BY priority DESC, name ASC")
     fun observeAll(): Flow<List<LyricsSourceConfigEntity>>
@@ -354,11 +489,14 @@ interface LyricsCacheDao {
         TrackEntity::class,
         PlaybackQueueSnapshotEntity::class,
         FavoriteTrackEntity::class,
+        PlaylistEntity::class,
+        PlaylistTrackEntity::class,
+        PlaylistRemoteBindingEntity::class,
         LyricsSourceConfigEntity::class,
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 6,
+    version = 7,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -369,6 +507,9 @@ abstract class LynMusicDatabase : RoomDatabase() {
     abstract fun trackDao(): TrackDao
     abstract fun playbackQueueSnapshotDao(): PlaybackQueueSnapshotDao
     abstract fun favoriteTrackDao(): FavoriteTrackDao
+    abstract fun playlistDao(): PlaylistDao
+    abstract fun playlistTrackDao(): PlaylistTrackDao
+    abstract fun playlistRemoteBindingDao(): PlaylistRemoteBindingDao
     abstract fun lyricsSourceConfigDao(): LyricsSourceConfigDao
     abstract fun workflowLyricsSourceConfigDao(): WorkflowLyricsSourceConfigDao
     abstract fun lyricsCacheDao(): LyricsCacheDao
@@ -388,6 +529,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_3_4)
         .addMigrations(MIGRATION_4_5)
         .addMigrations(MIGRATION_5_6)
+        .addMigrations(MIGRATION_6_7)
         .fallbackToDestructiveMigration(true)
         .build()
 }
@@ -451,6 +593,72 @@ val MIGRATION_5_6: Migration = object : Migration(5, 6) {
             """
             ALTER TABLE lyrics_cache
             ADD COLUMN artworkLocator TEXT
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            CREATE TABLE IF NOT EXISTS playlist (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                normalizedName TEXT NOT NULL,
+                createdLocally INTEGER NOT NULL,
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        connection.execSql(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS index_playlist_normalizedName
+            ON playlist(normalizedName)
+            """.trimIndent(),
+        )
+        connection.execSql(
+            """
+            CREATE TABLE IF NOT EXISTS playlist_track (
+                playlistId TEXT NOT NULL,
+                trackId TEXT NOT NULL,
+                sourceId TEXT NOT NULL,
+                addedAt INTEGER NOT NULL,
+                localOrdinal INTEGER,
+                remoteOrdinal INTEGER,
+                PRIMARY KEY(playlistId, trackId)
+            )
+            """.trimIndent(),
+        )
+        connection.execSql(
+            """
+            CREATE INDEX IF NOT EXISTS index_playlist_track_playlistId
+            ON playlist_track(playlistId)
+            """.trimIndent(),
+        )
+        connection.execSql(
+            """
+            CREATE INDEX IF NOT EXISTS index_playlist_track_sourceId
+            ON playlist_track(sourceId)
+            """.trimIndent(),
+        )
+        connection.execSql(
+            """
+            CREATE TABLE IF NOT EXISTS playlist_remote_binding (
+                playlistId TEXT NOT NULL,
+                sourceId TEXT NOT NULL,
+                remotePlaylistId TEXT NOT NULL,
+                remoteName TEXT NOT NULL,
+                lastSyncedAt INTEGER,
+                PRIMARY KEY(playlistId, sourceId)
+            )
+            """.trimIndent(),
+        )
+        connection.execSql(
+            """
+            CREATE INDEX IF NOT EXISTS index_playlist_remote_binding_sourceId
+            ON playlist_remote_binding(sourceId)
             """.trimIndent(),
         )
     }

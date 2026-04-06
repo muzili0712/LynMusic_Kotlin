@@ -26,6 +26,8 @@ import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
+import top.iwesley.lyn.music.core.model.PlaylistDetail
+import top.iwesley.lyn.music.core.model.PlaylistSummary
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
@@ -105,6 +107,16 @@ interface ImportSourceRepository {
     suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit>
     suspend fun rescanSource(sourceId: String): Result<Unit>
     suspend fun deleteSource(sourceId: String): Result<Unit>
+}
+
+interface PlaylistRepository {
+    val playlists: Flow<List<PlaylistSummary>>
+
+    fun observePlaylistDetail(playlistId: String): Flow<PlaylistDetail?>
+    suspend fun createPlaylist(name: String): Result<PlaylistSummary>
+    suspend fun addTrackToPlaylist(playlistId: String, track: Track): Result<Unit>
+    suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String): Result<Unit>
+    suspend fun refreshNavidromePlaylists(): Result<Unit>
 }
 
 interface LyricsRepository {
@@ -1531,13 +1543,13 @@ class DefaultLyricsRepository(
     }
 }
 
-private fun now(): Long = Clock.System.now().toEpochMilliseconds()
+internal fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
 private const val LYRICS_LOG_TAG = "Lyrics"
 const val MANUAL_LYRICS_OVERRIDE_SOURCE_ID = "manual-override"
 internal const val EMBEDDED_LYRICS_SOURCE_ID = "embedded-tag"
 
-private fun newId(prefix: String): String = "$prefix-${now()}-${Random.nextInt(1000, 9999)}"
+internal fun newId(prefix: String): String = "$prefix-${now()}-${Random.nextInt(1000, 9999)}"
 
 private fun artistIdFor(name: String): String = "artist:${name.trim().lowercase()}"
 

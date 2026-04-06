@@ -120,6 +120,23 @@ class FavoritesRepositoryTest {
     }
 
     @Test
+    fun `set favorite true is idempotent and keeps liked song liked`() = runTest {
+        val database = createTestDatabase()
+        val repository = RoomFavoritesRepository(
+            database = database,
+            secureCredentialStore = MapSecureCredentialStore(),
+            httpClient = RecordingFavoritesHttpClient(),
+            logger = NoopDiagnosticLogger,
+        )
+        val track = localTrack()
+
+        assertEquals(true, repository.setFavorite(track, favorite = true).getOrThrow())
+        assertEquals(true, repository.setFavorite(track, favorite = true).getOrThrow())
+
+        assertNotNull(database.favoriteTrackDao().getByTrackId(track.id))
+    }
+
+    @Test
     fun `navidrome toggle failure keeps local cache unchanged`() = runTest {
         val database = createTestDatabase()
         seedNavidromeSource(database)

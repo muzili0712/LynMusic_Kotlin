@@ -1,0 +1,403 @@
+package top.iwesley.lyn.music.data.repository
+
+import androidx.room.Room
+import io.ktor.http.parseUrl
+import java.nio.file.Files
+import kotlin.io.path.absolutePathString
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import top.iwesley.lyn.music.core.model.LyricsHttpClient
+import top.iwesley.lyn.music.core.model.LyricsHttpResponse
+import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
+import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
+import top.iwesley.lyn.music.data.db.ImportSourceEntity
+import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.db.TrackEntity
+import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+
+class PlaylistsRepositoryTest {
+
+    @Test
+    fun `create playlist and add local track persists membership`() = runTest {
+        val database = createPlaylistTestDatabase()
+        database.importSourceDao().upsert(localSourceEntity())
+        database.trackDao().upsertAll(listOf(localTrackEntity()))
+        val repository = RoomPlaylistRepository(
+            database = database,
+            secureCredentialStore = MapPlaylistSecureCredentialStore(),
+            httpClient = RecordingPlaylistsHttpClient(),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val playlist = repository.createPlaylist("晨跑").getOrThrow()
+        repository.addTrackToPlaylist(playlist.id, localTrack()).getOrThrow()
+
+        val detail = repository.observePlaylistDetail(playlist.id).first()
+        assertNotNull(detail)
+        assertEquals(listOf(localTrack().id), detail.tracks.map { it.track.id })
+        assertEquals(setOf(localTrack().id), repository.playlists.first().first().memberTrackIds)
+    }
+
+    @Test
+    fun `adding navidrome track creates remote binding and syncs membership`() = runTest {
+        val database = createPlaylistTestDatabase()
+        seedNavidromeSource(database, sourceId = "nav-a", username = "alpha", credentialKey = "cred-a", label = "Alpha")
+        database.trackDao().upsertAll(listOf(navidromeTrackEntity(sourceId = "nav-a", songId = "song-a1")))
+        val httpClient = RecordingPlaylistsHttpClient(
+            remotePlaylistsByUser = mutableMapOf(
+                "alpha" to linkedMapOf(),
+            ),
+        )
+        val repository = RoomPlaylistRepository(
+            database = database,
+            secureCredentialStore = MapPlaylistSecureCredentialStore(mutableMapOf("cred-a" to "pass-a")),
+            httpClient = httpClient,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val playlist = repository.createPlaylist("Road Trip").getOrThrow()
+        repository.addTrackToPlaylist(
+            playlistId = playlist.id,
+            track = navidromeTrack(sourceId = "nav-a", songId = "song-a1"),
+        ).getOrThrow()
+
+        val detail = repository.observePlaylistDetail(playlist.id).first()
+        assertNotNull(detail)
+        assertEquals(listOf(navidromeTrack(sourceId = "nav-a", songId = "song-a1").id), detail.tracks.map { it.track.id })
+        assertNotNull(database.playlistRemoteBindingDao().getByPlaylistIdAndSourceId(playlist.id, "nav-a"))
+        assertTrue(httpClient.requestedEndpoints.contains("createPlaylist"))
+        assertTrue(httpClient.requestedEndpoints.contains("updatePlaylist"))
+        assertTrue(httpClient.requestedEndpoints.contains("getPlaylist"))
+    }
+
+    @Test
+    fun `refresh merges same-name remote playlists across sources`() = runTest {
+        val database = createPlaylistTestDatabase()
+        seedNavidromeSource(database, sourceId = "nav-a", username = "alpha", credentialKey = "cred-a", label = "Alpha")
+        seedNavidromeSource(database, sourceId = "nav-b", username = "beta", credentialKey = "cred-b", label = "Beta")
+        database.trackDao().upsertAll(
+            listOf(
+                navidromeTrackEntity(sourceId = "nav-a", songId = "song-a1"),
+                navidromeTrackEntity(sourceId = "nav-b", songId = "song-b1"),
+            ),
+        )
+        val httpClient = RecordingPlaylistsHttpClient(
+            remotePlaylistsByUser = mutableMapOf(
+                "alpha" to linkedMapOf(
+                    "pa" to RemotePlaylistState(id = "pa", name = "Chill", songIds = mutableListOf("song-a1")),
+                ),
+                "beta" to linkedMapOf(
+                    "pb" to RemotePlaylistState(id = "pb", name = "Chill", songIds = mutableListOf("song-b1")),
+                ),
+            ),
+        )
+        val repository = RoomPlaylistRepository(
+            database = database,
+            secureCredentialStore = MapPlaylistSecureCredentialStore(
+                mutableMapOf("cred-a" to "pass-a", "cred-b" to "pass-b"),
+            ),
+            httpClient = httpClient,
+            logger = NoopDiagnosticLogger,
+        )
+
+        repository.refreshNavidromePlaylists().getOrThrow()
+
+        val playlists = repository.playlists.first()
+        assertEquals(1, playlists.size)
+        assertEquals("Chill", playlists.first().name)
+        assertEquals(2, playlists.first().trackCount)
+        val detail = repository.observePlaylistDetail(playlists.first().id).first()
+        assertNotNull(detail)
+        assertEquals(
+            setOf(
+                navidromeTrack(sourceId = "nav-a", songId = "song-a1").id,
+                navidromeTrack(sourceId = "nav-b", songId = "song-b1").id,
+            ),
+            detail.tracks.mapTo(linkedSetOf()) { it.track.id },
+        )
+    }
+
+    @Test
+    fun `refresh replaces only the changed remote source subset`() = runTest {
+        val database = createPlaylistTestDatabase()
+        database.importSourceDao().upsert(localSourceEntity())
+        seedNavidromeSource(database, sourceId = "nav-a", username = "alpha", credentialKey = "cred-a", label = "Alpha")
+        seedNavidromeSource(database, sourceId = "nav-b", username = "beta", credentialKey = "cred-b", label = "Beta")
+        database.trackDao().upsertAll(
+            listOf(
+                localTrackEntity(),
+                navidromeTrackEntity(sourceId = "nav-a", songId = "song-a1"),
+                navidromeTrackEntity(sourceId = "nav-a", songId = "song-a2"),
+                navidromeTrackEntity(sourceId = "nav-b", songId = "song-b1"),
+            ),
+        )
+        val httpClient = RecordingPlaylistsHttpClient(
+            remotePlaylistsByUser = mutableMapOf(
+                "alpha" to linkedMapOf(
+                    "pa" to RemotePlaylistState(id = "pa", name = "Focus", songIds = mutableListOf("song-a1")),
+                ),
+                "beta" to linkedMapOf(
+                    "pb" to RemotePlaylistState(id = "pb", name = "Focus", songIds = mutableListOf("song-b1")),
+                ),
+            ),
+        )
+        val repository = RoomPlaylistRepository(
+            database = database,
+            secureCredentialStore = MapPlaylistSecureCredentialStore(
+                mutableMapOf("cred-a" to "pass-a", "cred-b" to "pass-b"),
+            ),
+            httpClient = httpClient,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val localPlaylist = repository.createPlaylist("Focus").getOrThrow()
+        repository.addTrackToPlaylist(localPlaylist.id, localTrack()).getOrThrow()
+        repository.refreshNavidromePlaylists().getOrThrow()
+
+        httpClient.remotePlaylistsByUser.getValue("alpha").getValue("pa").songIds.apply {
+            clear()
+            add("song-a2")
+        }
+        repository.refreshNavidromePlaylists().getOrThrow()
+
+        val detail = repository.observePlaylistDetail(localPlaylist.id).first()
+        assertNotNull(detail)
+        assertEquals(
+            listOf(
+                localTrack().id,
+                navidromeTrack(sourceId = "nav-a", songId = "song-a2").id,
+                navidromeTrack(sourceId = "nav-b", songId = "song-b1").id,
+            ),
+            detail.tracks.map { it.track.id },
+        )
+    }
+}
+
+private fun createPlaylistTestDatabase(): LynMusicDatabase {
+    val path = Files.createTempFile("lynmusic-playlists", ".db")
+    return buildLynMusicDatabase(
+        Room.databaseBuilder<LynMusicDatabase>(name = path.absolutePathString()),
+    )
+}
+
+private suspend fun seedNavidromeSource(
+    database: LynMusicDatabase,
+    sourceId: String,
+    username: String,
+    credentialKey: String,
+    label: String,
+) {
+    database.importSourceDao().upsert(
+        ImportSourceEntity(
+            id = sourceId,
+            type = "NAVIDROME",
+            label = label,
+            rootReference = "https://$username.example.com/navidrome",
+            server = null,
+            shareName = null,
+            directoryPath = null,
+            username = username,
+            credentialKey = credentialKey,
+            allowInsecureTls = false,
+            lastScannedAt = null,
+            createdAt = 1L,
+        ),
+    )
+}
+
+private fun localSourceEntity(sourceId: String = "local-1"): ImportSourceEntity {
+    return ImportSourceEntity(
+        id = sourceId,
+        type = "LOCAL_FOLDER",
+        label = "下载目录",
+        rootReference = "folder://downloads",
+        server = null,
+        shareName = null,
+        directoryPath = null,
+        username = null,
+        credentialKey = null,
+        allowInsecureTls = false,
+        lastScannedAt = null,
+        createdAt = 1L,
+    )
+}
+
+private fun localTrack(): Track {
+    return Track(
+        id = "track:local-1:artist a/morning light.mp3",
+        sourceId = "local-1",
+        title = "Morning Light",
+        artistName = "Artist A",
+        albumTitle = "Album One",
+        durationMs = 210_000L,
+        mediaLocator = "file:///music/morning-light.mp3",
+        relativePath = "Artist A/Morning Light.mp3",
+    )
+}
+
+private fun localTrackEntity(): TrackEntity {
+    return TrackEntity(
+        id = localTrack().id,
+        sourceId = "local-1",
+        title = "Morning Light",
+        artistId = "artist:artist a",
+        artistName = "Artist A",
+        albumId = "album:artist a:album one",
+        albumTitle = "Album One",
+        durationMs = 210_000L,
+        trackNumber = 1,
+        discNumber = 1,
+        mediaLocator = "file:///music/morning-light.mp3",
+        relativePath = "Artist A/Morning Light.mp3",
+        artworkLocator = null,
+        sizeBytes = 0L,
+        modifiedAt = 0L,
+    )
+}
+
+private fun navidromeTrack(sourceId: String, songId: String): Track {
+    return Track(
+        id = navidromeTrackIdFor(sourceId, songId),
+        sourceId = sourceId,
+        title = "Song $songId",
+        artistName = "Artist $sourceId",
+        albumTitle = "Album $sourceId",
+        durationMs = 215_000L,
+        mediaLocator = buildNavidromeSongLocator(sourceId, songId),
+        relativePath = "Artist $sourceId/Album $sourceId/Song $songId.flac",
+    )
+}
+
+private fun navidromeTrackEntity(sourceId: String, songId: String): TrackEntity {
+    return TrackEntity(
+        id = navidromeTrackIdFor(sourceId, songId),
+        sourceId = sourceId,
+        title = "Song $songId",
+        artistId = "artist:$sourceId",
+        artistName = "Artist $sourceId",
+        albumId = "album:$sourceId",
+        albumTitle = "Album $sourceId",
+        durationMs = 215_000L,
+        trackNumber = 1,
+        discNumber = 1,
+        mediaLocator = buildNavidromeSongLocator(sourceId, songId),
+        relativePath = "Artist $sourceId/Album $sourceId/Song $songId.flac",
+        artworkLocator = null,
+        sizeBytes = 0L,
+        modifiedAt = 0L,
+    )
+}
+
+private class RecordingPlaylistsHttpClient(
+    val remotePlaylistsByUser: MutableMap<String, LinkedHashMap<String, RemotePlaylistState>> = mutableMapOf(),
+) : LyricsHttpClient {
+    val requestedEndpoints = mutableListOf<String>()
+
+    override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
+        val url = requireNotNull(parseUrl(request.url))
+        val endpoint = url.encodedPath.substringAfterLast('/')
+        val username = url.parameters["u"].orEmpty()
+        requestedEndpoints += endpoint
+        val playlists = remotePlaylistsByUser.getOrPut(username) { linkedMapOf() }
+        return Result.success(
+            when (endpoint) {
+                "getPlaylists" -> LyricsHttpResponse(200, getPlaylistsBody(playlists.values.toList()))
+                "getPlaylist" -> {
+                    val playlistId = url.parameters["id"].orEmpty()
+                    LyricsHttpResponse(200, getPlaylistBody(playlists.getValue(playlistId)))
+                }
+
+                "createPlaylist" -> {
+                    val name = url.parameters["name"].orEmpty()
+                    val existing = playlists.values.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                    if (existing == null) {
+                        val id = "pl-${username}-${playlists.size + 1}"
+                        playlists[id] = RemotePlaylistState(id = id, name = name, songIds = mutableListOf())
+                    }
+                    LyricsHttpResponse(200, okBody())
+                }
+
+                "updatePlaylist" -> {
+                    val playlistId = url.parameters["playlistId"].orEmpty()
+                    val playlist = playlists.getValue(playlistId)
+                    url.parameters["songIdToAdd"]?.let { playlist.songIds += it }
+                    url.parameters["songIndexToRemove"]?.toIntOrNull()?.let { index ->
+                        if (index in playlist.songIds.indices) {
+                            playlist.songIds.removeAt(index)
+                        }
+                    }
+                    LyricsHttpResponse(200, okBody())
+                }
+
+                else -> error("Unexpected request endpoint: $endpoint")
+            },
+        )
+    }
+
+    private fun okBody(): String {
+        return """{"subsonic-response":{"status":"ok","version":"1.16.1"}}"""
+    }
+
+    private fun getPlaylistsBody(playlists: List<RemotePlaylistState>): String {
+        val items = playlists.joinToString(",") { playlist ->
+            """{"id":"${playlist.id}","name":"${playlist.name}"}"""
+        }
+        return """
+            {
+              "subsonic-response": {
+                "status": "ok",
+                "version": "1.16.1",
+                "playlists": {
+                  "playlist": [$items]
+                }
+              }
+            }
+        """.trimIndent()
+    }
+
+    private fun getPlaylistBody(playlist: RemotePlaylistState): String {
+        val entries = playlist.songIds.joinToString(",") { songId ->
+            """{"id":"$songId"}"""
+        }
+        return """
+            {
+              "subsonic-response": {
+                "status": "ok",
+                "version": "1.16.1",
+                "playlist": {
+                  "id": "${playlist.id}",
+                  "name": "${playlist.name}",
+                  "entry": [$entries]
+                }
+              }
+            }
+        """.trimIndent()
+    }
+}
+
+private data class RemotePlaylistState(
+    val id: String,
+    val name: String,
+    val songIds: MutableList<String>,
+)
+
+private class MapPlaylistSecureCredentialStore(
+    private val values: MutableMap<String, String> = linkedMapOf(),
+) : SecureCredentialStore {
+    override suspend fun put(key: String, value: String) {
+        values[key] = value
+    }
+
+    override suspend fun get(key: String): String? = values[key]
+
+    override suspend fun remove(key: String) {
+        values.remove(key)
+    }
+}
