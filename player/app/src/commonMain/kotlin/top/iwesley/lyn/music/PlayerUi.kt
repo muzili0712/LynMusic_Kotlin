@@ -1020,25 +1020,9 @@ private fun PlaybackVolume(
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.GraphicEq,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(14.dp),
-                )
-                Text(
-                    text = "音量",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                )
-            }
             Text(
                 text = "${(volume * 100).roundToInt()}%",
                 style = MaterialTheme.typography.labelSmall,
