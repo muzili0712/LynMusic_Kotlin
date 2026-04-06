@@ -10,6 +10,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlin.time.Instant
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
@@ -52,7 +53,62 @@ class FavoritesRepositoryTest {
     }
 
     @Test
-    fun `navidrome refresh maps starred songs to local track ids and preserves existing timestamps`() = runTest {
+    fun `navidrome refresh maps starred songs to local track ids and prefers remote timestamps for existing favorites`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        database.trackDao().upsertAll(
+            listOf(
+                navidromeTrackEntity(songId = "song-1"),
+                navidromeTrackEntity(songId = "song-2"),
+            ),
+        )
+        database.favoriteTrackDao().upsert(
+            FavoriteTrackEntity(
+                trackId = navidromeTrackIdFor("nav-source", "song-1"),
+                sourceId = "nav-source",
+                remoteSongId = "song-1",
+                favoritedAt = 123L,
+            ),
+        )
+        val repository = RoomFavoritesRepository(
+            database = database,
+            secureCredentialStore = MapSecureCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            httpClient = RecordingFavoritesHttpClient(
+                starredSongIds = listOf("song-1", "song-2"),
+                starredTimesBySongId = mapOf(
+                    "song-1" to "2026-04-06T09:08:31.500488808Z",
+                    "song-2" to "2026-04-06T09:09:31.500488808Z",
+                ),
+            ),
+            logger = NoopDiagnosticLogger,
+        )
+
+        repository.refreshNavidromeFavorites().getOrThrow()
+
+        val rowsByRemoteSongId = database.favoriteTrackDao().getBySourceId("nav-source")
+            .associateBy { it.remoteSongId }
+        assertEquals(
+            setOf(
+                navidromeTrackIdFor("nav-source", "song-1"),
+                navidromeTrackIdFor("nav-source", "song-2"),
+            ),
+            rowsByRemoteSongId.values.mapTo(linkedSetOf()) { it.trackId },
+        )
+        assertEquals(
+            Instant.parse("2026-04-06T09:08:31.500488808Z").toEpochMilliseconds(),
+            rowsByRemoteSongId.getValue("song-1").favoritedAt,
+        )
+        assertEquals(
+            listOf(
+                navidromeTrackIdFor("nav-source", "song-2"),
+                navidromeTrackIdFor("nav-source", "song-1"),
+            ),
+            repository.favoriteTracks.first().map { it.id },
+        )
+    }
+
+    @Test
+    fun `navidrome refresh keeps existing timestamp when remote starred is missing`() = runTest {
         val database = createTestDatabase()
         seedNavidromeSource(database)
         database.trackDao().upsertAll(
@@ -78,22 +134,131 @@ class FavoritesRepositoryTest {
 
         repository.refreshNavidromeFavorites().getOrThrow()
 
-        val rowsByRemoteSongId = database.favoriteTrackDao().getBySourceId("nav-source")
-            .associateBy { it.remoteSongId }
-        assertEquals(
-            setOf(
-                navidromeTrackIdFor("nav-source", "song-1"),
-                navidromeTrackIdFor("nav-source", "song-2"),
-            ),
-            rowsByRemoteSongId.values.mapTo(linkedSetOf()) { it.trackId },
-        )
+        val rowsByRemoteSongId = database.favoriteTrackDao().getBySourceId("nav-source").associateBy { it.remoteSongId }
         assertEquals(123L, rowsByRemoteSongId.getValue("song-1").favoritedAt)
+    }
+
+    @Test
+    fun `first navidrome refresh preserves returned order for new favorites`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        database.trackDao().upsertAll(
+            listOf(
+                navidromeTrackEntity(songId = "song-1"),
+                navidromeTrackEntity(songId = "song-2"),
+                navidromeTrackEntity(songId = "song-3"),
+            ),
+        )
+        val repository = RoomFavoritesRepository(
+            database = database,
+            secureCredentialStore = MapSecureCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            httpClient = RecordingFavoritesHttpClient(starredSongIds = listOf("song-2", "song-3", "song-1")),
+            logger = NoopDiagnosticLogger,
+        )
+
+        repository.refreshNavidromeFavorites().getOrThrow()
+
         assertEquals(
             listOf(
+                navidromeTrackIdFor("nav-source", "song-2"),
+                navidromeTrackIdFor("nav-source", "song-3"),
+                navidromeTrackIdFor("nav-source", "song-1"),
+            ),
+            repository.favoriteTracks.first().map { it.id },
+        )
+    }
+
+    @Test
+    fun `navidrome refresh uses remote starred timestamp when available`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        database.trackDao().upsertAll(
+            listOf(
+                navidromeTrackEntity(songId = "song-1"),
+                navidromeTrackEntity(songId = "song-2"),
+            ),
+        )
+        val repository = RoomFavoritesRepository(
+            database = database,
+            secureCredentialStore = MapSecureCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            httpClient = RecordingFavoritesHttpClient(
+                starredSongIds = listOf("song-2", "song-1"),
+                starredTimesBySongId = mapOf(
+                    "song-2" to "2026-04-06T09:09:31.500488808Z",
+                    "song-1" to "2026-04-06T09:08:31.500488808Z",
+                ),
+            ),
+            logger = NoopDiagnosticLogger,
+        )
+
+        repository.refreshNavidromeFavorites().getOrThrow()
+
+        val rowsByRemoteSongId = database.favoriteTrackDao().getBySourceId("nav-source").associateBy { it.remoteSongId }
+        assertEquals(
+            Instant.parse("2026-04-06T09:09:31.500488808Z").toEpochMilliseconds(),
+            rowsByRemoteSongId.getValue("song-2").favoritedAt,
+        )
+        assertEquals(
+            Instant.parse("2026-04-06T09:08:31.500488808Z").toEpochMilliseconds(),
+            rowsByRemoteSongId.getValue("song-1").favoritedAt,
+        )
+        assertEquals(
+            listOf(
+                navidromeTrackIdFor("nav-source", "song-2"),
+                navidromeTrackIdFor("nav-source", "song-1"),
+            ),
+            repository.favoriteTracks.first().map { it.id },
+        )
+    }
+
+    @Test
+    fun `later navidrome refresh puts new favorites first in returned order`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        database.trackDao().upsertAll(
+            listOf(
+                navidromeTrackEntity(songId = "song-1"),
+                navidromeTrackEntity(songId = "song-2"),
+                navidromeTrackEntity(songId = "song-3"),
+                navidromeTrackEntity(songId = "song-4"),
+            ),
+        )
+        database.favoriteTrackDao().upsertAll(
+            listOf(
+                FavoriteTrackEntity(
+                    trackId = navidromeTrackIdFor("nav-source", "song-1"),
+                    sourceId = "nav-source",
+                    remoteSongId = "song-1",
+                    favoritedAt = 500L,
+                ),
+                FavoriteTrackEntity(
+                    trackId = navidromeTrackIdFor("nav-source", "song-2"),
+                    sourceId = "nav-source",
+                    remoteSongId = "song-2",
+                    favoritedAt = 499L,
+                ),
+            ),
+        )
+        val repository = RoomFavoritesRepository(
+            database = database,
+            secureCredentialStore = MapSecureCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            httpClient = RecordingFavoritesHttpClient(starredSongIds = listOf("song-4", "song-3", "song-1", "song-2")),
+            logger = NoopDiagnosticLogger,
+        )
+
+        repository.refreshNavidromeFavorites().getOrThrow()
+
+        val rowsByRemoteSongId = database.favoriteTrackDao().getBySourceId("nav-source").associateBy { it.remoteSongId }
+        assertEquals(500L, rowsByRemoteSongId.getValue("song-1").favoritedAt)
+        assertEquals(499L, rowsByRemoteSongId.getValue("song-2").favoritedAt)
+        assertEquals(
+            listOf(
+                navidromeTrackIdFor("nav-source", "song-4"),
+                navidromeTrackIdFor("nav-source", "song-3"),
                 navidromeTrackIdFor("nav-source", "song-1"),
                 navidromeTrackIdFor("nav-source", "song-2"),
             ),
-            repository.favoriteTracks.first().map { it.id }.sorted(),
+            repository.favoriteTracks.first().map { it.id },
         )
     }
 
@@ -302,6 +467,7 @@ private fun navidromeTrackEntity(songId: String): TrackEntity {
 
 private class RecordingFavoritesHttpClient(
     private val starredSongIds: List<String> = emptyList(),
+    private val starredTimesBySongId: Map<String, String> = emptyMap(),
     private val failingEndpoints: Set<String> = emptySet(),
 ) : LyricsHttpClient {
     val requestedEndpoints = mutableListOf<String>()
@@ -327,7 +493,10 @@ private class RecordingFavoritesHttpClient(
 
     private fun starredBody(songIds: List<String>): String {
         val songs = songIds.joinToString(",") { songId ->
-            """{"id":"$songId"}"""
+            val starred = starredTimesBySongId[songId]
+                ?.let { ""","starred":"$it"""" }
+                .orEmpty()
+            """{"id":"$songId"$starred}"""
         }
         return """
             {

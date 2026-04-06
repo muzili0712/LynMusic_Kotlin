@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlin.time.Clock
+import kotlin.time.Instant
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
@@ -164,20 +165,31 @@ class RoomFavoritesRepository(
             source = resolved,
             endpoint = "getStarred2",
         )
-        val existingByRemoteSongId = database.favoriteTrackDao().getBySourceId(source.id)
+        val existingRows = database.favoriteTrackDao().getBySourceId(source.id)
+        val existingByRemoteSongId = existingRows
             .mapNotNull { entity -> entity.remoteSongId?.let { it to entity } }
             .toMap()
-        val syncedAt = favoriteNow()
-        val favoriteRows = payload["starred2"].asJsonObjectOrNull()
+        val syncedSongs = payload["starred2"].asJsonObjectOrNull()
             ?.get("song")
             .asJsonObjectList()
+        val newSongIds = syncedSongs
+            .mapNotNull { song -> song.string("id") }
+            .filterNot(existingByRemoteSongId::containsKey)
+        val maxExistingFavoritedAt = existingRows.maxOfOrNull { it.favoritedAt }
+        var nextNewFavoritedAt = maxOf(
+            favoriteNow(),
+            (maxExistingFavoritedAt ?: Long.MIN_VALUE) + newSongIds.size.toLong(),
+        )
+        val favoriteRows = syncedSongs
             .mapNotNull { song ->
                 val songId = song.string("id") ?: return@mapNotNull null
                 FavoriteTrackEntity(
                     trackId = navidromeTrackIdFor(source.id, songId),
                     sourceId = source.id,
                     remoteSongId = songId,
-                    favoritedAt = existingByRemoteSongId[songId]?.favoritedAt ?: syncedAt,
+                    favoritedAt = song.string("starred")?.let(::parseFavoriteTimestampMillis)
+                        ?: existingByRemoteSongId[songId]?.favoritedAt
+                        ?: nextNewFavoritedAt--,
                 )
             }
         database.favoriteTrackDao().deleteBySourceId(source.id)
@@ -221,6 +233,10 @@ private fun JsonElement?.asJsonObjectList(): List<JsonObject> {
 
 private fun JsonObject.string(key: String): String? {
     return (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+}
+
+private fun parseFavoriteTimestampMillis(value: String): Long? {
+    return runCatching { Instant.parse(value).toEpochMilliseconds() }.getOrNull()
 }
 
 private fun favoriteNow(): Long = Clock.System.now().toEpochMilliseconds()
