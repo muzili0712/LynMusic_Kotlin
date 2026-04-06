@@ -2,6 +2,7 @@ package top.iwesley.lyn.music
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -14,6 +15,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -79,10 +81,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.abs
@@ -166,6 +170,7 @@ internal fun MiniPlayerBarVisibility(
     onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
     compact: Boolean = false,
+    mobile: Boolean = false,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -204,6 +209,7 @@ internal fun MiniPlayerBarVisibility(
             onOpenAddToPlaylist = onOpenAddToPlaylist,
             onOpenQueue = onOpenQueue,
             compact = compact,
+            mobile = mobile,
         )
     }
 }
@@ -304,9 +310,18 @@ private fun MiniPlayerBar(
     onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
     compact: Boolean = false,
+    mobile: Boolean = false,
 ) {
     val snapshot = state.snapshot
     if (snapshot.currentTrack == null) return
+    if (mobile) {
+        MobileMiniPlayerBar(
+            snapshot = snapshot,
+            onPlayerIntent = onPlayerIntent,
+            onOpenQueue = onOpenQueue,
+        )
+        return
+    }
     val miniPlayerLyricsText = rememberMiniPlayerLyricsText(state)
     val miniPlayerActionTint = LocalContentColor.current.takeOrElse { MaterialTheme.colorScheme.onSurface }
     val miniPlayerFavoriteTint = if (isFavorite) Color(0xFFE5484D) else miniPlayerActionTint
@@ -405,6 +420,110 @@ private fun MiniPlayerBar(
         }
         IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) {
             Icon(Icons.Rounded.SkipNext, contentDescription = null)
+        }
+    }
+}
+
+@Composable
+private fun MobileMiniPlayerBar(
+    snapshot: PlaybackSnapshot,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    onOpenQueue: () -> Unit,
+) {
+    val density = LocalDensity.current
+    val swipeThresholdPx = with(density) { 72.dp.toPx() }
+    val maxVisualOffsetPx = with(density) { 84.dp.toPx() }
+    var dragOffsetPx by remember(snapshot.currentTrack?.id) { mutableStateOf(0f) }
+    val animatedDragOffsetPx by animateFloatAsState(
+        targetValue = dragOffsetPx,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "mobile-mini-player-drag-offset",
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .clip(RoundedCornerShape(26.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
+            .border(
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(26.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .offset { IntOffset(animatedDragOffsetPx.roundToInt(), 0) }
+                .pointerInput(snapshot.currentTrack?.id) {
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { _, dragAmount ->
+                            dragOffsetPx = (dragOffsetPx + dragAmount).coerceIn(
+                                -maxVisualOffsetPx,
+                                maxVisualOffsetPx,
+                            )
+                        },
+                        onDragEnd = {
+                            val finalOffset = dragOffsetPx
+                            dragOffsetPx = 0f
+                            when {
+                                finalOffset <= -swipeThresholdPx -> onPlayerIntent(PlayerIntent.SkipNext)
+                                finalOffset >= swipeThresholdPx -> onPlayerIntent(PlayerIntent.SkipPrevious)
+                            }
+                        },
+                        onDragCancel = { dragOffsetPx = 0f },
+                    )
+                }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onPlayerIntent(PlayerIntent.ExpandedChanged(true)) }
+                .padding(end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            VinylPlaceholder(
+                vinylSize = 46.dp,
+                artworkLocator = snapshot.currentDisplayArtworkLocator,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = snapshot.currentDisplayTitle,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White.copy(alpha = 0.96f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = snapshot.currentDisplayArtistName ?: "未知艺人",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.72f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        QueueToggleButton(
+            onClick = onOpenQueue,
+            tint = Color.White.copy(alpha = 0.96f),
+            buttonSize = 46.dp,
+            iconSize = 25.dp,
+        )
+        IconButton(
+            onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) },
+            modifier = Modifier.size(50.dp),
+        ) {
+            Icon(
+                imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.96f),
+                modifier = Modifier.size(36.dp),
+            )
         }
     }
 }

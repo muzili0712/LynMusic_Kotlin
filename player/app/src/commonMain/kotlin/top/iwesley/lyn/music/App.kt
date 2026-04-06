@@ -510,6 +510,7 @@ private fun MobileShell(
                         },
                         onOpenAddToPlaylist = onOpenAddToPlaylist,
                         onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
+                        mobile = true,
                     )
                 }
                 NavigationBar(containerColor = shellColors.navContainer) {
