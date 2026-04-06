@@ -814,8 +814,8 @@ private fun LibraryTab(
         ),
         strings = LibraryBrowserStrings(
             searchLabel = "搜索歌曲 / 艺人 / 专辑",
-            sectionTitle = "你的曲库",
-            sectionSubtitle = "支持本地文件夹、Samba、WebDAV、Navidrome 与自定义歌词联动。",
+            sectionTitle = "",
+            sectionSubtitle = "",
             songsIcon = Icons.Rounded.LibraryMusic,
             emptyCollectionTitle = "曲库还是空的",
             emptyCollectionBody = "先到“来源”页导入本地文件夹、Samba、WebDAV 或 Navidrome，扫描完成后会出现在这里。",
@@ -855,8 +855,8 @@ private fun FavoritesTab(
         ),
         strings = LibraryBrowserStrings(
             searchLabel = "搜索喜欢的歌曲 / 艺人 / 专辑",
-            sectionTitle = "我的喜欢",
-            sectionSubtitle = "本地来源保存在本地，Navidrome 来源会和服务器收藏双向同步。",
+            sectionTitle = "",
+            sectionSubtitle = "",
             songsIcon = Icons.Rounded.Favorite,
             emptyCollectionTitle = "还没有喜欢的歌曲",
             emptyCollectionBody = "在曲库或播放器里点亮心形后，喜欢的歌曲会出现在这里。",
@@ -1038,27 +1038,34 @@ private fun LibraryBrowserTab(
                 )
             }
             item {
-                Box {
-                    OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
-                        Icon(Icons.Rounded.Tune, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(librarySourceFilterButtonLabel(state.selectedSourceFilter))
-                    }
-                    DropdownMenu(
-                        expanded = sourceFilterMenuExpanded,
-                        onDismissRequest = { sourceFilterMenuExpanded = false },
-                        containerColor = mainShellColors.navContainer,
-                    ) {
-                        state.availableSourceFilters.forEach { filter ->
-                            DropdownMenuItem(
-                                text = { Text(librarySourceFilterMenuLabel(filter)) },
-                                onClick = {
-                                    sourceFilterMenuExpanded = false
-                                    onSourceFilterChanged(filter)
-                                },
-                            )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box {
+                        OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
+                            Icon(Icons.Rounded.Tune, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(librarySourceFilterButtonLabel(state.selectedSourceFilter))
+                        }
+                        DropdownMenu(
+                            expanded = sourceFilterMenuExpanded,
+                            onDismissRequest = { sourceFilterMenuExpanded = false },
+                            containerColor = mainShellColors.navContainer,
+                        ) {
+                            state.availableSourceFilters.forEach { filter ->
+                                DropdownMenuItem(
+                                    text = { Text(librarySourceFilterMenuLabel(filter)) },
+                                    onClick = {
+                                        sourceFilterMenuExpanded = false
+                                        onSourceFilterChanged(filter)
+                                    },
+                                )
+                            }
                         }
                     }
+                    actionButton?.invoke()
                 }
             }
             item {
@@ -1213,10 +1220,9 @@ private fun LibraryBrowserTab(
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(modifier = Modifier.weight(1f)) {
+                            Box(modifier = Modifier.fillMaxWidth()) {
                                 SectionTitle(title = strings.sectionTitle, subtitle = strings.sectionSubtitle)
                             }
-                            actionButton?.invoke()
                         }
                     }
                     if (currentItemCount == 0) {
@@ -3935,8 +3941,12 @@ private fun SectionTitle(
 ) {
     val shellColors = mainShellColors
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-        Text(subtitle, color = shellColors.secondaryText)
+        if (title.isNotBlank()) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+        }
+        if (subtitle.isNotBlank()) {
+            Text(subtitle, color = shellColors.secondaryText)
+        }
     }
 }
 
