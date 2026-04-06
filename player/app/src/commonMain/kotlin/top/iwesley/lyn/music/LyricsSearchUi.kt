@@ -5,7 +5,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -617,7 +616,7 @@ private fun LyricsSearchApplyConfirmationOverlay(
         Card(
             modifier = Modifier
                 .padding(horizontal = 24.dp)
-                .widthIn(min = 280.dp, max = 400.dp)
+                .widthIn(min = 280.dp, max = 440.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -662,8 +661,9 @@ private fun LyricsSearchApplyConfirmationOverlay(
                         confirmation.metadata?.let { metadata ->
                             Text(
                                 text = metadata,
+                                style = MaterialTheme.typography.labelMedium,
                                 color = shellColors.secondaryText,
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
