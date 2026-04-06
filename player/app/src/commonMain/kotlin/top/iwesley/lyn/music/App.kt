@@ -60,6 +60,7 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -87,6 +88,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -100,6 +102,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -466,6 +469,7 @@ fun App(component: LynMusicAppComponent) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MobileShell(
     selectedTab: AppTab,
@@ -489,6 +493,11 @@ private fun MobileShell(
     onOpenAddToPlaylist: () -> Unit,
 ) {
     val shellColors = mainShellColors
+    val mobileNavIconSize = 29.dp
+    val moreTabs = remember { listOf(AppTab.Tags, AppTab.Sources, AppTab.Settings) }
+    val isMoreSelected = selectedTab in moreTabs
+    var isMoreSheetVisible by rememberSaveable { mutableStateOf(false) }
+    val moreSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     Scaffold(
         bottomBar = {
             Column(
@@ -516,26 +525,49 @@ private fun MobileShell(
                 NavigationBar(containerColor = shellColors.navContainer) {
                     listOf(
                         Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
-                        Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
                         Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
-                        Triple(AppTab.Tags, Icons.Rounded.Tune, "音乐标签"),
-                        Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
-                        Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
+                        Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
                     ).forEach { (tab, icon, label) ->
                         NavigationBarItem(
                             selected = selectedTab == tab,
-                            onClick = { onTabSelected(tab) },
-                            icon = { Icon(icon, contentDescription = label) },
-                            label = { Text(label) },
+                            onClick = {
+                                isMoreSheetVisible = false
+                                onTabSelected(tab)
+                            },
+                            icon = {
+                                Icon(
+                                    icon,
+                                    contentDescription = label,
+                                    modifier = Modifier.size(mobileNavIconSize),
+                                )
+                            },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                indicatorColor = shellColors.selectedContainer,
+                                indicatorColor = Color.Transparent,
                                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             ),
                         )
                     }
+                    NavigationBarItem(
+                        selected = isMoreSelected,
+                        onClick = { isMoreSheetVisible = true },
+                        icon = {
+                            Icon(
+                                Icons.Rounded.MoreHoriz,
+                                contentDescription = "更多",
+                                modifier = Modifier.size(mobileNavIconSize),
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                            indicatorColor = Color.Transparent,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
                 }
             }
         },
@@ -564,6 +596,84 @@ private fun MobileShell(
                 onSettingsIntent = onSettingsIntent,
                 modifier = Modifier.weight(1f),
             )
+        }
+    }
+    if (isMoreSheetVisible) {
+        MobileMoreSheet(
+            selectedTab = selectedTab,
+            sheetState = moreSheetState,
+            onDismiss = { isMoreSheetVisible = false },
+            onSelect = { tab ->
+                isMoreSheetVisible = false
+                onTabSelected(tab)
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MobileMoreSheet(
+    selectedTab: AppTab,
+    sheetState: androidx.compose.material3.SheetState,
+    onDismiss: () -> Unit,
+    onSelect: (AppTab) -> Unit,
+) {
+    val shellColors = mainShellColors
+    val items = remember {
+        listOf(
+            Triple(AppTab.Tags, Icons.Rounded.Tune, "音乐标签"),
+            Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
+            Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
+        )
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = shellColors.navContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        dragHandle = null,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "更多",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            items.forEach { (tab, icon, label) ->
+                val selected = selectedTab == tab
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.secondary
+                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.34f),
+                        )
+                        .clickable { onSelect(tab) }
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = label,
+                        color = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }
