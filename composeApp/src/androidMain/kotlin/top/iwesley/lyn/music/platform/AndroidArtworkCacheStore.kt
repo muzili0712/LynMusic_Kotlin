@@ -4,11 +4,7 @@ import android.content.Context
 import java.io.File
 import java.net.URI
 import java.net.URL
-import java.security.MessageDigest
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
-import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
-import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
-import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
 
 fun createAndroidArtworkCacheStore(context: Context): ArtworkCacheStore = AndroidArtworkCacheStore(context)
 
@@ -19,13 +15,7 @@ private class AndroidArtworkCacheStore(
 
     override suspend fun cache(locator: String, cacheKey: String): String? {
         return runCatching {
-            val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
-            if (rawTarget.isBlank()) return@runCatching null
-            val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
-                NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
-            } else {
-                rawTarget
-            }
+            val target = resolveArtworkCacheTarget(locator) ?: return@runCatching null
             if (target.isBlank()) return@runCatching null
             if (target.startsWith("file://", ignoreCase = true)) {
                 return@runCatching runCatching { File(URI(target)).absolutePath }.getOrNull()
@@ -33,7 +23,7 @@ private class AndroidArtworkCacheStore(
             if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
                 return@runCatching target
             }
-            val fileName = "${cacheKey.stableHash()}${artworkExtension(target)}"
+            val fileName = "${cacheKey.stableArtworkCacheHash()}${artworkCacheExtension(target)}"
             val output = File(directory, fileName)
             if (output.exists() && output.length() > 0L) {
                 return@runCatching output.absolutePath
@@ -44,15 +34,4 @@ private class AndroidArtworkCacheStore(
             output.absolutePath.takeIf { output.length() > 0L }
         }.getOrNull()
     }
-}
-
-private fun artworkExtension(locator: String): String {
-    val path = runCatching { URI(locator).path }.getOrNull().orEmpty()
-    val extension = path.substringAfterLast('.', "").lowercase()
-    return if (extension in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif")) ".$extension" else ".img"
-}
-
-private fun String.stableHash(): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray())
-    return digest.joinToString("") { byte -> "%02x".format(byte) }
 }

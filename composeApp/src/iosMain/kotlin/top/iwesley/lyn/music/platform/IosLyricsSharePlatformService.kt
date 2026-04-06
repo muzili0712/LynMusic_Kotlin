@@ -1,16 +1,9 @@
 package top.iwesley.lyn.music.platform
 
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.ByteVar
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.convert
-import kotlinx.cinterop.reinterpret
-import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSTemporaryDirectory
-import platform.Foundation.NSURL
 import platform.Photos.PHAccessLevelAddOnly
 import platform.Photos.PHAssetChangeRequest
 import platform.Photos.PHAuthorizationStatusAuthorized
@@ -18,14 +11,7 @@ import platform.Photos.PHAuthorizationStatusLimited
 import platform.Photos.PHPhotoLibrary
 import platform.UIKit.UIImage
 import platform.UIKit.UIPasteboard
-import platform.posix.SEEK_END
-import platform.posix.SEEK_SET
-import platform.posix.fclose
-import platform.posix.fopen
-import platform.posix.fread
-import platform.posix.fseek
-import platform.posix.ftell
-import platform.posix.fwrite
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
@@ -38,8 +24,11 @@ import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.max
+import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Font
+import org.jetbrains.skia.FontMgr
+import org.jetbrains.skia.FontStyle
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Point
 import org.jetbrains.skia.Paint
@@ -47,12 +36,14 @@ import org.jetbrains.skia.RRect
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Shader
 import org.jetbrains.skia.Surface
+import org.jetbrains.skia.Typeface
 
-@OptIn(ExperimentalForeignApi::class)
 class IosLyricsSharePlatformService : LyricsSharePlatformService {
+    private val artworkCacheStore = createIosArtworkCacheStore()
+
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = withContext(Dispatchers.Default) {
         runCatching {
-            val artworkImage = loadArtworkImage(model.artworkLocator)
+            val artworkImage = loadArtworkImage(model.artworkLocator, artworkCacheStore)
             renderLyricsShareImage(model, artworkImage = artworkImage)
         }
     }
@@ -109,13 +100,26 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         artworkImage: Image?,
     ): ByteArray {
         val width = LyricsShareCardSpec.IMAGE_WIDTH_PX.toFloat()
+        val footerText = buildLyricsShareTitleArtistLine(model.title, model.artistName)
         val footerLines = wrapLines(
-            listOf(buildLyricsShareTitleArtistLine(model.title, model.artistName)),
+            listOf(footerText),
             maxCharsPerLine = 28,
         ).take(1)
 
-        val titleFont = Font(null, LyricsShareCardSpec.TITLE_FONT_SIZE_PX)
-        val brandFont = Font(null, LyricsShareCardSpec.BRAND_FONT_SIZE_PX)
+        val lyricsTypeface = resolveIosShareTypeface(
+            text = model.lyricsLines.joinToString(separator = "\n"),
+            style = FontStyle.BOLD,
+        )
+        val footerTypeface = resolveIosShareTypeface(
+            text = footerText,
+            style = FontStyle.BOLD,
+        )
+        val brandTypeface = resolveIosShareTypeface(
+            text = LyricsShareCardSpec.BRAND_TEXT,
+            style = FontStyle.NORMAL,
+        )
+        val titleFont = Font(footerTypeface, LyricsShareCardSpec.TITLE_FONT_SIZE_PX)
+        val brandFont = Font(brandTypeface, LyricsShareCardSpec.BRAND_FONT_SIZE_PX)
         val titleLineHeight = LyricsShareCardSpec.TITLE_FONT_SIZE_PX + 12f
         val fixedHeight =
             LyricsShareCardSpec.OUTER_PADDING_PX * 2 +
@@ -137,6 +141,7 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
             fixedHeight = fixedHeight,
             minFontScale = LyricsShareCardSpec.LYRICS_MIN_FONT_SCALE,
             shrinkStep = LyricsShareCardSpec.LYRICS_FONT_SHRINK_STEP,
+            typeface = lyricsTypeface,
         )
         val contentHeight =
             LyricsShareCardSpec.PAPER_PADDING_TOP_PX +
@@ -281,14 +286,27 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         artworkImage: Image?,
     ): ByteArray {
         val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX.toFloat()
+        val footerText = buildLyricsShareTitleArtistLine(model.title, model.artistName)
         val footerLines = wrapLines(
-            listOf(buildLyricsShareTitleArtistLine(model.title, model.artistName)),
+            listOf(footerText),
             maxCharsPerLine = 28,
         ).take(1)
         val theme = model.artworkTintTheme ?: sampleArtworkTintTheme(artworkImage)
 
-        val titleFont = Font(null, LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX)
-        val brandFont = Font(null, LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX)
+        val lyricsTypeface = resolveIosShareTypeface(
+            text = model.lyricsLines.joinToString(separator = "\n"),
+            style = FontStyle.BOLD,
+        )
+        val footerTypeface = resolveIosShareTypeface(
+            text = footerText,
+            style = FontStyle.BOLD,
+        )
+        val brandTypeface = resolveIosShareTypeface(
+            text = LyricsShareCardSpec.BRAND_TEXT,
+            style = FontStyle.NORMAL,
+        )
+        val titleFont = Font(footerTypeface, LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX)
+        val brandFont = Font(brandTypeface, LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX)
         val titleLineHeight = LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX + 12f
         val fixedHeight =
             LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
@@ -309,6 +327,7 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
             fixedHeight = fixedHeight,
             minFontScale = LyricsShareArtworkTintSpec.LYRICS_MIN_FONT_SCALE,
             shrinkStep = LyricsShareArtworkTintSpec.LYRICS_FONT_SHRINK_STEP,
+            typeface = lyricsTypeface,
         )
         val contentHeight =
             LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
@@ -468,6 +487,7 @@ private fun fitIosLyricsLayout(
     fixedHeight: Float,
     minFontScale: Float,
     shrinkStep: Float,
+    typeface: Typeface?,
 ): IosFittedLyricsLayout {
     var fontSizePx = baseFontSizePx
     var lineGapPx = baseLineGapPx
@@ -478,7 +498,7 @@ private fun fitIosLyricsLayout(
         val wrappedLines = wrapLines(lines, maxCharsPerLine = maxCharsPerLine)
         val lineHeight = fontSizePx + lineGapPx
         val blockHeight = max(1, wrappedLines.size) * lineHeight
-        val font = Font(null, fontSizePx)
+        val font = Font(typeface, fontSizePx)
         if (fixedHeight + blockHeight <= maxTotalHeight || fontSizePx <= minFontSizePx) {
             return IosFittedLyricsLayout(
                 font = font,
@@ -513,6 +533,51 @@ private fun wrapLines(
     }
 }
 
+private fun resolveIosShareTypeface(
+    text: String,
+    style: FontStyle,
+): Typeface? {
+    val codePoint = preferredIosShareCodePoint(text)
+    return when {
+        codePoint != null ->
+            FontMgr.default.matchFamiliesStyleCharacter(
+                families = IOS_SHARE_FONT_FAMILIES,
+                style = style,
+                bcp47 = IOS_SHARE_LANGUAGE_HINTS,
+                character = codePoint,
+            ) ?: FontMgr.default.matchFamilyStyleCharacter(
+                familyName = null,
+                style = style,
+                bcp47 = IOS_SHARE_LANGUAGE_HINTS,
+                character = codePoint,
+            )
+
+        else -> null
+    } ?: FontMgr.default.matchFamiliesStyle(IOS_SHARE_FONT_FAMILIES, style)
+        ?: FontMgr.default.matchFamilyStyle(null, style)
+}
+
+private fun preferredIosShareCodePoint(text: String): Int? {
+    val trimmed = text.trim()
+    val nonAscii = trimmed.firstOrNull { !it.isWhitespace() && it.code > 0x7F }
+    return nonAscii?.code ?: trimmed.firstOrNull { !it.isWhitespace() }?.code
+}
+
+private val IOS_SHARE_LANGUAGE_HINTS = arrayOf("zh-Hans", "zh-Hant", "ja", "ko", "en")
+
+private val IOS_SHARE_FONT_FAMILIES = arrayOf<String?>(
+    "PingFang SC",
+    "PingFang TC",
+    "PingFang HK",
+    "Hiragino Sans GB",
+    "Hiragino Sans",
+    "STHeiti",
+    "Heiti SC",
+    "Heiti TC",
+    "Apple SD Gothic Neo",
+    "Arial Unicode MS",
+)
+
 private suspend fun requestPhotoAuthorization() = suspendCancellableCoroutine { continuation ->
     PHPhotoLibrary.requestAuthorizationForAccessLevel(PHAccessLevelAddOnly) { status ->
         continuation.resume(status)
@@ -524,75 +589,39 @@ private fun loadUiImageFromPngBytes(pngBytes: ByteArray): UIImage? {
     return UIImage.imageWithContentsOfFile(tempPath)
 }
 
-private fun loadArtworkImage(locator: String?): Image? {
+private suspend fun loadArtworkImage(
+    locator: String?,
+    artworkCacheStore: ArtworkCacheStore,
+): Image? {
     val normalized = locator?.trim().orEmpty()
     if (normalized.isBlank()) return null
-    if (normalized.startsWith("http://", ignoreCase = true) || normalized.startsWith("https://", ignoreCase = true)) {
-        return null
-    }
-    val localPath = if (normalized.startsWith("file://", ignoreCase = true)) {
-        NSURL.URLWithString(normalized)?.path ?: normalized.removePrefix("file://")
-    } else {
-        normalized
-    }
-    return readFileBytes(localPath)?.let(Image::makeFromEncoded)
-}
-
-@OptIn(ExperimentalForeignApi::class)
-private fun readFileBytes(path: String): ByteArray? {
-    val file = fopen(path, "rb") ?: return null
-    return try {
-        if (fseek(file, 0, SEEK_END) != 0) return null
-        val byteCount = ftell(file).toInt()
-        if (byteCount < 0) return null
-        if (fseek(file, 0, SEEK_SET) != 0) return null
-        val byteArray = ByteArray(byteCount)
-        val bytesRead = byteArray.usePinned { pinned ->
-            fread(
-                pinned.addressOf(0).reinterpret<ByteVar>(),
-                1.convert(),
-                byteCount.convert(),
-                file,
-            ).toInt()
-        }
-        if (bytesRead != byteCount) return null
-        byteArray
-    } finally {
-        fclose(file)
-    }
+    val localPath = artworkCacheStore.cache(normalized, normalized).orEmpty()
+    if (localPath.isBlank()) return null
+    return readIosLocalBytes(localPath)?.let(Image::makeFromEncoded)
 }
 
 private fun sampleArtworkTintTheme(artworkImage: Image?): top.iwesley.lyn.music.core.model.ArtworkTintTheme? {
     val image = artworkImage ?: return null
-    val pixmap = image.peekPixels() ?: return null
-    val stepX = max(1, pixmap.info.width / 24)
-    val stepY = max(1, pixmap.info.height / 24)
+    val bitmap = runCatching { Bitmap.makeFromImage(image) }.getOrNull() ?: return null
+    val stepX = max(1, bitmap.imageInfo.width / 24)
+    val stepY = max(1, bitmap.imageInfo.height / 24)
     return deriveArtworkTintTheme(
         buildList {
-            for (y in 0 until pixmap.info.height step stepY) {
-                for (x in 0 until pixmap.info.width step stepX) {
-                    add(pixmap.getColor(x, y))
+            for (y in 0 until bitmap.imageInfo.height step stepY) {
+                for (x in 0 until bitmap.imageInfo.width step stepX) {
+                    add(bitmap.getColor(x, y))
                 }
             }
         },
-    )
+    ).also {
+        bitmap.close()
+    }
 }
 
-@OptIn(ExperimentalForeignApi::class)
 private fun writeTempPng(pngBytes: ByteArray): String {
     val path = NSTemporaryDirectory() + "lynmusic-lyrics-share.png"
-    val file = fopen(path, "wb") ?: error("无法创建临时图片文件。")
-    try {
-        pngBytes.usePinned { pinned ->
-            fwrite(
-                pinned.addressOf(0),
-                1.convert(),
-                pngBytes.size.convert(),
-                file,
-            )
-        }
-    } finally {
-        fclose(file)
+    if (!writeIosFileBytes(path, pngBytes)) {
+        error("无法创建临时图片文件。")
     }
     return path
 }
