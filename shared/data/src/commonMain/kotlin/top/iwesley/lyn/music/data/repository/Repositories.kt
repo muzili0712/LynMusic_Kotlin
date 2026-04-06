@@ -217,6 +217,10 @@ class RoomImportSourceRepository(
     override suspend fun importLocalFolder(): Result<Unit> {
         return runCatching {
             val selection = gateway.pickLocalFolder() ?: return Result.success(Unit)
+            validateImportSourceCreation(
+                label = selection.label,
+                localFolderRootReference = selection.persistentReference,
+            )
             val sourceId = newId("local")
             val source = ImportSource(
                 id = sourceId,
@@ -234,22 +238,24 @@ class RoomImportSourceRepository(
 
     override suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit> {
         return runCatching {
+            val normalizedPath = normalizeSambaPath(draft.path)
+            val label = draft.label.ifBlank {
+                formatSambaEndpoint(
+                    server = draft.server,
+                    port = draft.port,
+                    path = normalizedPath,
+                )
+            }
+            validateImportSourceCreation(label = label)
             val sourceId = newId("smb")
             val credentialKey = if (draft.password.isBlank()) null else "credential-$sourceId"
             if (credentialKey != null) {
                 secureCredentialStore.put(credentialKey, draft.password)
             }
-            val normalizedPath = normalizeSambaPath(draft.path)
             val source = ImportSource(
                 id = sourceId,
                 type = ImportSourceType.SAMBA,
-                label = draft.label.ifBlank {
-                    formatSambaEndpoint(
-                        server = draft.server,
-                        port = draft.port,
-                        path = normalizedPath,
-                    )
-                },
+                label = label,
                 rootReference = normalizedPath,
                 server = draft.server,
                 port = draft.port,
@@ -267,16 +273,18 @@ class RoomImportSourceRepository(
 
     override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit> {
         return runCatching {
+            val normalizedRootUrl = normalizeWebDavRootUrl(draft.rootUrl)
+            val label = draft.label.ifBlank { normalizedRootUrl }
+            validateImportSourceCreation(label = label)
             val sourceId = newId("dav")
             val credentialKey = if (draft.password.isBlank()) null else "credential-$sourceId"
             if (credentialKey != null) {
                 secureCredentialStore.put(credentialKey, draft.password)
             }
-            val normalizedRootUrl = normalizeWebDavRootUrl(draft.rootUrl)
             val source = ImportSource(
                 id = sourceId,
                 type = ImportSourceType.WEBDAV,
-                label = draft.label.ifBlank { normalizedRootUrl },
+                label = label,
                 rootReference = normalizedRootUrl,
                 username = draft.username,
                 credentialKey = credentialKey,
@@ -292,14 +300,16 @@ class RoomImportSourceRepository(
 
     override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
         return runCatching {
+            val normalizedBaseUrl = normalizeNavidromeBaseUrl(draft.baseUrl)
+            val label = draft.label.ifBlank { normalizedBaseUrl }
+            validateImportSourceCreation(label = label)
             val sourceId = newId("navidrome")
             val credentialKey = "credential-$sourceId"
             secureCredentialStore.put(credentialKey, draft.password)
-            val normalizedBaseUrl = normalizeNavidromeBaseUrl(draft.baseUrl)
             val source = ImportSource(
                 id = sourceId,
                 type = ImportSourceType.NAVIDROME,
-                label = draft.label.ifBlank { normalizedBaseUrl },
+                label = label,
                 rootReference = normalizedBaseUrl,
                 username = draft.username.trim(),
                 credentialKey = credentialKey,
@@ -478,6 +488,19 @@ class RoomImportSourceRepository(
                 lastError = throwable.message ?: "扫描失败。",
             ),
         )
+    }
+
+    private suspend fun validateImportSourceCreation(
+        label: String,
+        localFolderRootReference: String? = null,
+    ) {
+        val existing = database.importSourceDao().getAll()
+        if (hasImportSourceNameConflict(name = label, existing = existing)) {
+            error("音乐源名称已存在。")
+        }
+        if (localFolderRootReference != null && hasLocalFolderPathConflict(rootReference = localFolderRootReference, existing = existing)) {
+            error("该本地文件夹已导入。")
+        }
     }
 
     private suspend fun rebuildLibrarySummaries() {
@@ -1760,6 +1783,33 @@ private fun WorkflowLyricsSourceConfig.toEntity(): WorkflowLyricsSourceConfigEnt
         enabled = enabled,
         rawJson = rawJson,
     )
+}
+
+private fun normalizeImportSourceLabel(name: String): String {
+    return name.trim().lowercase()
+}
+
+private fun hasImportSourceNameConflict(
+    name: String,
+    existing: List<ImportSourceEntity>,
+    excludingId: String? = null,
+): Boolean {
+    val normalizedName = normalizeImportSourceLabel(name)
+    return existing.any { entity ->
+        entity.id != excludingId && normalizeImportSourceLabel(entity.label) == normalizedName
+    }
+}
+
+private fun hasLocalFolderPathConflict(
+    rootReference: String,
+    existing: List<ImportSourceEntity>,
+    excludingId: String? = null,
+): Boolean {
+    return existing.any { entity ->
+        entity.id != excludingId &&
+            entity.type == ImportSourceType.LOCAL_FOLDER.name &&
+            entity.rootReference == rootReference
+    }
 }
 
 private fun String.toImportSourceType(): ImportSourceType {
