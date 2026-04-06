@@ -69,7 +69,9 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -925,6 +927,7 @@ private fun PlaybackProgress(
                 .height(if (floating) 12.dp else 22.dp),
         ) {
             val thumbInsetPx = with(LocalDensity.current) { if (floating) 6.dp.toPx() else 8.dp.toPx() }
+            val sliderAlignment = if (floating) Alignment.Center else Alignment.BottomCenter
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
@@ -938,13 +941,21 @@ private fun PlaybackProgress(
                     )
                 }
             }
+            RoundedPlaybackTrack(
+                progressFraction = progressFraction,
+                modifier = Modifier
+                    .align(sliderAlignment)
+                    .fillMaxWidth()
+                    .height(8.dp),
+                trackHeightPx = with(LocalDensity.current) { if (floating) 3.dp.toPx() else 4.dp.toPx() },
+            )
             Slider(
                 modifier = Modifier
-                    .align(if (floating) Alignment.Center else Alignment.BottomCenter)
+                    .align(sliderAlignment)
                     .fillMaxWidth()
                     .height(8.dp)
                     .graphicsLayer(scaleY = if (floating) 0.36f else 0.44f),
-                colors = playerSliderColors(),
+                colors = transparentTrackSliderColors(),
                 value = snapshot.positionMs.coerceIn(0L, duration).toFloat(),
                 onValueChange = { onPlayerIntent(PlayerIntent.SeekTo(it.toLong())) },
                 valueRange = 0f..duration.toFloat(),
@@ -966,6 +977,35 @@ private fun PlaybackProgress(
                     color = Color.White,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun RoundedPlaybackTrack(
+    progressFraction: Float,
+    modifier: Modifier = Modifier,
+    trackHeightPx: Float,
+) {
+    Canvas(modifier = modifier) {
+        val trackWidth = size.width.coerceAtLeast(0f)
+        if (trackWidth <= 0f || trackHeightPx <= 0f) return@Canvas
+        val top = (size.height - trackHeightPx) / 2f
+        val radius = CornerRadius(trackHeightPx / 2f, trackHeightPx / 2f)
+        drawRoundRect(
+            color = Color.White.copy(alpha = 0.24f),
+            topLeft = Offset(0f, top),
+            size = Size(trackWidth, trackHeightPx),
+            cornerRadius = radius,
+        )
+        val activeWidth = (trackWidth * progressFraction.coerceIn(0f, 1f)).coerceIn(0f, trackWidth)
+        if (activeWidth > 0f) {
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.96f),
+                topLeft = Offset(0f, top),
+                size = Size(activeWidth, trackHeightPx),
+                cornerRadius = radius,
+            )
         }
     }
 }
@@ -1030,6 +1070,15 @@ private fun playerSliderColors() = SliderDefaults.colors(
     inactiveTrackColor = Color.White.copy(alpha = 0.24f),
     activeTickColor = Color.White.copy(alpha = 0.96f),
     inactiveTickColor = Color.White.copy(alpha = 0.24f),
+)
+
+@Composable
+private fun transparentTrackSliderColors() = SliderDefaults.colors(
+    thumbColor = Color.White.copy(alpha = 0.98f),
+    activeTrackColor = Color.Transparent,
+    inactiveTrackColor = Color.Transparent,
+    activeTickColor = Color.Transparent,
+    inactiveTickColor = Color.Transparent,
 )
 
 private data class ProgressFlowerParticle(
