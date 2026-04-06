@@ -119,6 +119,46 @@ class PlayerStoreManualLyricsSearchTest {
     }
 
     @Test
+    fun `manual lyrics apply failure exposes toast message`() = runTest {
+        val track = sampleTrack()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val candidate = LyricsSearchCandidate(
+            sourceId = "manual-source",
+            sourceName = "手动源",
+            document = LyricsDocument(
+                lines = listOf(LyricsLine(timestampMs = null, text = "第一句")),
+                sourceId = "manual-source",
+                rawPayload = "第一句",
+            ),
+        )
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository(
+            searchResults = listOf(candidate),
+            applyError = IllegalStateException("歌词应用失败"),
+        )
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.SearchManualLyrics)
+        advanceUntilIdle()
+
+        store.dispatch(PlayerIntent.ApplyManualLyricsCandidate(candidate))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertTrue(state.isManualLyricsSearchVisible)
+        assertEquals("歌词应用失败", state.message)
+        assertEquals(null, state.lyrics)
+        scope.cancel()
+    }
+
+    @Test
     fun `manual search hides current track provided candidate after form changes`() = runTest {
         val track = sampleTrack()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
@@ -256,6 +296,44 @@ class PlayerStoreManualLyricsSearchTest {
         scope.cancel()
     }
 
+    @Test
+    fun `workflow lyrics apply failure exposes toast message`() = runTest {
+        val track = sampleTrack()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val workflowCandidate = WorkflowSongCandidate(
+            sourceId = "workflow-1",
+            sourceName = "Workflow 源",
+            id = "song-42",
+            title = "工作流标题",
+            artists = listOf("工作流歌手"),
+        )
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository(
+            workflowResults = listOf(workflowCandidate),
+            applyWorkflowError = IllegalStateException("工作流歌词应用失败"),
+        )
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.SearchManualLyrics)
+        advanceUntilIdle()
+
+        store.dispatch(PlayerIntent.ApplyWorkflowSongCandidate(workflowCandidate))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertTrue(state.isManualLyricsSearchVisible)
+        assertEquals("工作流歌词应用失败", state.message)
+        assertEquals(null, state.lyrics)
+        scope.cancel()
+    }
+
     private fun sampleTrack(): Track {
         return Track(
             id = "track-1",
@@ -304,6 +382,8 @@ private class FakeLyricsRepository(
     private val searchResults: List<LyricsSearchCandidate> = emptyList(),
     private val workflowResults: List<WorkflowSongCandidate> = emptyList(),
     private val appliedDocument: LyricsDocument? = null,
+    private val applyError: Throwable? = null,
+    private val applyWorkflowError: Throwable? = null,
 ) : LyricsRepository {
     var lastSearchTrack: Track? = null
         private set
@@ -343,6 +423,7 @@ private class FakeLyricsRepository(
     }
 
     override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
+        applyError?.let { throw it }
         appliedTrackId = trackId
         appliedCandidate = candidate
         return AppliedLyricsResult(
@@ -352,6 +433,7 @@ private class FakeLyricsRepository(
     }
 
     override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
+        applyWorkflowError?.let { throw it }
         appliedTrackId = trackId
         appliedWorkflowCandidate = candidate
         return AppliedLyricsResult(

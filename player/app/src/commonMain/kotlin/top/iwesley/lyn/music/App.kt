@@ -291,6 +291,12 @@ fun App(component: LynMusicAppComponent) {
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize(),
         ) {
+            playerState.message?.let { message ->
+                LaunchedEffect(message) {
+                    kotlinx.coroutines.delay(2_500)
+                    component.playerStore.dispatch(PlayerIntent.ClearMessage)
+                }
+            }
             val compact = maxWidth < 900.dp
             val shellColors = mainShellColors
             Box(
@@ -370,6 +376,15 @@ fun App(component: LynMusicAppComponent) {
                         state = playerState,
                         onPlayerIntent = component.playerStore::dispatch,
                         modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                playerState.message?.let { message ->
+                    ToastCard(
+                        message = message,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(horizontal = 20.dp, vertical = 24.dp)
+                            .navigationBarsPadding(),
                     )
                 }
             }

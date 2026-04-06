@@ -45,6 +45,7 @@ data class PlayerState(
     val isShareSaving: Boolean = false,
     val isShareCopying: Boolean = false,
     val shareMessage: String? = null,
+    val message: String? = null,
 ) {
     val hasFreshSharePreview: Boolean
         get() = sharePreviewBytes != null &&
@@ -80,6 +81,7 @@ sealed interface PlayerIntent {
     data object SaveLyricsShareImage : PlayerIntent
     data object CopyLyricsShareImage : PlayerIntent
     data object ClearLyricsShareMessage : PlayerIntent
+    data object ClearMessage : PlayerIntent
 }
 
 sealed interface PlayerEffect
@@ -122,6 +124,7 @@ class PlayerStore(
                         manualLyricsResults = if (trackChanged) emptyList() else current.manualLyricsResults,
                         manualWorkflowSongResults = if (trackChanged) emptyList() else current.manualWorkflowSongResults,
                         manualLyricsError = if (trackChanged) null else current.manualLyricsError,
+                        message = if (trackChanged) null else current.message,
                     ).let { updated ->
                         if (trackChanged || snapshot.currentTrack == null) {
                             updated.clearLyricsShareState()
@@ -192,6 +195,7 @@ class PlayerStore(
             PlayerIntent.ClearLyricsShareMessage -> updateState {
                 it.copy(shareMessage = null, sharePreviewError = null)
             }
+            PlayerIntent.ClearMessage -> updateState { it.copy(message = null) }
         }
     }
 
@@ -209,6 +213,7 @@ class PlayerStore(
                 manualLyricsResults = emptyList(),
                 manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
+                message = null,
             )
         }
     }
@@ -233,6 +238,7 @@ class PlayerStore(
                 manualLyricsResults = emptyList(),
                 manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
+                message = null,
             )
         }
     }
@@ -372,6 +378,7 @@ class PlayerStore(
                 manualLyricsResults = emptyList(),
                 manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
+                message = null,
             )
         }
     }
@@ -405,6 +412,7 @@ class PlayerStore(
                 manualLyricsResults = emptyList(),
                 manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
+                message = null,
             )
         }
         val directResult = runCatching {
@@ -421,6 +429,7 @@ class PlayerStore(
                 manualLyricsResults = directResult.getOrDefault(emptyList()),
                 manualWorkflowSongResults = workflowResult.getOrDefault(emptyList()),
                 manualLyricsError = directResult.exceptionOrNull()?.message ?: workflowResult.exceptionOrNull()?.message,
+                message = null,
             )
         }
     }
@@ -428,7 +437,12 @@ class PlayerStore(
     private suspend fun applyManualLyricsCandidate(candidate: LyricsSearchCandidate) {
         val track = state.value.snapshot.currentTrack ?: return
         val snapshot = state.value.snapshot
-        val result = lyricsRepository.applyLyricsCandidate(track.id, candidate)
+        val result = runCatching {
+            lyricsRepository.applyLyricsCandidate(track.id, candidate)
+        }.getOrElse { throwable ->
+            updateState { it.copy(message = throwable.message ?: "歌词应用失败。") }
+            return
+        }
         val document = result.document
         val artworkLocator = result.artworkLocator
         if (!artworkLocator.isNullOrBlank()) {
@@ -444,6 +458,7 @@ class PlayerStore(
                 manualLyricsResults = emptyList(),
                 manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
+                message = null,
             )
         }
     }
@@ -451,7 +466,12 @@ class PlayerStore(
     private suspend fun applyWorkflowSongCandidate(candidate: WorkflowSongCandidate) {
         val track = state.value.snapshot.currentTrack ?: return
         val snapshot = state.value.snapshot
-        val result = lyricsRepository.applyWorkflowSongCandidate(track.id, candidate)
+        val result = runCatching {
+            lyricsRepository.applyWorkflowSongCandidate(track.id, candidate)
+        }.getOrElse { throwable ->
+            updateState { it.copy(message = throwable.message ?: "歌词应用失败。") }
+            return
+        }
         val document = result.document
         val artworkLocator = result.artworkLocator
         if (!artworkLocator.isNullOrBlank()) {
@@ -467,6 +487,7 @@ class PlayerStore(
                 manualLyricsResults = emptyList(),
                 manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
+                message = null,
             )
         }
     }
