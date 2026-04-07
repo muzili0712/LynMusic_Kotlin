@@ -18,6 +18,9 @@ import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackMode
+import top.iwesley.lyn.music.core.model.PlaybackSnapshot
+import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
+import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.LyricsCacheEntity
@@ -175,6 +178,67 @@ class PlaybackRepositoriesTest {
             database.close()
         }
     }
+
+    @Test
+    fun `system controls service receives snapshot updates`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val systemControls = FakeSystemPlaybackControlsPlatformService()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(database, gateway, scope, systemControls)
+
+        try {
+            advanceUntilIdle()
+
+            repository.playTracks(sampleTracks(), startIndex = 1)
+            advanceUntilIdle()
+            gateway.updateState { it.copy(positionMs = 42_000L, isPlaying = true) }
+            advanceUntilIdle()
+
+            assertEquals("track-2", systemControls.lastSnapshot?.currentTrack?.id)
+            assertEquals(true, systemControls.lastSnapshot?.isPlaying)
+            assertEquals(42_000L, systemControls.lastSnapshot?.positionMs)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `system controls callbacks route to repository commands`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val systemControls = FakeSystemPlaybackControlsPlatformService()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(database, gateway, scope, systemControls)
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 0)
+            advanceUntilIdle()
+
+            systemControls.callbacks.skipNext()
+            advanceUntilIdle()
+            assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
+
+            systemControls.callbacks.seekTo(12_345L)
+            advanceUntilIdle()
+            assertEquals(12_345L, gateway.seekCalls.last())
+
+            systemControls.callbacks.pause()
+            advanceUntilIdle()
+            assertEquals(false, repository.snapshot.value.isPlaying)
+
+            systemControls.callbacks.play()
+            advanceUntilIdle()
+            assertEquals(true, repository.snapshot.value.isPlaying)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
 }
 
 private fun createTestDatabase(): LynMusicDatabase {
@@ -251,6 +315,21 @@ private class FakePlaybackGateway : PlaybackGateway {
             completionCount = mutableState.value.completionCount + 1,
         )
     }
+}
+
+private class FakeSystemPlaybackControlsPlatformService : SystemPlaybackControlsPlatformService {
+    var callbacks: SystemPlaybackControlCallbacks = SystemPlaybackControlCallbacks()
+    var lastSnapshot: PlaybackSnapshot? = null
+
+    override fun bind(callbacks: SystemPlaybackControlCallbacks) {
+        this.callbacks = callbacks
+    }
+
+    override suspend fun updateSnapshot(snapshot: PlaybackSnapshot) {
+        lastSnapshot = snapshot
+    }
+
+    override suspend fun close() = Unit
 }
 
 private data class LoadCall(

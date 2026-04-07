@@ -8,7 +8,10 @@ internal actual object AppleAudioSessionCoordinator {
     actual fun configureForPlayback() {
         val session = AVAudioSession.sharedInstance()
         session.setCategory(AVAudioSessionCategoryPlayback, error = null)
+        session.setActive(true, error = null)
     }
 
-    actual fun deactivate() = Unit
+    actual fun deactivate() {
+        AVAudioSession.sharedInstance().setActive(false, error = null)
+    }
 }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlin.random.Random
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
@@ -14,8 +15,11 @@ import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
+import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
+import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
+import top.iwesley.lyn.music.core.model.UnsupportedSystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
 
@@ -37,6 +41,7 @@ class DefaultPlaybackRepository(
     private val database: LynMusicDatabase,
     private val gateway: PlaybackGateway,
     private val scope: CoroutineScope,
+    private val systemPlaybackControlsPlatformService: SystemPlaybackControlsPlatformService = UnsupportedSystemPlaybackControlsPlatformService,
 ) : PlaybackRepository {
     private val mutableSnapshot = MutableStateFlow(PlaybackSnapshot())
     private var observedCompletionCount = 0L
@@ -44,7 +49,17 @@ class DefaultPlaybackRepository(
     override val snapshot: StateFlow<PlaybackSnapshot> = mutableSnapshot.asStateFlow()
 
     init {
-        scope.launch {
+        systemPlaybackControlsPlatformService.bind(
+            SystemPlaybackControlCallbacks(
+                play = { playCurrentTrack() },
+                pause = { pauseCurrentTrack() },
+                togglePlayPause = { togglePlayPause() },
+                skipNext = { skipNext() },
+                skipPrevious = { skipPrevious() },
+                seekTo = { positionMs -> seekTo(positionMs) },
+            ),
+        )
+        runBlocking {
             restoreQueue()
         }
         scope.launch {
@@ -105,6 +120,11 @@ class DefaultPlaybackRepository(
                 if (completionChanged) {
                     advance(autoTriggered = true)
                 }
+            }
+        }
+        scope.launch {
+            snapshot.collect { snapshot ->
+                systemPlaybackControlsPlatformService.updateSnapshot(snapshot)
             }
         }
     }
@@ -200,7 +220,18 @@ class DefaultPlaybackRepository(
     }
 
     override suspend fun close() {
+        systemPlaybackControlsPlatformService.close()
         gateway.release()
+    }
+
+    private suspend fun playCurrentTrack() {
+        if (mutableSnapshot.value.currentTrack == null) return
+        gateway.play()
+    }
+
+    private suspend fun pauseCurrentTrack() {
+        if (mutableSnapshot.value.currentTrack == null) return
+        gateway.pause()
     }
 
     private suspend fun advance(autoTriggered: Boolean) {
@@ -258,7 +289,9 @@ class DefaultPlaybackRepository(
         val ids = persisted.queueTrackIds.split(',').filter { it.isNotBlank() }
         if (ids.isEmpty()) return
         val artworkOverrides = manualArtworkOverridesByTrackId(
-            database.lyricsCacheDao().getByTrackIdsAndSourceId(ids, MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
+            ids.mapNotNull { trackId ->
+                database.lyricsCacheDao().getByTrackIdAndSourceId(trackId, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
+            },
         )
         val tracks = database.trackDao().getByIds(ids)
             .associateBy { it.id }
@@ -308,6 +341,7 @@ data class PlayerRuntimeServices(
     val playbackGateway: PlaybackGateway,
     val playbackPreferencesStore: PlaybackPreferencesStore,
     val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
+    val systemPlaybackControlsPlatformService: SystemPlaybackControlsPlatformService = UnsupportedSystemPlaybackControlsPlatformService,
 )
 
 private fun now(): Long = Clock.System.now().toEpochMilliseconds()

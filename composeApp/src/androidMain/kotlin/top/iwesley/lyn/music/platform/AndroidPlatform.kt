@@ -147,6 +147,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             playbackGateway = AndroidPlaybackGateway(activity.applicationContext, database, secureStore, appPreferencesStore, logger),
             playbackPreferencesStore = appPreferencesStore,
             lyricsSharePlatformService = AndroidLyricsSharePlatformService(activity),
+            systemPlaybackControlsPlatformService = createAndroidSystemPlaybackControlsPlatformService(activity.applicationContext),
         ),
     )
 }

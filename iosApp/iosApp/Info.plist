@@ -6,5 +6,9 @@
 	<true/>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>用于将歌词分享图片保存到你的相册。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

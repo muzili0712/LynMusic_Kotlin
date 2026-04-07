@@ -253,6 +253,7 @@ fun buildPlayerAppComponent(
         database = sharedGraph.database,
         gateway = playerRuntimeServices.playbackGateway,
         scope = sharedGraph.scope,
+        systemPlaybackControlsPlatformService = playerRuntimeServices.systemPlaybackControlsPlatformService,
     )
     return LynMusicAppComponent(
         platform = sharedGraph.platform,

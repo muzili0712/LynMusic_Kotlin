@@ -103,7 +103,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             supportsSambaImport = false,
             supportsWebDavImport = false,
             supportsNavidromeImport = true,
-            supportsSystemMediaControls = false,
+            supportsSystemMediaControls = true,
         ),
     )
     val sharedGraph = buildSharedGraph(
@@ -128,6 +128,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             playbackGateway = ApplePlaybackGateway(platformLabel = "iOS"),
             playbackPreferencesStore = appPreferencesStore,
             lyricsSharePlatformService = IosLyricsSharePlatformService(),
+            systemPlaybackControlsPlatformService = createIosSystemPlaybackControlsPlatformService(),
         ),
     )
 }
