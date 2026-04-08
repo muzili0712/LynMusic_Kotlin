@@ -217,6 +217,7 @@ import top.iwesley.lyn.music.feature.tags.MusicTagsEffect
 import top.iwesley.lyn.music.feature.tags.MusicTagsIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsState
 import top.iwesley.lyn.music.feature.tags.MusicTagsStore
+import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.LynMusicTheme
@@ -1058,6 +1059,20 @@ private fun LibraryBrowserTab(
     var rootView by rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
     var selectedArtistId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedAlbumId by rememberSaveable { mutableStateOf<String?>(null) }
+    when (resolveLibraryBrowserBackTarget(selectedArtistId, selectedAlbumId)) {
+        LibraryBrowserBackTarget.Album -> {
+            PlatformBackHandler { selectedAlbumId = null }
+        }
+
+        LibraryBrowserBackTarget.Artist -> {
+            PlatformBackHandler {
+                selectedArtistId = null
+                selectedAlbumId = null
+            }
+        }
+
+        null -> Unit
+    }
     val tracksByArtistId = remember(state.filteredTracks) {
         state.filteredTracks.groupBy(Track::artistLibraryIdOrNull)
     }
@@ -3049,6 +3064,7 @@ internal fun LyricsShareOverlay(
     val secondaryTextColor = shellColors.secondaryText
     val bannerMessage = state.sharePreviewError ?: state.shareMessage
     val exportActionsEnabled = state.selectedLyricsLineIndices.isNotEmpty() && !state.isShareSaving && !state.isShareCopying
+    PlatformBackHandler(onBack = { onPlayerIntent(PlayerIntent.DismissLyricsShare) })
     Box(modifier = modifier) {
         Box(
             modifier = Modifier

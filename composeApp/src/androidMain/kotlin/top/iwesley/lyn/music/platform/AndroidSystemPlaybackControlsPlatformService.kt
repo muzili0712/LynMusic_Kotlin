@@ -360,8 +360,15 @@ private class AndroidSystemPlaybackControlsPlatformService(
 internal class AndroidPlaybackNotificationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ensureChannel()
+        val requiresForegroundStart = intent?.getBooleanExtra(EXTRA_REQUIRE_FOREGROUND, false) == true
+        if (requiresForegroundStart) {
+            // A service started via startForegroundService() must enter the foreground promptly,
+            // even if playback is paused or cleared before we finish syncing the real notification.
+            startForeground(NOTIFICATION_ID, buildBootstrapNotification())
+        }
         val controller = AndroidPlaybackServiceRegistry.controller
         if (controller == null) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -374,8 +381,12 @@ internal class AndroidPlaybackNotificationService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (state.promoteToForeground) {
+        if (state.promoteToForeground || requiresForegroundStart) {
             startForeground(NOTIFICATION_ID, state.notification)
+            if (!state.promoteToForeground) {
+                stopForeground(STOP_FOREGROUND_DETACH)
+                notificationManager.notify(NOTIFICATION_ID, state.notification)
+            }
         } else {
             stopForeground(STOP_FOREGROUND_DETACH)
             notificationManager.notify(NOTIFICATION_ID, state.notification)
@@ -399,6 +410,21 @@ internal class AndroidPlaybackNotificationService : Service() {
         manager.createNotificationChannel(channel)
     }
 
+    private fun buildBootstrapNotification(): Notification {
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            Notification.Builder(this)
+        }
+        return builder
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle("Lyn Music")
+            .setContentText("正在同步播放状态")
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .build()
+    }
+
     companion object {
         const val CHANNEL_ID = "lynmusic.playback"
         const val ACTION_SYNC = "top.iwesley.lyn.music.action.SYNC_PLAYBACK"
@@ -406,10 +432,13 @@ internal class AndroidPlaybackNotificationService : Service() {
         const val ACTION_PAUSE = "top.iwesley.lyn.music.action.PAUSE"
         const val ACTION_SKIP_NEXT = "top.iwesley.lyn.music.action.SKIP_NEXT"
         const val ACTION_SKIP_PREVIOUS = "top.iwesley.lyn.music.action.SKIP_PREVIOUS"
+        private const val EXTRA_REQUIRE_FOREGROUND = "top.iwesley.lyn.music.extra.REQUIRE_FOREGROUND"
         private const val NOTIFICATION_ID = 3107
 
         fun requestSync(context: Context, promoteToForeground: Boolean) {
-            val intent = Intent(context, AndroidPlaybackNotificationService::class.java).setAction(ACTION_SYNC)
+            val intent = Intent(context, AndroidPlaybackNotificationService::class.java)
+                .setAction(ACTION_SYNC)
+                .putExtra(EXTRA_REQUIRE_FOREGROUND, promoteToForeground)
             if (promoteToForeground) {
                 ContextCompat.startForegroundService(context, intent)
             } else {

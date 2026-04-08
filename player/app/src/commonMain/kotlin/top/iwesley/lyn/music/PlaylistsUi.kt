@@ -70,6 +70,7 @@ import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsState
+import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 
@@ -260,6 +261,10 @@ internal fun PlaylistsTab(
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     val detail = state.selectedPlaylist
+    PlatformBackHandler(
+        enabled = canNavigateBackFromPlaylistDetail(state.selectedPlaylistId),
+        onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
+    )
     val filteredDetail = remember(detail, state.selectedSourceFilter, state.sourceTypesById) {
         detail?.let { playlistDetail ->
             val filteredTracks = playlistDetail.tracks.filter { entry ->

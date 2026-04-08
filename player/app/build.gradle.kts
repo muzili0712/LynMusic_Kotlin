@@ -60,6 +60,9 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
+        androidMain.dependencies {
+            implementation(libs.androidx.activity.compose)
+        }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
         }

@@ -55,6 +55,7 @@ import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
+import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 
@@ -102,6 +103,7 @@ internal fun LyricsSearchOverlayDialog(
     val secondaryTextColor = shellColors.secondaryText
     var pendingConfirmation by remember { mutableStateOf<LyricsSearchApplyConfirmation?>(null) }
     var mobileScreen by remember { mutableStateOf(LyricsSearchMobileScreen.FORM) }
+    PlatformBackHandler(onBack = onDismiss)
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
@@ -687,6 +689,7 @@ private fun LyricsSearchApplyConfirmationOverlay(
 ) {
     val shellColors = mainShellColors
     val applyModes = lyricsSearchApplyModes(confirmation.artworkLocator)
+    PlatformBackHandler(onBack = onDismiss)
     Box(
         modifier = Modifier
             .fillMaxSize()

@@ -76,6 +76,7 @@ import top.iwesley.lyn.music.feature.tags.MusicTagsEffect
 import top.iwesley.lyn.music.feature.tags.MusicTagsIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsRowMetadata
 import top.iwesley.lyn.music.feature.tags.MusicTagsState
+import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
@@ -231,6 +232,10 @@ private fun MobileMusicTagsLayout(
 ) {
     var detailTrackId by rememberSaveable { mutableStateOf<String?>(null) }
     val detailTrack = state.tracks.firstOrNull { it.id == detailTrackId }
+    PlatformBackHandler(
+        enabled = canNavigateBackFromMusicTagsDetail(detailTrackId),
+        onBack = { detailTrackId = null },
+    )
     Column(
         modifier = Modifier
             .fillMaxSize()

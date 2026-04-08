@@ -103,6 +103,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
+import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.LynMusicTheme
 import top.iwesley.lyn.music.ui.heroGlow
@@ -235,6 +236,10 @@ internal fun QueueDrawer(
     if (state.snapshot.currentTrack == null) return
     val shellColors = mainShellColors
     val listState = rememberLazyListState()
+    PlatformBackHandler(
+        enabled = state.isQueueVisible,
+        onBack = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) },
+    )
     LaunchedEffect(state.isQueueVisible, state.snapshot.currentIndex, state.snapshot.queue.size) {
         if (state.isQueueVisible && state.snapshot.currentIndex in state.snapshot.queue.indices) {
             listState.scrollToItem((state.snapshot.currentIndex - 2).coerceAtLeast(0))
@@ -621,6 +626,7 @@ private fun PlayerOverlay(
     onOpenQueue: () -> Unit,
 ) {
     val track = state.snapshot.currentTrack ?: return
+    PlatformBackHandler(onBack = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) })
     val defaultBackgroundColor = Color(0xFF232325)
     val playbackStatusColor = Color.White.copy(alpha = 0.6f)
     val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
