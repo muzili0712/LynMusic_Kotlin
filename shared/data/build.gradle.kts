@@ -19,7 +19,6 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
     macosArm64()
-    macosX64()
 
     jvm {
         compilerOptions {
@@ -70,7 +69,6 @@ dependencies {
     add("kspIosArm64", libs.androidx.room.compiler)
     add("kspIosSimulatorArm64", libs.androidx.room.compiler)
     add("kspMacosArm64", libs.androidx.room.compiler)
-    add("kspMacosX64", libs.androidx.room.compiler)
 }
 
 room {

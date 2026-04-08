@@ -30,7 +30,6 @@ kotlin {
 
     listOf(
         macosArm64(),
-        macosX64(),
     ).forEach { macTarget ->
         macTarget.binaries.framework {
             baseName = "ComposeApp"
@@ -64,9 +63,6 @@ kotlin {
             dependsOn(iosMain)
         }
         val macosArm64Main by getting {
-            dependsOn(macosMain)
-        }
-        val macosX64Main by getting {
             dependsOn(macosMain)
         }
         androidMain.dependencies {

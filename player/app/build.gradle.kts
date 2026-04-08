@@ -19,7 +19,6 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
     macosArm64()
-    macosX64()
 
     jvm {
         compilerOptions {
@@ -44,9 +43,6 @@ kotlin {
             dependsOn(iosMain)
         }
         val macosArm64Main by getting {
-            dependsOn(macosMain)
-        }
-        val macosX64Main by getting {
             dependsOn(macosMain)
         }
         commonMain.dependencies {
