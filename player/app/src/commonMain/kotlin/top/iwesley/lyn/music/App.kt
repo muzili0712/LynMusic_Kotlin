@@ -329,6 +329,7 @@ fun App(component: LynMusicAppComponent) {
                 }
             }
             val compact = maxWidth < 900.dp
+            val mobilePortraitMiniPlayer = compact && isMobilePortraitMiniPlayerLayout(maxWidth, maxHeight)
             val shellColors = mainShellColors
             Box(
                 modifier = Modifier
@@ -355,6 +356,7 @@ fun App(component: LynMusicAppComponent) {
                         onImportIntent = component.importStore::dispatch,
                         onPlayerIntent = component.playerStore::dispatch,
                         onSettingsIntent = component.settingsStore::dispatch,
+                        mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
                         onOpenAddToPlaylist = {
                             pendingPlaylistTrack = playerState.snapshot.currentTrack
                         },
@@ -500,6 +502,7 @@ private fun MobileShell(
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
+    mobilePortraitMiniPlayer: Boolean,
     onOpenAddToPlaylist: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -530,6 +533,7 @@ private fun MobileShell(
                         onOpenAddToPlaylist = onOpenAddToPlaylist,
                         onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
                         mobile = true,
+                        mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
                     )
                 }
                 NavigationBar(containerColor = shellColors.navContainer) {
