@@ -163,6 +163,7 @@ import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.ArtworkTintTheme
 import top.iwesley.lyn.music.core.model.CLASSIC_APP_THEME_TOKENS
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
+import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
@@ -2424,16 +2425,15 @@ internal fun PlayerLyricsPane(
     val listState = rememberLazyListState()
     val lyricsPrimaryTextColor = Color.White
     val lyricsSecondaryTextColor = Color.White.copy(alpha = 0.6f)
-    LaunchedEffect(state.highlightedLineIndex, state.lyrics?.sourceId, state.lyrics?.isSynced) {
+    LaunchedEffect(track.id, state.lyrics, state.highlightedLineIndex) {
         val lyrics = state.lyrics ?: return@LaunchedEffect
-        if (!lyrics.isSynced) return@LaunchedEffect
-        val index = state.highlightedLineIndex
-        if (index !in lyrics.lines.indices) return@LaunchedEffect
-        if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
-            listState.scrollToItem(index)
+        val targetIndex = resolveLyricsScrollTarget(lyrics, state.highlightedLineIndex) ?: return@LaunchedEffect
+        if (targetIndex !in lyrics.lines.indices) return@LaunchedEffect
+        if (listState.layoutInfo.visibleItemsInfo.none { it.index == targetIndex }) {
+            listState.scrollToItem(targetIndex)
             withFrameNanos { }
         }
-        val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return@LaunchedEffect
+        val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex } ?: return@LaunchedEffect
         val viewportCenter = (listState.layoutInfo.viewportStartOffset + listState.layoutInfo.viewportEndOffset) / 2
         val itemCenter = itemInfo.offset + itemInfo.size / 2
         val delta = (itemCenter - viewportCenter).toFloat()
@@ -2592,6 +2592,19 @@ internal fun PlayerLyricsPane(
                 }
             }
         }
+    }
+}
+
+internal fun resolveLyricsScrollTarget(
+    lyrics: LyricsDocument?,
+    highlightedLineIndex: Int,
+): Int? {
+    val lines = lyrics?.lines ?: return null
+    if (lines.isEmpty()) return null
+    return when {
+        highlightedLineIndex in lines.indices -> highlightedLineIndex
+        lyrics.isSynced -> 0
+        else -> null
     }
 }
 

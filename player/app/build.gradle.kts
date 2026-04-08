@@ -57,8 +57,14 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(compose.materialIconsExtended)
         }
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+        }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
+        }
+        jvmTest.dependencies {
+            implementation(libs.kotlin.testJunit)
         }
     }
 }
