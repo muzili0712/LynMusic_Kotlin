@@ -33,6 +33,7 @@ internal class JvmAppStorageGateway(
             AppStorageSnapshot(
                 totalSizeBytes = categories.sumOf { it.sizeBytes },
                 categories = categories,
+                paths = listOf(rootDirectory.absolutePath),
             )
         }
     }

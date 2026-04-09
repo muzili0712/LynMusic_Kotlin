@@ -15,6 +15,7 @@ data class AppStorageCategoryUsage(
 data class AppStorageSnapshot(
     val totalSizeBytes: Long,
     val categories: List<AppStorageCategoryUsage>,
+    val paths: List<String> = emptyList(),
 )
 
 interface AppStorageGateway {

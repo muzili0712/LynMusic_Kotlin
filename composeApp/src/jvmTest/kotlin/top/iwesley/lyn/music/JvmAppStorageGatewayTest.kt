@@ -26,6 +26,7 @@ class JvmAppStorageGatewayTest {
         assertEquals(6L, initial.categories.first { it.category == AppStorageCategory.PlaybackCache }.sizeBytes)
         assertEquals(6L, initial.categories.first { it.category == AppStorageCategory.Artwork }.sizeBytes)
         assertEquals(12L, initial.totalSizeBytes)
+        assertEquals(listOf(root.toFile().absolutePath), initial.paths)
 
         gateway.clearCategory(AppStorageCategory.Artwork).getOrThrow()
 

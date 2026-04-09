@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Sync
@@ -42,13 +43,16 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -90,10 +94,14 @@ fun MusicTagsTab(
     effects: Flow<MusicTagsEffect>,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    onMobileEditorVisibilityChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isDesktop = platform.name == "Desktop"
     val isAndroid = platform.name == "Android"
+    DisposableEffect(Unit) {
+        onDispose { onMobileEditorVisibilityChanged(false) }
+    }
     LaunchedEffect(effects) {
         effects.collect { effect ->
             when (effect) {
@@ -126,6 +134,7 @@ fun MusicTagsTab(
                     supportsWrite = isAndroid,
                     state = state,
                     onMusicTagsIntent = onMusicTagsIntent,
+                    onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
                 )
             }
             if (state.showDiscardChangesDialog) {
@@ -232,9 +241,14 @@ private fun MobileMusicTagsLayout(
     supportsWrite: Boolean,
     state: MusicTagsState,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
+    onMobileEditorVisibilityChanged: (Boolean) -> Unit,
 ) {
     var detailTrackId by rememberSaveable { mutableStateOf<String?>(null) }
     val detailTrack = state.tracks.firstOrNull { it.id == detailTrackId }
+    val layoutSpacing = if (detailTrack == null) 14.dp else 10.dp
+    SideEffect {
+        onMobileEditorVisibilityChanged(detailTrack != null)
+    }
     PlatformBackHandler(
         enabled = canNavigateBackFromMusicTagsDetail(detailTrackId),
         onBack = { detailTrackId = null },
@@ -242,27 +256,26 @@ private fun MobileMusicTagsLayout(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(
+                start = 16.dp,
+                top = 16.dp,
+                end = 16.dp,
+                bottom = if (detailTrack == null) 16.dp else 0.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(layoutSpacing),
     ) {
-        MusicTagsHeader(
-            title = "音乐标签",
-            subtitle = if (supportsWrite) {
-                "已授予文件权限的本地目录支持写回；未授权目录会以只读方式打开。"
-            } else {
-                "当前设备仅支持查看本地标签。"
-            },
-        )
         if (detailTrack == null) {
-            MusicTagsNoteCard(
-                if (supportsWrite) {
-                    "当前页面只列出本地文件夹歌曲。Android 导入时会优先请求“管理所有文件”权限；未授权时会回退到 SAF，只能只读查看标签。"
+            MusicTagsHeader(
+                title = "音乐标签",
+                infoText = if (supportsWrite) {
+                    "已授予文件权限的本地目录支持写回；未授权目录会以只读方式打开。"
                 } else {
-                    "当前页面只列出本地文件夹歌曲，移动端可查看标签但不能保存修改。"
+                    "当前设备仅支持查看本地标签。"
                 },
             )
             MusicTagsTrackPane(
                 state = state,
+                showHeader = false,
                 onMusicTagsIntent = { intent ->
                     when (intent) {
                         is MusicTagsIntent.SelectTrack -> {
@@ -295,6 +308,8 @@ private fun MobileMusicTagsLayout(
             }
             MusicTagsEditorPane(
                 state = state,
+                showHeader = false,
+                compactLayout = true,
                 readOnly = !state.canWriteSelected,
                 readOnlyHint = when {
                     state.isLoadingSelected -> null
@@ -314,6 +329,8 @@ private fun MobileMusicTagsLayout(
 @Composable
 private fun MusicTagsTrackPane(
     state: MusicTagsState,
+    showHeader: Boolean = true,
+    headerSubtitle: String? = "仅显示本地文件夹来源。左侧单选歌曲，右侧编辑标签。",
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     onActivateTrack: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -330,10 +347,12 @@ private fun MusicTagsTrackPane(
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            MusicTagsHeader(
-                title = "本地歌曲",
-                subtitle = "仅显示本地文件夹来源。左侧单选歌曲，右侧编辑标签。",
-            )
+            if (showHeader) {
+                MusicTagsHeader(
+                    title = "本地歌曲",
+                    subtitle = headerSubtitle,
+                )
+            }
             if (state.tracks.isEmpty()) {
                 MusicTagsEmptyState(
                     title = "还没有本地歌曲",
@@ -412,12 +431,20 @@ private fun MusicTagsTrackPane(
 @Composable
 private fun MusicTagsEditorPane(
     state: MusicTagsState,
+    showHeader: Boolean = true,
+    compactLayout: Boolean = false,
     readOnly: Boolean,
     readOnlyHint: String? = null,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val selectedTrack = state.selectedTrack
+    val contentPadding = if (compactLayout) {
+        PaddingValues(start = 18.dp, top = 18.dp, end = 18.dp, bottom = 8.dp)
+    } else {
+        PaddingValues(18.dp)
+    }
+    val sectionSpacing = if (compactLayout) 10.dp else 14.dp
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(28.dp),
@@ -435,13 +462,15 @@ private fun MusicTagsEditorPane(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                    .padding(contentPadding),
+                verticalArrangement = Arrangement.spacedBy(sectionSpacing),
             ) {
-                MusicTagsHeader(
-                    title = if (readOnly) "标签详情" else "标签编辑器",
-                    subtitle = selectedTrack.relativePath.ifBlank { selectedTrack.mediaLocator },
-                )
+                if (showHeader) {
+                    MusicTagsHeader(
+                        title = if (readOnly) "标签详情" else "标签编辑器",
+                        subtitle = selectedTrack.relativePath.ifBlank { selectedTrack.mediaLocator },
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -627,8 +656,10 @@ private fun MusicTagsEditorPane(
                                 enabled = state.canWriteSelected && !state.isSaving,
                             ) {
                                 Icon(Icons.Rounded.PhotoLibrary, contentDescription = null)
-                                Spacer(Modifier.width(6.dp))
-                                Text("更换封面")
+                                if (!compactLayout) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("更换封面")
+                                }
                             }
                             TextButton(
                                 onClick = { onMusicTagsIntent(MusicTagsIntent.ClearArtwork) },
@@ -638,8 +669,10 @@ private fun MusicTagsEditorPane(
                                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                             ) {
                                 Icon(Icons.Rounded.Delete, contentDescription = null)
-                                Spacer(Modifier.width(6.dp))
-                                Text("清除封面")
+                                if (!compactLayout) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("清除封面")
+                                }
                             }
                             Button(
                                 onClick = { onMusicTagsIntent(MusicTagsIntent.Save) },
@@ -901,19 +934,56 @@ private fun MusicTagsField(
 @Composable
 private fun MusicTagsHeader(
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
+    infoText: String? = null,
 ) {
+    val shellColors = mainShellColors
+    var showInfoDialog by rememberSaveable(title, infoText) { mutableStateOf(false) }
+    val resolvedInfoText = infoText?.takeIf { it.isNotBlank() }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.ExtraBold,
-        )
-        Text(
-            text = subtitle,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.weight(1f),
+            )
+            if (resolvedInfoText != null) {
+                IconButton(onClick = { showInfoDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Rounded.Info,
+                        contentDescription = "查看说明",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        subtitle?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+    if (showInfoDialog && resolvedInfoText != null) {
+        AlertDialog(
+            onDismissRequest = { showInfoDialog = false },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = shellColors.cardContainer,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text("${title}说明") },
+            text = { Text(resolvedInfoText) },
+            confirmButton = {
+                TextButton(onClick = { showInfoDialog = false }) {
+                    Text("知道了")
+                }
+            },
         )
     }
 }

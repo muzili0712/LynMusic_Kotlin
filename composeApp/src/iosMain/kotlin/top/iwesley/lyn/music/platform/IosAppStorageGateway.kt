@@ -34,6 +34,10 @@ private class IosAppStorageGateway : AppStorageGateway {
             AppStorageSnapshot(
                 totalSizeBytes = categories.sumOf { it.sizeBytes },
                 categories = categories,
+                paths = listOf(
+                    iosArtworkCacheDirectory(),
+                    NSTemporaryDirectory(),
+                ).map(::normalizeStoragePath).distinct(),
             )
         }
     }
@@ -95,6 +99,11 @@ private fun clearTopLevelDirectory(path: String) {
 private fun fileSizeBytes(path: String): Long {
     val payload = readIosLocalBytes(path) ?: return 0L
     return payload.size.toLong()
+}
+
+private fun normalizeStoragePath(path: String): String {
+    val trimmed = path.trim().trimEnd('/')
+    return trimmed.ifBlank { "/" }
 }
 
 @OptIn(ExperimentalForeignApi::class)

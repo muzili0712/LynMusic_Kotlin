@@ -135,6 +135,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -300,6 +301,7 @@ fun App(component: LynMusicAppComponent) {
     val settingsState by component.settingsStore.state.collectAsState()
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.Library) }
     var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
+    var isMusicTagsMobileEditorVisible by rememberSaveable { mutableStateOf(false) }
     val shellThemeTokens = remember(settingsState.selectedTheme, settingsState.customThemeTokens) {
         resolveAppThemeTokens(
             themeId = settingsState.selectedTheme,
@@ -361,6 +363,8 @@ fun App(component: LynMusicAppComponent) {
                         onPlayerIntent = component.playerStore::dispatch,
                         onSettingsIntent = component.settingsStore::dispatch,
                         mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
+                        hideMiniPlayerBar = selectedTab == AppTab.Tags && isMusicTagsMobileEditorVisible,
+                        onMobileEditorVisibilityChanged = { isMusicTagsMobileEditorVisible = it },
                         onOpenAddToPlaylist = {
                             pendingPlaylistTrack = playerState.snapshot.currentTrack
                         },
@@ -507,6 +511,8 @@ private fun MobileShell(
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
     mobilePortraitMiniPlayer: Boolean,
+    hideMiniPlayerBar: Boolean,
+    onMobileEditorVisibilityChanged: (Boolean) -> Unit,
     onOpenAddToPlaylist: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -525,7 +531,9 @@ private fun MobileShell(
                     textPalette = AppThemeTextPalette.White,
                 ) {
                     MiniPlayerBarVisibility(
-                        visible = playerState.snapshot.currentTrack != null && !playerState.isExpanded,
+                        visible = playerState.snapshot.currentTrack != null &&
+                            !playerState.isExpanded &&
+                            !hideMiniPlayerBar,
                         state = playerState,
                         onPlayerIntent = onPlayerIntent,
                         isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
@@ -612,6 +620,7 @@ private fun MobileShell(
                 onImportIntent = onImportIntent,
                 onPlayerIntent = onPlayerIntent,
                 onSettingsIntent = onSettingsIntent,
+                onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -871,6 +880,7 @@ private fun TabContent(
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
+    onMobileEditorVisibilityChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     when (selectedTab) {
@@ -903,6 +913,7 @@ private fun TabContent(
             effects = musicTagsEffects,
             onMusicTagsIntent = onMusicTagsIntent,
             onPlayerIntent = onPlayerIntent,
+            onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
             modifier = modifier,
         )
 
@@ -2112,6 +2123,7 @@ private fun SettingsSectionListPane(
             SettingsSectionListItem(
                 section = section,
                 selected = desktop && selectedSection == section,
+                showSubtitle = !desktop,
                 onClick = { onSectionSelected(section) },
             )
         }
@@ -2122,26 +2134,28 @@ private fun SettingsSectionListPane(
 private fun SettingsSectionListItem(
     section: SettingsSection,
     selected: Boolean,
+    showSubtitle: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
+    val containerColor = if (selected) shellColors.navContainer else shellColors.cardContainer
+    val borderColor = shellColors.cardBorder
+    val iconTint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val titleColor = MaterialTheme.colorScheme.onSurface
+    val subtitleColor = if (selected) MaterialTheme.colorScheme.onSurfaceVariant else shellColors.secondaryText
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
+            .clip(RoundedCornerShape(20.dp))
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f)
-            } else {
-                shellColors.cardContainer
-            },
+            containerColor = containerColor,
         ),
         border = BorderStroke(
-            width = if (selected) 2.dp else 1.dp,
-            color = if (selected) shellColors.selectedBorder else shellColors.cardBorder,
+            width = 1.dp,
+            color = borderColor,
         ),
     ) {
         Row(
@@ -2154,7 +2168,7 @@ private fun SettingsSectionListItem(
             Icon(
                 imageVector = settingsSectionIcon(section),
                 contentDescription = null,
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = iconTint,
                 modifier = Modifier.size(24.dp),
             )
             Column(
@@ -2165,20 +2179,15 @@ private fun SettingsSectionListItem(
                     text = settingsSectionTitle(section),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    color = titleColor,
                 )
-                Text(
-                    text = settingsSectionSubtitle(section),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = shellColors.secondaryText,
-                )
-            }
-            if (selected) {
-                Text(
-                    text = "当前",
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                )
+                if (showSubtitle) {
+                    Text(
+                        text = settingsSectionSubtitle(section),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = subtitleColor,
+                    )
+                }
             }
         }
     }
@@ -2739,7 +2748,7 @@ private fun AboutDeviceSettingsPane(
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
@@ -2756,14 +2765,6 @@ private fun AboutDeviceSettingsPane(
                             color = shellColors.secondaryText,
                             style = MaterialTheme.typography.bodySmall,
                         )
-                    }
-                    OutlinedButton(
-                        onClick = { onSettingsIntent(SettingsIntent.LoadDeviceInfo(force = true)) },
-                        enabled = !state.deviceInfoLoading,
-                    ) {
-                        Icon(Icons.Rounded.Sync, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (state.deviceInfoLoading) "刷新中" else "刷新")
                     }
                 }
             }
@@ -2823,6 +2824,9 @@ private fun StorageSettingsPane(
         val supported = state.storageSnapshot?.categories.orEmpty().associateBy { it.category }
         categoryOrder.mapNotNull { supported[it] }
     }
+    val storagePaths = remember(state.storageSnapshot) {
+        state.storageSnapshot?.paths.orEmpty().filter { it.isNotBlank() }
+    }
     LaunchedEffect(Unit) {
         onSettingsIntent(SettingsIntent.LoadStorageUsage())
     }
@@ -2865,6 +2869,19 @@ private fun StorageSettingsPane(
                             color = shellColors.secondaryText,
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        if (storagePaths.isNotEmpty()) {
+                            Text(
+                                "当前空间路径",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = storagePaths.joinToString("\n"),
+                                color = shellColors.secondaryText,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
                     }
                     OutlinedButton(
                         onClick = { onSettingsIntent(SettingsIntent.LoadStorageUsage(force = true)) },

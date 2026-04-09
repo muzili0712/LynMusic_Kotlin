@@ -524,7 +524,11 @@ private class AndroidImportSourceGateway(
                 return scanLocalDirectory(root)
             }
         val treeUri = Uri.parse(selection.persistentReference)
-        resolveTreeUriToDirectory(activity, treeUri)
+        val resolvedDirectory = resolveTreeUriToDirectory(activity, treeUri)
+        logger.info(LOCAL_IMPORT_LOG_TAG) {
+            "resolve-tree-uri source=$sourceId treeUri=$treeUri resolvedDirectory=${resolvedDirectory?.absolutePath ?: "null"}"
+        }
+        resolvedDirectory
             ?.takeIf { it.isDirectory }
             ?.let { root ->
                 return runCatching {

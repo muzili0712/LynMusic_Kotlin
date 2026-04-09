@@ -44,6 +44,7 @@ private class AndroidAppStorageGateway(
             AppStorageSnapshot(
                 totalSizeBytes = categories.sumOf { it.sizeBytes },
                 categories = categories,
+                paths = listOf(context.cacheDir.absolutePath),
             )
         }
     }
