@@ -118,6 +118,7 @@ fun App(component: LynMusicAppComponent) {
     val settingsState by component.settingsStore.state.collectAsState()
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.Library) }
     var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
+    var pendingLibraryNavigationTarget by remember { mutableStateOf<LibraryNavigationTarget?>(null) }
     var isMusicTagsMobileEditorVisible by rememberSaveable { mutableStateOf(false) }
     val shellThemeTokens = remember(settingsState.selectedTheme, settingsState.customThemeTokens) {
         resolveAppThemeTokens(
@@ -181,6 +182,8 @@ fun App(component: LynMusicAppComponent) {
                         onImportIntent = component.importStore::dispatch,
                         onPlayerIntent = component.playerStore::dispatch,
                         onSettingsIntent = component.settingsStore::dispatch,
+                        libraryNavigationTarget = pendingLibraryNavigationTarget,
+                        onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
                         mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
                         hideMiniPlayerBar = selectedTab == AppTab.Tags && isMusicTagsMobileEditorVisible,
                         onMobileEditorVisibilityChanged = { isMusicTagsMobileEditorVisible = it },
@@ -208,6 +211,8 @@ fun App(component: LynMusicAppComponent) {
                         onImportIntent = component.importStore::dispatch,
                         onPlayerIntent = component.playerStore::dispatch,
                         onSettingsIntent = component.settingsStore::dispatch,
+                        libraryNavigationTarget = pendingLibraryNavigationTarget,
+                        onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
                         onOpenAddToPlaylist = {
                             pendingPlaylistTrack = playerState.snapshot.currentTrack
                         },
@@ -241,6 +246,11 @@ fun App(component: LynMusicAppComponent) {
                         },
                         onOpenQueue = {
                             component.playerStore.dispatch(PlayerIntent.QueueVisibilityChanged(true))
+                        },
+                        onOpenLibraryNavigationTarget = { target ->
+                            component.playerStore.dispatch(PlayerIntent.ExpandedChanged(false))
+                            pendingLibraryNavigationTarget = target
+                            selectedTab = AppTab.Library
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

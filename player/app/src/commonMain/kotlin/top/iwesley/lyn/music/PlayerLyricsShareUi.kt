@@ -91,6 +91,7 @@ internal fun PlayerLyricsPane(
     state: PlayerState,
     track: Track,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
@@ -136,12 +137,21 @@ internal fun PlayerLyricsPane(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}",
-                        color = lyricsSecondaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (onOpenLibraryNavigationTarget != null) {
+                        DesktopLyricsMetadataRow(
+                            snapshot = state.snapshot,
+                            track = track,
+                            secondaryTextColor = lyricsSecondaryTextColor,
+                            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+                        )
+                    } else {
+                        Text(
+                            "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}",
+                            color = lyricsSecondaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Text(
                         track.relativePath,
                         color = lyricsSecondaryTextColor,
@@ -272,6 +282,98 @@ internal fun PlayerLyricsPane(
             }
         }
     }
+}
+
+@Composable
+private fun DesktopLyricsMetadataRow(
+    snapshot: top.iwesley.lyn.music.core.model.PlaybackSnapshot,
+    track: Track,
+    secondaryTextColor: Color,
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
+) {
+    val navigationTargets = remember(
+        snapshot.currentDisplayAlbumTitle,
+        snapshot.currentDisplayArtistName,
+        track.albumTitle,
+        track.artistName,
+    ) {
+        derivePlaybackLibraryNavigationTargets(snapshot, track)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(30.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DesktopLyricsMetadataItem(
+            label = "歌手：",
+            text = resolvePlayerLyricsMetadataLabel(
+                primary = snapshot.currentDisplayArtistName,
+                fallback = track.artistName,
+                fallbackLabel = "未知艺人",
+            ),
+            target = navigationTargets.artistTarget,
+            secondaryTextColor = secondaryTextColor,
+            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+            modifier = Modifier.widthIn(max = 260.dp),
+        )
+        DesktopLyricsMetadataItem(
+            label = "专辑：",
+            text = resolvePlayerLyricsMetadataLabel(
+                primary = snapshot.currentDisplayAlbumTitle,
+                fallback = track.albumTitle,
+                fallbackLabel = "本地曲目",
+            ),
+            target = navigationTargets.albumTarget,
+            secondaryTextColor = secondaryTextColor,
+            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun DesktopLyricsMetadataItem(
+    label: String,
+    text: String,
+    target: LibraryNavigationTarget?,
+    secondaryTextColor: Color,
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = secondaryTextColor,
+            maxLines = 1,
+        )
+        Text(
+            text = text,
+            modifier = if (target != null) {
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onOpenLibraryNavigationTarget(target) }
+            } else {
+                Modifier
+            },
+            color = secondaryTextColor,
+            fontWeight = if (target != null) FontWeight.Medium else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private fun resolvePlayerLyricsMetadataLabel(
+    primary: String?,
+    fallback: String?,
+    fallbackLabel: String,
+): String {
+    return primary?.trim()?.takeIf { it.isNotBlank() }
+        ?: fallback?.trim()?.takeIf { it.isNotBlank() }
+        ?: fallbackLabel
 }
 
 internal fun resolveLyricsScrollTarget(

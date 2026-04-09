@@ -94,6 +94,8 @@ internal fun MobileShell(
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
+    libraryNavigationTarget: LibraryNavigationTarget? = null,
+    onLibraryNavigationHandled: () -> Unit = {},
     mobilePortraitMiniPlayer: Boolean,
     hideMiniPlayerBar: Boolean,
     onMobileEditorVisibilityChanged: (Boolean) -> Unit,
@@ -204,6 +206,8 @@ internal fun MobileShell(
                 onImportIntent = onImportIntent,
                 onPlayerIntent = onPlayerIntent,
                 onSettingsIntent = onSettingsIntent,
+                libraryNavigationTarget = if (isMobilePlaybackPlatform(platform)) null else libraryNavigationTarget,
+                onLibraryNavigationHandled = onLibraryNavigationHandled,
                 onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
                 modifier = Modifier.weight(1f),
             )
@@ -309,6 +313,8 @@ internal fun DesktopShell(
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
+    libraryNavigationTarget: LibraryNavigationTarget? = null,
+    onLibraryNavigationHandled: () -> Unit = {},
     onOpenAddToPlaylist: () -> Unit,
 ) {
     Row(
@@ -353,6 +359,8 @@ internal fun DesktopShell(
                 onImportIntent = onImportIntent,
                 onPlayerIntent = onPlayerIntent,
                 onSettingsIntent = onSettingsIntent,
+                libraryNavigationTarget = libraryNavigationTarget,
+                onLibraryNavigationHandled = onLibraryNavigationHandled,
                 modifier = Modifier.weight(1f),
             )
             LynMusicTheme(
@@ -464,6 +472,8 @@ private fun TabContent(
     onImportIntent: (ImportIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onSettingsIntent: (SettingsIntent) -> Unit,
+    libraryNavigationTarget: LibraryNavigationTarget? = null,
+    onLibraryNavigationHandled: () -> Unit = {},
     onMobileEditorVisibilityChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -474,6 +484,8 @@ private fun TabContent(
             onLibraryIntent = onLibraryIntent,
             onFavoritesIntent = onFavoritesIntent,
             onPlayerIntent = onPlayerIntent,
+            navigationTarget = libraryNavigationTarget,
+            onNavigationHandled = onLibraryNavigationHandled,
             modifier = modifier,
         )
 

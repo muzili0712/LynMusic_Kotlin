@@ -94,6 +94,8 @@ internal fun LibraryTab(
     onLibraryIntent: (LibraryIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    navigationTarget: LibraryNavigationTarget? = null,
+    onNavigationHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LibraryBrowserTab(
@@ -126,6 +128,8 @@ internal fun LibraryTab(
         onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(it)) },
         onDismissMessage = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
         onPlayTracks = { tracks, index -> onPlayerIntent(PlayerIntent.PlayTracks(tracks, index)) },
+        navigationTarget = navigationTarget,
+        onNavigationHandled = onNavigationHandled,
         modifier = modifier,
     )
 }
@@ -211,7 +215,7 @@ private data class LibraryBrowserStrings(
     val artistLabel: String,
 )
 
-private enum class LibraryBrowserRootView {
+internal enum class LibraryBrowserRootView {
     Tracks,
     Albums,
     Artists,
@@ -227,6 +231,8 @@ private fun LibraryBrowserTab(
     actionButton: (@Composable () -> Unit)? = null,
     onDismissMessage: () -> Unit,
     onPlayTracks: (List<Track>, Int) -> Unit,
+    navigationTarget: LibraryNavigationTarget? = null,
+    onNavigationHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -284,6 +290,40 @@ private fun LibraryBrowserTab(
             selectedArtistId != null -> artistTracks.filter { it.albumLibraryIdOrNull() == selectedAlbumId }
             else -> tracksByAlbumId[selectedAlbumId].orEmpty()
         }.sortedWith(ALBUM_DETAIL_TRACK_COMPARATOR)
+    }
+    LaunchedEffect(
+        navigationTarget,
+        state.query,
+        state.selectedSourceFilter,
+        state.filteredAlbums,
+        state.filteredArtists,
+    ) {
+        val target = navigationTarget ?: return@LaunchedEffect
+        when (
+            val command = resolveLibraryNavigationCommand(
+                target = target,
+                query = state.query,
+                selectedSourceFilter = state.selectedSourceFilter,
+                filteredAlbums = state.filteredAlbums,
+                filteredArtists = state.filteredArtists,
+            )
+        ) {
+            LibraryNavigationCommand.ResetFilters -> {
+                if (state.query.isNotBlank()) {
+                    onSearchChanged("")
+                }
+                if (state.selectedSourceFilter != LibrarySourceFilter.ALL) {
+                    onSourceFilterChanged(LibrarySourceFilter.ALL)
+                }
+            }
+
+            is LibraryNavigationCommand.Navigate -> {
+                rootView = command.resolution.rootView
+                selectedArtistId = command.resolution.selectedArtistId
+                selectedAlbumId = command.resolution.selectedAlbumId
+                onNavigationHandled()
+            }
+        }
     }
 
     LaunchedEffect(

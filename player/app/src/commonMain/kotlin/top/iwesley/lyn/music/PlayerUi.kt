@@ -124,6 +124,7 @@ internal fun PlayerDrawerHost(
     onToggleFavorite: () -> Unit,
     onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -169,6 +170,7 @@ internal fun PlayerDrawerHost(
                 onToggleFavorite = onToggleFavorite,
                 onOpenAddToPlaylist = onOpenAddToPlaylist,
                 onOpenQueue = onOpenQueue,
+                onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
             )
         }
     }
@@ -691,6 +693,7 @@ private fun PlayerOverlay(
     onToggleFavorite: () -> Unit,
     onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
 ) {
     val track = state.snapshot.currentTrack ?: return
     PlatformBackHandler(onBack = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) })
@@ -850,6 +853,7 @@ private fun PlayerOverlay(
                             state = state,
                             track = track,
                             onPlayerIntent = onPlayerIntent,
+                            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                             modifier = Modifier
                                 .weight(0.54f)
                                 .fillMaxHeight(),
