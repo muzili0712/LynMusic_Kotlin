@@ -5,6 +5,7 @@ internal enum class SettingsSection {
     Lyrics,
     Storage,
     AboutDevice,
+    AboutApp,
 }
 
 internal sealed interface SettingsMobileNavigation {

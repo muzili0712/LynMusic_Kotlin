@@ -21,6 +21,7 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -124,6 +125,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -2015,6 +2017,13 @@ private fun SettingsTab(
                                 .weight(1f)
                                 .fillMaxHeight(),
                         )
+
+                        SettingsSection.AboutApp -> AboutAppSettingsPane(
+                            showHeading = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                        )
                     }
                 }
             } else {
@@ -2076,6 +2085,11 @@ private fun SettingsTab(
                                 SettingsSection.AboutDevice -> AboutDeviceSettingsPane(
                                     state = state,
                                     onSettingsIntent = onSettingsIntent,
+                                    showHeading = false,
+                                    modifier = detailModifier,
+                                )
+
+                                SettingsSection.AboutApp -> AboutAppSettingsPane(
                                     showHeading = false,
                                     modifier = detailModifier,
                                 )
@@ -2674,6 +2688,7 @@ private fun settingsSectionTitle(section: SettingsSection): String {
         SettingsSection.Lyrics -> "歌词"
         SettingsSection.Storage -> "空间管理"
         SettingsSection.AboutDevice -> "关于本机"
+        SettingsSection.AboutApp -> "关于应用"
     }
 }
 
@@ -2683,6 +2698,7 @@ private fun settingsSectionSubtitle(section: SettingsSection): String {
         SettingsSection.Lyrics -> "配置歌词 API、搜索源和播放缓存。"
         SettingsSection.Storage -> "查看并清理缓存占用。"
         SettingsSection.AboutDevice -> "查看系统、屏幕和硬件信息。"
+        SettingsSection.AboutApp -> "查看开发者、项目地址和公众号信息。"
     }
 }
 
@@ -2692,6 +2708,7 @@ private fun settingsSectionIcon(section: SettingsSection): ImageVector {
         SettingsSection.Lyrics -> Icons.Rounded.GraphicEq
         SettingsSection.Storage -> Icons.Rounded.Storage
         SettingsSection.AboutDevice -> Icons.Rounded.Info
+        SettingsSection.AboutApp -> Icons.Rounded.LibraryMusic
     }
 }
 
@@ -2795,6 +2812,81 @@ private fun AboutDeviceSettingsPane(
             AboutDeviceFieldRow(
                 label = "内存",
                 value = deviceInfoMemoryValue(snapshot?.totalMemoryBytes, state.deviceInfoLoading),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AboutAppSettingsPane(
+    showHeading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (showHeading) {
+            SectionTitle(
+                title = "关于应用",
+                subtitle = "查看开发者、项目地址和公众号信息。",
+            )
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = ABOUT_APP_NAME,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Text(
+                    text = ABOUT_APP_SUMMARY,
+                    color = shellColors.secondaryText,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        AboutDeviceInfoCard(title = "开发者") {
+            AboutAppFieldRow(
+                label = "名称",
+                value = ABOUT_APP_DEVELOPER,
+            )
+        }
+        AboutDeviceInfoCard(title = "项目地址") {
+            AboutAppFieldRow(
+                label = "地址",
+                value = ABOUT_APP_PROJECT_URL,
+                monospace = true,
+            )
+        }
+        AboutDeviceInfoCard(title = "微信公众号") {
+            AboutAppFieldRow(
+                label = "账号",
+                value = ABOUT_APP_WECHAT_ACCOUNT,
+            )
+            Text(
+                text = "公众号图片",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            AboutAppQrPlaceholder(
+                modifier = Modifier
+                    .fillMaxWidth(0.58f)
+                    .widthIn(max = 220.dp)
+                    .aspectRatio(1f)
+                    .align(Alignment.CenterHorizontally),
+            )
+            Text(
+                text = "当前为占位示意图，后续可替换成真实二维码或宣传图。",
+                style = MaterialTheme.typography.bodySmall,
+                color = shellColors.secondaryText,
             )
         }
     }
@@ -3020,6 +3112,60 @@ private fun AboutDeviceFieldRow(
     }
 }
 
+@Composable
+private fun AboutAppFieldRow(
+    label: String,
+    value: String,
+    monospace: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontFamily = if (monospace) FontFamily.Monospace else null,
+        )
+    }
+}
+
+@Composable
+private fun AboutAppQrPlaceholder(
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(22.dp))
+            .background(Color.White)
+            .border(1.dp, shellColors.cardBorder, RoundedCornerShape(22.dp))
+            .padding(16.dp),
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cells = 21
+            val cellSize = min(size.width, size.height) / cells.toFloat()
+            for (row in 0 until cells) {
+                for (column in 0 until cells) {
+                    if (!isAboutAppQrModuleFilled(row, column, cells)) continue
+                    drawRect(
+                        color = Color(0xFF111111),
+                        topLeft = Offset(column * cellSize, row * cellSize),
+                        size = Size(cellSize, cellSize),
+                    )
+                }
+            }
+        }
+    }
+}
+
 private fun storageCategoryTitle(category: AppStorageCategory): String {
     return when (category) {
         AppStorageCategory.Artwork -> "封面缓存"
@@ -3056,6 +3202,53 @@ private fun formatStorageSize(sizeBytes: Long): String {
     return "$formatted ${units[unitIndex]}"
 }
 
+private fun isAboutAppQrModuleFilled(
+    row: Int,
+    column: Int,
+    cells: Int,
+): Boolean {
+    if (
+        isAboutAppQrFinderModule(row, column, 0, 0) ||
+        isAboutAppQrFinderModule(row, column, cells - 7, 0) ||
+        isAboutAppQrFinderModule(row, column, 0, cells - 7)
+    ) {
+        return true
+    }
+    if (
+        isAboutAppQrReservedArea(row, column, 0, 0) ||
+        isAboutAppQrReservedArea(row, column, cells - 7, 0) ||
+        isAboutAppQrReservedArea(row, column, 0, cells - 7)
+    ) {
+        return false
+    }
+    if (row == 6 || column == 6) {
+        return (row + column) % 2 == 0
+    }
+    return ((row * 3 + column * 5 + row * column) % 7 == 0) || ((row + column) % 11 == 0)
+}
+
+private fun isAboutAppQrFinderModule(
+    row: Int,
+    column: Int,
+    left: Int,
+    top: Int,
+): Boolean {
+    val localRow = row - top
+    val localColumn = column - left
+    if (localRow !in 0..6 || localColumn !in 0..6) return false
+    return localRow == 0 || localRow == 6 || localColumn == 0 || localColumn == 6 ||
+        (localRow in 2..4 && localColumn in 2..4)
+}
+
+private fun isAboutAppQrReservedArea(
+    row: Int,
+    column: Int,
+    left: Int,
+    top: Int,
+): Boolean {
+    return row in (top - 1)..(top + 7) && column in (left - 1)..(left + 7)
+}
+
 private fun deviceInfoDisplayValue(value: String?, loading: Boolean): String {
     return when {
         value != null && value.isNotBlank() -> value
@@ -3068,6 +3261,12 @@ private fun deviceInfoMemoryValue(totalMemoryBytes: Long?, loading: Boolean): St
     return totalMemoryBytes?.takeIf { it > 0L }?.let(::formatStorageSize)
         ?: if (loading) "正在读取..." else "不可用"
 }
+
+private const val ABOUT_APP_NAME = "LynMusic"
+private const val ABOUT_APP_SUMMARY = "以下开发者、项目地址和公众号信息为占位演示，可后续替换成真实内容。"
+private const val ABOUT_APP_DEVELOPER = "假装是开发者小林"
+private const val ABOUT_APP_PROJECT_URL = "https://example.com/lynmusic-demo"
+private const val ABOUT_APP_WECHAT_ACCOUNT = "假装有个公众号"
 
 @Composable
 private fun ThemePresetCard(
