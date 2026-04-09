@@ -5,8 +5,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.AppStorageGateway
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
+import top.iwesley.lyn.music.core.model.DeviceInfoGateway
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
@@ -15,8 +17,10 @@ import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
+import top.iwesley.lyn.music.core.model.UnsupportedAppStorageGateway
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
+import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
 import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
@@ -47,6 +51,8 @@ data class SharedRuntimeServices(
     val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
         override suspend fun cache(locator: String, cacheKey: String): String? = locator
     },
+    val appStorageGateway: AppStorageGateway = UnsupportedAppStorageGateway,
+    val deviceInfoGateway: DeviceInfoGateway = UnsupportedDeviceInfoGateway,
     val audioTagGateway: AudioTagGateway = UnsupportedAudioTagGateway,
     val audioTagEditorPlatformService: AudioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
     val logger: DiagnosticLogger = NoopDiagnosticLogger,
@@ -157,7 +163,12 @@ fun buildSharedGraph(
             storeScope = scope,
         ),
         importStore = ImportStore(importSourceRepository, platform.capabilities, scope),
-        settingsStore = SettingsStore(settingsRepository, scope),
+        settingsStore = SettingsStore(
+            repository = settingsRepository,
+            scope = scope,
+            appStorageGateway = runtimeServices.appStorageGateway,
+            deviceInfoGateway = runtimeServices.deviceInfoGateway,
+        ),
         lyricsRepository = lyricsRepository,
         audioTagGateway = runtimeServices.audioTagGateway,
         logger = runtimeServices.logger,

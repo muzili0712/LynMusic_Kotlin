@@ -3,6 +3,8 @@ package top.iwesley.lyn.music
 internal enum class SettingsSection {
     Theme,
     Lyrics,
+    Storage,
+    AboutDevice,
 }
 
 internal sealed interface SettingsMobileNavigation {

@@ -39,6 +39,9 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
+        androidMain.dependencies {
+            implementation(libs.jaudiotagger)
+        }
         jvmMain.dependencies {
             implementation(libs.jaudiotagger)
         }

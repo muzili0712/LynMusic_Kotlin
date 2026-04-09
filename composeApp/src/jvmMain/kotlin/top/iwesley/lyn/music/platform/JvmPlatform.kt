@@ -146,6 +146,8 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createJvmArtworkCacheStore(),
+            appStorageGateway = createJvmAppStorageGateway(),
+            deviceInfoGateway = createJvmDeviceInfoGateway(),
             audioTagGateway = JvmAudioTagGateway(
                 database = database,
                 secureCredentialStore = secureStore,

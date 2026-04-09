@@ -27,6 +27,22 @@ class SettingsNavigationTest {
     }
 
     @Test
+    fun `mobile navigation opens storage detail`() {
+        val navigation = openSettingsMobileNavigation(SettingsSection.Storage)
+
+        assertIs<SettingsMobileNavigation.Detail>(navigation)
+        assertEquals(SettingsSection.Storage, navigation.section)
+    }
+
+    @Test
+    fun `mobile navigation opens about device detail`() {
+        val navigation = openSettingsMobileNavigation(SettingsSection.AboutDevice)
+
+        assertIs<SettingsMobileNavigation.Detail>(navigation)
+        assertEquals(SettingsSection.AboutDevice, navigation.section)
+    }
+
+    @Test
     fun `mobile navigation closes back to list`() {
         assertEquals(SettingsMobileNavigation.List, closeSettingsMobileNavigation())
     }

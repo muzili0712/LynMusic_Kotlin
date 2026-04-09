@@ -52,12 +52,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MoreHoriz
@@ -73,6 +75,7 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AssistChip
@@ -160,6 +163,7 @@ import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.AppStorageCategory
 import top.iwesley.lyn.music.core.model.ArtworkTintTheme
 import top.iwesley.lyn.music.core.model.CLASSIC_APP_THEME_TOKENS
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -903,6 +907,7 @@ private fun TabContent(
         )
 
         AppTab.Sources -> SourcesTab(
+            platform = platform,
             state = importState,
             onImportIntent = onImportIntent,
             modifier = modifier,
@@ -1560,6 +1565,7 @@ private fun LibraryFastScrollbar(
 
 @Composable
 private fun SourcesTab(
+    platform: PlatformDescriptor,
     state: ImportState,
     onImportIntent: (ImportIntent) -> Unit,
     modifier: Modifier = Modifier,
@@ -1627,7 +1633,14 @@ private fun SourcesTab(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text("本地文件夹", fontWeight = FontWeight.Bold)
-                Text("通过系统文件夹选择器授予目录权限并建立索引。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (platform.name == "Android") {
+                        "导入时会优先请求“管理所有文件”权限，用于后续编辑音乐标签；未授权时会回退到 SAF 只读导入。"
+                    } else {
+                        "通过系统文件夹选择器授予目录权限并建立索引。"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Button(
                     onClick = { onImportIntent(ImportIntent.ImportLocalFolder) },
                     enabled = state.capabilities.supportsLocalFolderImport && !state.isWorking,
@@ -1973,6 +1986,24 @@ private fun SettingsTab(
                                 .weight(1f)
                                 .fillMaxHeight(),
                         )
+
+                        SettingsSection.Storage -> StorageSettingsPane(
+                            state = state,
+                            onSettingsIntent = onSettingsIntent,
+                            showHeading = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                        )
+
+                        SettingsSection.AboutDevice -> AboutDeviceSettingsPane(
+                            state = state,
+                            onSettingsIntent = onSettingsIntent,
+                            showHeading = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                        )
                     }
                 }
             } else {
@@ -2023,6 +2054,20 @@ private fun SettingsTab(
                                     showHeading = false,
                                     modifier = detailModifier,
                                 )
+
+                                SettingsSection.Storage -> StorageSettingsPane(
+                                    state = state,
+                                    onSettingsIntent = onSettingsIntent,
+                                    showHeading = false,
+                                    modifier = detailModifier,
+                                )
+
+                                SettingsSection.AboutDevice -> AboutDeviceSettingsPane(
+                                    state = state,
+                                    onSettingsIntent = onSettingsIntent,
+                                    showHeading = false,
+                                    modifier = detailModifier,
+                                )
                             }
                         }
                     }
@@ -2060,7 +2105,7 @@ private fun SettingsSectionListPane(
             subtitle = if (desktop) {
                 "选择左侧设置项后，在右侧查看和编辑对应配置。"
             } else {
-                "主题和歌词配置拆成两个独立项目，点击进入详情。"
+                "主题、歌词、空间管理和关于本机拆成独立项目，点击进入详情。"
             },
         )
         SettingsSection.entries.forEach { section ->
@@ -2622,6 +2667,8 @@ private fun settingsSectionTitle(section: SettingsSection): String {
     return when (section) {
         SettingsSection.Theme -> "主题"
         SettingsSection.Lyrics -> "歌词"
+        SettingsSection.Storage -> "空间管理"
+        SettingsSection.AboutDevice -> "关于本机"
     }
 }
 
@@ -2629,6 +2676,8 @@ private fun settingsSectionSubtitle(section: SettingsSection): String {
     return when (section) {
         SettingsSection.Theme -> "切换预置主题、自定义颜色和文字颜色。"
         SettingsSection.Lyrics -> "配置歌词 API、搜索源和播放缓存。"
+        SettingsSection.Storage -> "查看并清理缓存占用。"
+        SettingsSection.AboutDevice -> "查看系统、屏幕和硬件信息。"
     }
 }
 
@@ -2636,7 +2685,375 @@ private fun settingsSectionIcon(section: SettingsSection): ImageVector {
     return when (section) {
         SettingsSection.Theme -> Icons.Rounded.Settings
         SettingsSection.Lyrics -> Icons.Rounded.GraphicEq
+        SettingsSection.Storage -> Icons.Rounded.Storage
+        SettingsSection.AboutDevice -> Icons.Rounded.Info
     }
+}
+
+@Composable
+private fun AboutDeviceSettingsPane(
+    state: SettingsState,
+    onSettingsIntent: (SettingsIntent) -> Unit,
+    showHeading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    val snapshot = state.deviceInfoSnapshot
+    val summaryTitle = when {
+        snapshot?.deviceModel?.isNotBlank() == true -> snapshot.deviceModel
+        snapshot?.systemName?.isNotBlank() == true -> snapshot.systemName
+        state.deviceInfoLoading -> "正在读取设备信息..."
+        else -> "关于本机"
+    }.orEmpty()
+    val summarySubtitle = snapshot?.let {
+        buildString {
+            append(it.systemName.ifBlank { "系统" })
+            append(" · ")
+            append(it.systemVersion.ifBlank { "版本不可用" })
+        }
+    } ?: if (state.deviceInfoLoading) {
+        "正在读取系统、屏幕和硬件信息。"
+    } else {
+        "查看系统、屏幕和硬件信息。"
+    }
+    LaunchedEffect(Unit) {
+        onSettingsIntent(SettingsIntent.LoadDeviceInfo())
+    }
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (showHeading) {
+            SectionTitle(
+                title = "关于本机",
+                subtitle = "查看当前设备或主机的系统、屏幕和硬件信息。",
+            )
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = summaryTitle,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                        Text(
+                            text = summarySubtitle,
+                            color = shellColors.secondaryText,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { onSettingsIntent(SettingsIntent.LoadDeviceInfo(force = true)) },
+                        enabled = !state.deviceInfoLoading,
+                    ) {
+                        Icon(Icons.Rounded.Sync, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (state.deviceInfoLoading) "刷新中" else "刷新")
+                    }
+                }
+            }
+        }
+        AboutDeviceInfoCard(title = "系统") {
+            AboutDeviceFieldRow(
+                label = "系统名称",
+                value = deviceInfoDisplayValue(snapshot?.systemName, state.deviceInfoLoading),
+            )
+            AboutDeviceFieldRow(
+                label = "系统版本",
+                value = deviceInfoDisplayValue(snapshot?.systemVersion, state.deviceInfoLoading),
+            )
+            snapshot?.deviceModel?.takeIf { it.isNotBlank() }?.let { model ->
+                AboutDeviceFieldRow(
+                    label = "设备型号",
+                    value = model,
+                )
+            }
+        }
+        AboutDeviceInfoCard(title = "显示") {
+            AboutDeviceFieldRow(
+                label = "分辨率",
+                value = deviceInfoDisplayValue(snapshot?.resolution, state.deviceInfoLoading),
+            )
+        }
+        AboutDeviceInfoCard(title = "硬件") {
+            AboutDeviceFieldRow(
+                label = "CPU",
+                value = deviceInfoDisplayValue(snapshot?.cpuDescription, state.deviceInfoLoading),
+            )
+            AboutDeviceFieldRow(
+                label = "内存",
+                value = deviceInfoMemoryValue(snapshot?.totalMemoryBytes, state.deviceInfoLoading),
+            )
+        }
+    }
+}
+
+@Composable
+private fun StorageSettingsPane(
+    state: SettingsState,
+    onSettingsIntent: (SettingsIntent) -> Unit,
+    showHeading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    val categoryOrder = remember {
+        listOf(
+            AppStorageCategory.Artwork,
+            AppStorageCategory.PlaybackCache,
+            AppStorageCategory.LyricsShareTemp,
+            AppStorageCategory.TagEditTemp,
+        )
+    }
+    val categories = remember(state.storageSnapshot) {
+        val supported = state.storageSnapshot?.categories.orEmpty().associateBy { it.category }
+        categoryOrder.mapNotNull { supported[it] }
+    }
+    LaunchedEffect(Unit) {
+        onSettingsIntent(SettingsIntent.LoadStorageUsage())
+    }
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (showHeading) {
+            SectionTitle(
+                title = "空间管理",
+                subtitle = "查看当前可清理缓存，并按分类手动清除。",
+            )
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text("当前可清理缓存", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = state.storageSnapshot?.let { formatStorageSize(it.totalSizeBytes) }
+                                ?: if (state.storageLoading) "正在统计缓存..." else "暂未读取",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                        Text(
+                            "不含数据库、设置和凭据文件。",
+                            color = shellColors.secondaryText,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { onSettingsIntent(SettingsIntent.LoadStorageUsage(force = true)) },
+                        enabled = !state.storageLoading && state.clearingStorageCategory == null,
+                    ) {
+                        Icon(Icons.Rounded.Sync, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (state.storageLoading) "刷新中" else "刷新")
+                    }
+                }
+            }
+        }
+        if (categories.isEmpty()) {
+            EmptyStateCard(
+                title = if (state.storageLoading) "正在统计缓存" else "没有可管理缓存",
+                body = if (state.storageLoading) {
+                    "正在读取当前平台支持的缓存目录。"
+                } else {
+                    "当前平台还没有暴露可清理的缓存分类。"
+                },
+            )
+        } else {
+            categories.forEach { usage ->
+                StorageCategoryCard(
+                    category = usage.category,
+                    sizeBytes = usage.sizeBytes,
+                    clearing = state.clearingStorageCategory == usage.category,
+                    actionEnabled = usage.sizeBytes > 0L &&
+                        !state.storageLoading &&
+                        state.clearingStorageCategory != usage.category,
+                    onClear = { onSettingsIntent(SettingsIntent.ClearStorageCategory(usage.category)) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageCategoryCard(
+    category: AppStorageCategory,
+    sizeBytes: Long,
+    clearing: Boolean,
+    actionEnabled: Boolean,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    MainShellElevatedCard(
+        shape = RoundedCornerShape(28.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = storageCategoryTitle(category),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = storageCategoryDescription(category),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = formatStorageSize(sizeBytes),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                OutlinedButton(
+                    onClick = onClear,
+                    enabled = actionEnabled,
+                ) {
+                    Text(if (clearing) "清理中..." else "清除")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutDeviceInfoCard(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    MainShellElevatedCard(
+        shape = RoundedCornerShape(28.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+private fun AboutDeviceFieldRow(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+private fun storageCategoryTitle(category: AppStorageCategory): String {
+    return when (category) {
+        AppStorageCategory.Artwork -> "封面缓存"
+        AppStorageCategory.PlaybackCache -> "播放缓存"
+        AppStorageCategory.LyricsShareTemp -> "歌词分享临时文件"
+        AppStorageCategory.TagEditTemp -> "标签编辑临时文件"
+    }
+}
+
+private fun storageCategoryDescription(category: AppStorageCategory): String {
+    return when (category) {
+        AppStorageCategory.Artwork -> "包含下载封面，以及扫描或标签编辑时生成的本地封面文件。"
+        AppStorageCategory.PlaybackCache -> "包含 SMB 播放时落到本地的临时音频缓存。"
+        AppStorageCategory.LyricsShareTemp -> "包含生成歌词分享图时写入的临时图片。"
+        AppStorageCategory.TagEditTemp -> "包含编辑标签封面时写入的临时中转文件。"
+    }
+}
+
+private fun formatStorageSize(sizeBytes: Long): String {
+    if (sizeBytes <= 0L) return "0 B"
+    val units = listOf("B", "KB", "MB", "GB")
+    var value = sizeBytes.toDouble()
+    var unitIndex = 0
+    while (value >= 1024.0 && unitIndex < units.lastIndex) {
+        value /= 1024.0
+        unitIndex += 1
+    }
+    val formatted = when {
+        unitIndex == 0 -> value.toLong().toString()
+        value >= 100 -> value.toInt().toString()
+        value >= 10 -> (value * 10).toInt() / 10.0
+        else -> (value * 100).toInt() / 100.0
+    }
+    return "$formatted ${units[unitIndex]}"
+}
+
+private fun deviceInfoDisplayValue(value: String?, loading: Boolean): String {
+    return when {
+        value != null && value.isNotBlank() -> value
+        loading -> "正在读取..."
+        else -> "不可用"
+    }
+}
+
+private fun deviceInfoMemoryValue(totalMemoryBytes: Long?, loading: Boolean): String {
+    return totalMemoryBytes?.takeIf { it > 0L }?.let(::formatStorageSize)
+        ?: if (loading) "正在读取..." else "不可用"
 }
 
 @Composable
@@ -3434,7 +3851,25 @@ internal fun LyricsShareOverlay(
     val secondaryTextColor = shellColors.secondaryText
     val bannerMessage = state.sharePreviewError ?: state.shareMessage
     val exportActionsEnabled = state.selectedLyricsLineIndices.isNotEmpty() && !state.isShareSaving && !state.isShareCopying
-    PlatformBackHandler(onBack = { onPlayerIntent(PlayerIntent.DismissLyricsShare) })
+    var isFullscreenPreviewVisible by remember { mutableStateOf(false) }
+    val fullscreenPreviewEnabled = shouldEnableLyricsShareFullscreen(
+        platform = platform,
+        hasPreviewContent = state.shareCardModel != null,
+    )
+    LaunchedEffect(fullscreenPreviewEnabled) {
+        if (!fullscreenPreviewEnabled) {
+            isFullscreenPreviewVisible = false
+        }
+    }
+    PlatformBackHandler(
+        onBack = {
+            if (isFullscreenPreviewVisible) {
+                isFullscreenPreviewVisible = false
+            } else {
+                onPlayerIntent(PlayerIntent.DismissLyricsShare)
+            }
+        },
+    )
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
@@ -3539,6 +3974,8 @@ internal fun LyricsShareOverlay(
                                 state = state,
                                 previewBitmap = previewBitmap,
                                 artworkTintTheme = artworkTintTheme,
+                                fullscreenEnabled = fullscreenPreviewEnabled,
+                                onOpenFullscreen = { isFullscreenPreviewVisible = true },
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight(),
@@ -3555,6 +3992,8 @@ internal fun LyricsShareOverlay(
                                 state = state,
                                 previewBitmap = previewBitmap,
                                 artworkTintTheme = artworkTintTheme,
+                                fullscreenEnabled = fullscreenPreviewEnabled,
+                                onOpenFullscreen = { isFullscreenPreviewVisible = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(0.48f),
@@ -3656,7 +4095,23 @@ internal fun LyricsShareOverlay(
                 }
             }
         }
+        if (isFullscreenPreviewVisible && fullscreenPreviewEnabled) {
+            LyricsShareFullscreenPreviewOverlay(
+                state = state,
+                previewBitmap = previewBitmap,
+                artworkTintTheme = artworkTintTheme,
+                onDismiss = { isFullscreenPreviewVisible = false },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
+}
+
+internal fun shouldEnableLyricsShareFullscreen(
+    platform: PlatformDescriptor,
+    hasPreviewContent: Boolean,
+): Boolean {
+    return hasPreviewContent && isMobilePlaybackPlatform(platform)
 }
 
 @Composable
@@ -3792,17 +4247,20 @@ private fun LyricsSharePreviewPane(
     state: PlayerState,
     previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
     artworkTintTheme: ArtworkTintTheme?,
+    fullscreenEnabled: Boolean,
+    onOpenFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
     val shareCardModel = state.shareCardModel
+    val previewInteractionSource = remember { MutableInteractionSource() }
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SectionTitle(
             title = "预览",
-            subtitle = "",
+            subtitle = if (fullscreenEnabled) "点击预览图全屏查看" else "",
         )
         Card(
             modifier = Modifier
@@ -3818,58 +4276,177 @@ private fun LyricsSharePreviewPane(
                     .padding(18.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                when {
-                    shareCardModel == null -> {
-                        EmptyStateCard(
-                            title = "请选择歌词",
-                            body = "点选左侧歌词行后，这里会生成一张便签样式的分享图片。",
+                val previewModifier = if (fullscreenEnabled) {
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(22.dp))
+                        .clickable(
+                            interactionSource = previewInteractionSource,
+                            indication = null,
+                            onClick = onOpenFullscreen,
                         )
-                    }
-
-                    previewBitmap != null -> {
-                        Image(
-                            bitmap = previewBitmap,
-                            contentDescription = "歌词分享预览",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(22.dp)),
-                            contentScale = ContentScale.Fit,
-                        )
-                    }
-
-                    else -> {
-                        when (shareCardModel.template) {
-                            LyricsShareTemplate.NOTE -> LyricsShareNoteCard(
-                                model = shareCardModel,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-
-                            LyricsShareTemplate.ARTWORK_TINT -> LyricsShareArtworkTintCard(
-                                model = shareCardModel,
-                                artworkTintTheme = artworkTintTheme ?: shareCardModel.artworkTintTheme,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
+                } else {
+                    Modifier.fillMaxSize()
                 }
+                LyricsSharePreviewContent(
+                    shareCardModel = shareCardModel,
+                    previewBitmap = previewBitmap,
+                    artworkTintTheme = artworkTintTheme,
+                    modifier = previewModifier,
+                )
                 if (state.isShareRendering && shareCardModel != null) {
-                        Card(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(8.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = shellColors.navContainer),
-                        ) {
-                            Text(
-                                text = "更新预览中",
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.labelLarge,
-                            )
-                        }
+                    LyricsShareRenderingBadge(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LyricsSharePreviewContent(
+    shareCardModel: LyricsShareCardModel?,
+    previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    artworkTintTheme: ArtworkTintTheme?,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            shareCardModel == null -> {
+                EmptyStateCard(
+                    title = "请选择歌词",
+                    body = "点选左侧歌词行后，这里会生成一张便签样式的分享图片。",
+                )
+            }
+
+            previewBitmap != null -> {
+                Image(
+                    bitmap = previewBitmap,
+                    contentDescription = "歌词分享预览",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(22.dp)),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+
+            else -> {
+                when (shareCardModel.template) {
+                    LyricsShareTemplate.NOTE -> LyricsShareNoteCard(
+                        model = shareCardModel,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    LyricsShareTemplate.ARTWORK_TINT -> LyricsShareArtworkTintCard(
+                        model = shareCardModel,
+                        artworkTintTheme = artworkTintTheme ?: shareCardModel.artworkTintTheme,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareFullscreenPreviewOverlay(
+    state: PlayerState,
+    previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    artworkTintTheme: ArtworkTintTheme?,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shareCardModel = state.shareCardModel ?: return
+    val contentInteractionSource = remember { MutableInteractionSource() }
+    val scrollState = rememberScrollState()
+    PlatformBackHandler(onBack = onDismiss)
+    Box(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.92f))
+                .clickable { onDismiss() },
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 18.dp, vertical = 24.dp)
+                .clickable(
+                    interactionSource = contentInteractionSource,
+                    indication = null,
+                ) { },
+        ) {
+            if (previewBitmap != null) {
+                LyricsSharePreviewContent(
+                    shareCardModel = shareCardModel,
+                    previewBitmap = previewBitmap,
+                    artworkTintTheme = artworkTintTheme,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 28.dp, bottom = 12.dp),
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 28.dp, bottom = 12.dp)
+                        .verticalScroll(scrollState),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    LyricsSharePreviewContent(
+                        shareCardModel = shareCardModel,
+                        previewBitmap = null,
+                        artworkTintTheme = artworkTintTheme,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = 560.dp),
+                    )
+                }
+            }
+            if (state.isShareRendering) {
+                LyricsShareRenderingBadge(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(top = 8.dp),
+                )
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "关闭全屏预览",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareRenderingBadge(
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = shellColors.navContainer),
+    ) {
+        Text(
+            text = "更新预览中",
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.labelLarge,
+        )
     }
 }
 

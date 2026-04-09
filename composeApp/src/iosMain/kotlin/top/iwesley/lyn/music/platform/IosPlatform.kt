@@ -117,6 +117,8 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createIosArtworkCacheStore(),
+            appStorageGateway = createIosAppStorageGateway(),
+            deviceInfoGateway = createIosDeviceInfoGateway(),
             audioTagGateway = UnsupportedAudioTagGateway,
             audioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
             logger = ConsoleDiagnosticLogger(enabled = true, label = "iOS"),

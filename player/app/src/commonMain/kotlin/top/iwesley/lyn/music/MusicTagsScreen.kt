@@ -93,6 +93,7 @@ fun MusicTagsTab(
     modifier: Modifier = Modifier,
 ) {
     val isDesktop = platform.name == "Desktop"
+    val isAndroid = platform.name == "Android"
     LaunchedEffect(effects) {
         effects.collect { effect ->
             when (effect) {
@@ -122,6 +123,7 @@ fun MusicTagsTab(
                 )
             } else {
                 MobileMusicTagsLayout(
+                    supportsWrite = isAndroid,
                     state = state,
                     onMusicTagsIntent = onMusicTagsIntent,
                 )
@@ -227,6 +229,7 @@ private fun DesktopMusicTagsLayout(
 
 @Composable
 private fun MobileMusicTagsLayout(
+    supportsWrite: Boolean,
     state: MusicTagsState,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
 ) {
@@ -244,10 +247,20 @@ private fun MobileMusicTagsLayout(
     ) {
         MusicTagsHeader(
             title = "音乐标签",
-            subtitle = "仅桌面支持本地标签写回。",
+            subtitle = if (supportsWrite) {
+                "已授予文件权限的本地目录支持写回；未授权目录会以只读方式打开。"
+            } else {
+                "当前设备仅支持查看本地标签。"
+            },
         )
         if (detailTrack == null) {
-            MusicTagsNoteCard("当前页面只列出本地文件夹歌曲，移动端可查看标签但不能保存修改。")
+            MusicTagsNoteCard(
+                if (supportsWrite) {
+                    "当前页面只列出本地文件夹歌曲。Android 导入时会优先请求“管理所有文件”权限；未授权时会回退到 SAF，只能只读查看标签。"
+                } else {
+                    "当前页面只列出本地文件夹歌曲，移动端可查看标签但不能保存修改。"
+                },
+            )
             MusicTagsTrackPane(
                 state = state,
                 onMusicTagsIntent = { intent ->
@@ -282,7 +295,15 @@ private fun MobileMusicTagsLayout(
             }
             MusicTagsEditorPane(
                 state = state,
-                readOnly = true,
+                readOnly = !state.canWriteSelected,
+                readOnlyHint = when {
+                    state.isLoadingSelected -> null
+                    supportsWrite && !state.canWriteSelected ->
+                        "当前歌曲通过 SAF 只读导入，暂不能保存修改。请在来源页重新扫描并授予“管理所有文件”权限。"
+
+                    !supportsWrite -> "当前设备暂不支持写回音频标签。"
+                    else -> null
+                },
                 onMusicTagsIntent = onMusicTagsIntent,
                 modifier = Modifier.weight(1f),
             )
@@ -392,6 +413,7 @@ private fun MusicTagsTrackPane(
 private fun MusicTagsEditorPane(
     state: MusicTagsState,
     readOnly: Boolean,
+    readOnlyHint: String? = null,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -444,6 +466,9 @@ private fun MusicTagsEditorPane(
                 }
                 if (state.isLoadingSelected) {
                     MusicTagsNoteCard("正在读取音频标签…")
+                }
+                if (!state.isLoadingSelected && readOnlyHint != null) {
+                    MusicTagsNoteCard(readOnlyHint)
                 }
                 val previewBitmap = rememberPlatformImageBitmap(state.draft.pendingArtworkBytes)
                 val artworkBitmap = rememberPlatformArtworkBitmap(

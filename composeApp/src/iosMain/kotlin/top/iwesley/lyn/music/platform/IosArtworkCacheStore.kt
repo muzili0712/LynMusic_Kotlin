@@ -37,7 +37,7 @@ private class IosArtworkCacheStore : ArtworkCacheStore {
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun iosArtworkCacheDirectory(): String {
+internal fun iosArtworkCacheDirectory(): String {
     val cachesUrl: NSURL = requireNotNull(
         NSFileManager.defaultManager.URLForDirectory(
             directory = NSCachesDirectory,

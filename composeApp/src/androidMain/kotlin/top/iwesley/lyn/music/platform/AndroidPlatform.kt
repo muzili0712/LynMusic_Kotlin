@@ -1,9 +1,11 @@
 package top.iwesley.lyn.music.platform
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.security.keystore.KeyGenParameterSpec
@@ -27,7 +29,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.SharedRuntimeServices
 import top.iwesley.lyn.music.buildPlayerAppComponent
 import top.iwesley.lyn.music.buildSharedGraph
@@ -62,7 +66,6 @@ import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
-import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildSambaLocator
 import top.iwesley.lyn.music.core.model.debug
@@ -131,13 +134,15 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
+            appStorageGateway = createAndroidAppStorageGateway(activity.applicationContext, database),
+            deviceInfoGateway = createAndroidDeviceInfoGateway(activity),
             audioTagGateway = AndroidAudioTagGateway(
                 context = activity.applicationContext,
                 database = database,
                 secureCredentialStore = secureStore,
                 logger = logger,
             ),
-            audioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
+            audioTagEditorPlatformService = AndroidAudioTagEditorPlatformService(activity),
             logger = logger,
         ),
     )
@@ -357,15 +362,38 @@ private class AndroidAudioTagGateway(
     private val logger: DiagnosticLogger,
 ) : AudioTagGateway {
     override suspend fun canEdit(track: Track): Boolean {
-        return resolveAndroidLocalTrackUri(track.mediaLocator) != null
+        val localFile = resolveAndroidLocalTrackFile(track.mediaLocator)
+        return when {
+            localFile != null -> localFile.isFile && localFile.canRead()
+            else -> resolveAndroidLocalTrackUri(track.mediaLocator) != null
+        }
     }
 
-    override suspend fun canWrite(track: Track): Boolean = false
+    override suspend fun canWrite(track: Track): Boolean {
+        val localFile = resolveAndroidLocalTrackFile(track.mediaLocator) ?: return false
+        return localFile.isFile && localFile.canWrite()
+    }
 
     override suspend fun read(track: Track): Result<AudioTagSnapshot> {
         return try {
+            val localFile = resolveAndroidLocalTrackFile(track.mediaLocator)
             val uri = resolveAndroidLocalTrackUri(track.mediaLocator)
             when {
+                localFile != null -> runCatching {
+                    AndroidAudioTagFileSupport.readSnapshot(
+                        file = localFile,
+                        relativePath = track.relativePath,
+                        artworkDirectory = File(context.cacheDir, "artwork"),
+                    )
+                }.recoverCatching {
+                    AndroidAudioTagReader.readSnapshot(
+                        context = context,
+                        uri = Uri.fromFile(localFile),
+                        displayName = localFile.name,
+                        artworkDirectory = File(context.cacheDir, "artwork"),
+                    ).getOrThrow()
+                }
+
                 uri != null -> AndroidAudioTagReader.readSnapshot(
                     context = context,
                     uri = uri,
@@ -391,7 +419,33 @@ private class AndroidAudioTagGateway(
     }
 
     override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> {
-        return Result.failure(IllegalStateException("Android 音频标签写回将在后续阶段实现。"))
+        return runCatching {
+            val localFile = resolveAndroidLocalTrackFile(track.mediaLocator)
+                ?: error("当前歌曲通过 SAF 导入，未获得可写文件访问权限。请在来源页重新扫描并授予“管理所有文件”权限。")
+            if (!localFile.isFile || !localFile.canWrite()) {
+                error("当前文件没有写入权限，请确认已授予“管理所有文件”权限。")
+            }
+            val artworkDirectory = File(context.cacheDir, "artwork")
+            AndroidAudioTagFileSupport.write(
+                file = localFile,
+                patch = patch,
+                tempDirectory = File(context.cacheDir, "tag-edit"),
+            )
+            runCatching {
+                AndroidAudioTagFileSupport.readSnapshot(
+                    file = localFile,
+                    relativePath = track.relativePath,
+                    artworkDirectory = artworkDirectory,
+                )
+            }.recoverCatching {
+                AndroidAudioTagReader.readSnapshot(
+                    context = context,
+                    uri = Uri.fromFile(localFile),
+                    displayName = localFile.name,
+                    artworkDirectory = artworkDirectory,
+                ).getOrThrow()
+            }.getOrThrow()
+        }
     }
 }
 
@@ -414,16 +468,18 @@ private class AndroidImportSourceGateway(
     private val logger: DiagnosticLogger,
     private val navidromeHttpClient: LyricsHttpClient,
 ) : ImportSourceGateway {
-    private var folderContinuation: (LocalFolderSelection?) -> Unit = {}
+    private var folderContinuation: ((LocalFolderSelection?) -> Unit)? = null
 
     private val picker = activity.registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
-            activity.contentResolver.takePersistableUriPermission(
-                uri,
-                IntentFlags.ReadWriteUriPermission,
-            )
+            runCatching {
+                activity.contentResolver.takePersistableUriPermission(
+                    uri,
+                    IntentFlags.ReadWriteUriPermission,
+                )
+            }
         }
-        folderContinuation(
+        resumeFolderSelection(
             uri?.let {
                 LocalFolderSelection(
                     label = DocumentFile.fromTreeUri(activity, uri)?.name ?: "本地音乐",
@@ -433,19 +489,55 @@ private class AndroidImportSourceGateway(
         )
     }
 
-    override suspend fun pickLocalFolder(): LocalFolderSelection? {
-        return suspendCancellableCoroutine { continuation ->
-            folderContinuation = { selection -> continuation.resume(selection) }
+    private val manageAllFilesPermissionLauncher = activity.registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        if (folderContinuation != null) {
             picker.launch(null)
         }
     }
 
+    override suspend fun pickLocalFolder(): LocalFolderSelection? {
+        return withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { continuation ->
+                folderContinuation = { selection ->
+                    if (continuation.isActive) {
+                        continuation.resume(selection)
+                    }
+                }
+                continuation.invokeOnCancellation {
+                    folderContinuation = null
+                }
+                if (shouldRequestManageAllFilesAccess()) {
+                    showManageAllFilesAccessPrompt()
+                } else {
+                    picker.launch(null)
+                }
+            }
+        }
+    }
+
     override suspend fun scanLocalFolder(selection: LocalFolderSelection, sourceId: String): ImportScanReport {
+        resolveAndroidLocalTrackFile(selection.persistentReference)
+            ?.takeIf { it.isDirectory }
+            ?.let { root ->
+                return scanLocalDirectory(root)
+            }
         val treeUri = Uri.parse(selection.persistentReference)
-        val root = DocumentFile.fromTreeUri(activity, treeUri) ?: error("Cannot open tree uri: $treeUri")
-        val tracks = mutableListOf<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>()
-        walkDocumentTree(root, "", tracks)
-        return ImportScanReport(tracks)
+        resolveTreeUriToDirectory(activity, treeUri)
+            ?.takeIf { it.isDirectory }
+            ?.let { root ->
+                return runCatching {
+                    scanLocalDirectory(root)
+                }.onFailure { throwable ->
+                    logger.warn(LOCAL_IMPORT_LOG_TAG) {
+                        "direct-scan-fallback root=${root.absolutePath} reason=${throwable.message.orEmpty()}"
+                    }
+                }.getOrElse {
+                    scanLocalTree(treeUri)
+                }
+            }
+        return scanLocalTree(treeUri)
     }
 
     override suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport {
@@ -490,19 +582,60 @@ private class AndroidImportSourceGateway(
         return scanNavidromeLibrary(draft, sourceId, navidromeHttpClient, logger)
     }
 
+    private fun showManageAllFilesAccessPrompt() {
+        AlertDialog.Builder(activity)
+            .setTitle("需要文件管理权限")
+            .setMessage("授予“管理所有文件”后，导入的本地歌曲可以直接编辑音乐标签；如果不授权，会回退到 SAF 只读导入。")
+            .setPositiveButton("去授权") { _, _ ->
+                manageAllFilesPermissionLauncher.launch(buildManageAllFilesAccessIntent(activity))
+            }
+            .setNegativeButton("使用 SAF") { _, _ ->
+                picker.launch(null)
+            }
+            .setOnCancelListener {
+                resumeFolderSelection(null)
+            }
+            .show()
+    }
+
+    private fun shouldRequestManageAllFilesAccess(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !hasManageAllFilesAccess(activity)
+    }
+
+    private fun resumeFolderSelection(selection: LocalFolderSelection?) {
+        val continuation = folderContinuation
+        folderContinuation = null
+        continuation?.invoke(selection)
+    }
+
+    private fun scanLocalTree(treeUri: Uri): ImportScanReport {
+        val root = DocumentFile.fromTreeUri(activity, treeUri) ?: error("Cannot open tree uri: $treeUri")
+        val tracks = mutableListOf<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>()
+        walkDocumentTree(root, "", tracks)
+        return ImportScanReport(tracks)
+    }
+
+    private fun scanLocalDirectory(root: File): ImportScanReport {
+        val tracks = mutableListOf<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>()
+        walkLocalDirectory(root, "", tracks)
+        return ImportScanReport(tracks)
+    }
+
     private fun walkDocumentTree(
         folder: DocumentFile,
         relativeDirectory: String,
         sink: MutableList<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>,
     ) {
-        folder.listFiles().forEach { file ->
-            val fileName = file.name ?: return@forEach
-            val nextRelative = listOf(relativeDirectory, fileName).filter { it.isNotBlank() }.joinToString("/")
-            when {
-                file.isDirectory -> walkDocumentTree(file, nextRelative, sink)
-                file.isFile && isSupportedAudio(fileName) -> sink += readAndroidCandidate(file, nextRelative)
+        folder.listFiles()
+            .sortedBy { it.name.orEmpty().lowercase() }
+            .forEach { file ->
+                val fileName = file.name ?: return@forEach
+                val nextRelative = listOf(relativeDirectory, fileName).filter { it.isNotBlank() }.joinToString("/")
+                when {
+                    file.isDirectory -> walkDocumentTree(file, nextRelative, sink)
+                    file.isFile && isSupportedAudio(fileName) -> sink += readAndroidCandidate(file, nextRelative)
+                }
             }
-        }
     }
 
     private fun readAndroidCandidate(
@@ -512,6 +645,39 @@ private class AndroidImportSourceGateway(
         return AndroidAudioTagReader.readCandidate(
             context = activity,
             uri = file.uri,
+            displayName = file.name,
+            relativePath = relativePath,
+            artworkDirectory = File(activity.cacheDir, "artwork"),
+            logger = logger,
+            sizeBytes = file.length(),
+            modifiedAt = file.lastModified(),
+        )
+    }
+
+    private fun walkLocalDirectory(
+        folder: File,
+        relativeDirectory: String,
+        sink: MutableList<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>,
+    ) {
+        folder.listFiles()
+            ?.sortedBy { it.name.lowercase() }
+            .orEmpty()
+            .forEach { file ->
+                val nextRelative = listOf(relativeDirectory, file.name).filter { it.isNotBlank() }.joinToString("/")
+                when {
+                    file.isDirectory -> walkLocalDirectory(file, nextRelative, sink)
+                    file.isFile && isSupportedAudio(file.name) -> sink += readAndroidCandidate(file, nextRelative)
+                }
+            }
+    }
+
+    private fun readAndroidCandidate(
+        file: File,
+        relativePath: String,
+    ): top.iwesley.lyn.music.core.model.ImportedTrackCandidate {
+        return AndroidAudioTagReader.readCandidate(
+            context = activity,
+            uri = Uri.fromFile(file),
             displayName = file.name,
             relativePath = relativePath,
             artworkDirectory = File(activity.cacheDir, "artwork"),
@@ -740,6 +906,9 @@ private suspend fun resolveAndroidSambaTagReadTarget(
 private fun resolveAndroidLocalTrackUri(locator: String): Uri? {
     val value = locator.trim()
     if (value.isBlank()) return null
+    resolveAndroidLocalTrackFile(value)?.let { file ->
+        return Uri.fromFile(file)
+    }
     val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return null
     return when (uri.scheme?.lowercase()) {
         "content", "file" -> uri
@@ -1009,6 +1178,8 @@ private object IntentFlags {
     const val ReadWriteUriPermission =
         android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 }
+
+private const val LOCAL_IMPORT_LOG_TAG = "LocalImport"
 
 private fun joinSegments(left: String, right: String): String {
     return listOf(left.trim('/'), right.trim('/'))

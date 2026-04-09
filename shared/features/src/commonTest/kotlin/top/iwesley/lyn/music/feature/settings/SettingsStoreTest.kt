@@ -14,10 +14,16 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import top.iwesley.lyn.music.core.model.AppStorageCategory
+import top.iwesley.lyn.music.core.model.AppStorageCategoryUsage
+import top.iwesley.lyn.music.core.model.AppStorageGateway
+import top.iwesley.lyn.music.core.model.AppStorageSnapshot
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.DeviceInfoGateway
+import top.iwesley.lyn.music.core.model.DeviceInfoSnapshot
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
@@ -528,6 +534,187 @@ class SettingsStoreTest {
         assertEquals("歌词源已删除。", state.message)
         scope.cancel()
     }
+
+    @Test
+    fun `load storage usage writes snapshot into state`() = runTest {
+        val repository = FakeSettingsRepository()
+        val storageGateway = FakeAppStorageGateway(
+            initialSnapshot = sampleStorageSnapshot(
+                artwork = 1_024L,
+                playback = 2_048L,
+                lyricsShare = 256L,
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope, appStorageGateway = storageGateway)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadStorageUsage())
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(3_328L, state.storageSnapshot?.totalSizeBytes)
+        assertEquals(true, state.storageLoaded)
+        assertEquals(false, state.storageLoading)
+        assertEquals(1, storageGateway.loadCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `load device info snapshot writes snapshot into state`() = runTest {
+        val repository = FakeSettingsRepository()
+        val deviceInfoGateway = FakeDeviceInfoGateway(
+            initialSnapshot = sampleDeviceInfoSnapshot(
+                systemName = "Android",
+                systemVersion = "14 (SDK 34)",
+                resolution = "1080 × 2400 px",
+                cpuDescription = "Snapdragon 8 Gen 2 · arm64-v8a · 8 核",
+                totalMemoryBytes = 8L * 1024 * 1024 * 1024,
+                deviceModel = "Google Pixel 8",
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope, deviceInfoGateway = deviceInfoGateway)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadDeviceInfo())
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("Google Pixel 8", state.deviceInfoSnapshot?.deviceModel)
+        assertEquals("Android", state.deviceInfoSnapshot?.systemName)
+        assertEquals(true, state.deviceInfoLoaded)
+        assertEquals(false, state.deviceInfoLoading)
+        assertEquals(1, deviceInfoGateway.loadCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `load device info failure preserves existing snapshot`() = runTest {
+        val repository = FakeSettingsRepository()
+        val deviceInfoGateway = FakeDeviceInfoGateway(
+            initialSnapshot = sampleDeviceInfoSnapshot(
+                systemName = "macOS",
+                systemVersion = "15.3.1",
+                resolution = "3024 × 1964 px",
+                cpuDescription = "arm64 · 8 核",
+                totalMemoryBytes = 16L * 1024 * 1024 * 1024,
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope, deviceInfoGateway = deviceInfoGateway)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadDeviceInfo())
+        advanceUntilIdle()
+        deviceInfoGateway.nextLoadFailure = IllegalStateException("读取设备信息失败。")
+
+        store.dispatch(SettingsIntent.LoadDeviceInfo(force = true))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("macOS", state.deviceInfoSnapshot?.systemName)
+        assertEquals("读取设备信息失败。", state.message)
+        assertEquals(true, state.deviceInfoLoaded)
+        scope.cancel()
+    }
+
+    @Test
+    fun `loaded device info does not reload until forced`() = runTest {
+        val repository = FakeSettingsRepository()
+        val deviceInfoGateway = FakeDeviceInfoGateway(
+            initialSnapshot = sampleDeviceInfoSnapshot(
+                systemName = "iOS",
+                systemVersion = "18.0",
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope, deviceInfoGateway = deviceInfoGateway)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadDeviceInfo())
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadDeviceInfo())
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadDeviceInfo(force = true))
+        advanceUntilIdle()
+
+        assertEquals(2, deviceInfoGateway.loadCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `load storage usage failure preserves existing snapshot`() = runTest {
+        val repository = FakeSettingsRepository()
+        val storageGateway = FakeAppStorageGateway(
+            initialSnapshot = sampleStorageSnapshot(artwork = 2_048L),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope, appStorageGateway = storageGateway)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadStorageUsage())
+        advanceUntilIdle()
+        storageGateway.nextLoadFailure = IllegalStateException("缓存统计失败。")
+
+        store.dispatch(SettingsIntent.LoadStorageUsage(force = true))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(2_048L, state.storageSnapshot?.totalSizeBytes)
+        assertEquals("缓存统计失败。", state.message)
+        assertEquals(true, state.storageLoaded)
+        scope.cancel()
+    }
+
+    @Test
+    fun `clearing storage category refreshes snapshot`() = runTest {
+        val repository = FakeSettingsRepository()
+        val storageGateway = FakeAppStorageGateway(
+            initialSnapshot = sampleStorageSnapshot(
+                artwork = 2_048L,
+                playback = 4_096L,
+                lyricsShare = 128L,
+                tagEdit = 64L,
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope, appStorageGateway = storageGateway)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadStorageUsage())
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ClearStorageCategory(AppStorageCategory.Artwork))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(4_288L, state.storageSnapshot?.totalSizeBytes)
+        assertEquals(0L, state.storageSnapshot?.categories?.first { it.category == AppStorageCategory.Artwork }?.sizeBytes)
+        assertEquals("封面缓存已清除。", state.message)
+        assertEquals(null, state.clearingStorageCategory)
+        scope.cancel()
+    }
+
+    @Test
+    fun `loaded storage usage does not reload until forced`() = runTest {
+        val repository = FakeSettingsRepository()
+        val storageGateway = FakeAppStorageGateway(
+            initialSnapshot = sampleStorageSnapshot(playback = 2_048L),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope, appStorageGateway = storageGateway)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadStorageUsage())
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadStorageUsage())
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadStorageUsage(force = true))
+        advanceUntilIdle()
+
+        assertEquals(2, storageGateway.loadCalls)
+        scope.cancel()
+    }
 }
 
 private class FakeSettingsRepository(
@@ -603,6 +790,55 @@ private class FakeSettingsRepository(
 
     override suspend fun deleteLyricsSource(configId: String) {
         mutableSources.value = mutableSources.value.filterNot { it.id == configId }
+    }
+}
+
+private class FakeAppStorageGateway(
+    initialSnapshot: AppStorageSnapshot = sampleStorageSnapshot(),
+) : AppStorageGateway {
+    var currentSnapshot: AppStorageSnapshot = initialSnapshot
+    var loadCalls: Int = 0
+        private set
+    var nextLoadFailure: Throwable? = null
+
+    override suspend fun loadStorageSnapshot(): Result<AppStorageSnapshot> {
+        loadCalls += 1
+        val failure = nextLoadFailure
+        if (failure != null) {
+            nextLoadFailure = null
+            return Result.failure(failure)
+        }
+        return Result.success(currentSnapshot)
+    }
+
+    override suspend fun clearCategory(category: AppStorageCategory): Result<Unit> {
+        currentSnapshot = currentSnapshot.copy(
+            totalSizeBytes = currentSnapshot.totalSizeBytes -
+                currentSnapshot.categories.firstOrNull { it.category == category }?.sizeBytes.orZero(),
+            categories = currentSnapshot.categories.map { usage ->
+                if (usage.category == category) usage.copy(sizeBytes = 0L) else usage
+            },
+        )
+        return Result.success(Unit)
+    }
+}
+
+private class FakeDeviceInfoGateway(
+    initialSnapshot: DeviceInfoSnapshot = sampleDeviceInfoSnapshot(),
+) : DeviceInfoGateway {
+    var currentSnapshot: DeviceInfoSnapshot = initialSnapshot
+    var loadCalls: Int = 0
+        private set
+    var nextLoadFailure: Throwable? = null
+
+    override suspend fun loadDeviceInfoSnapshot(): Result<DeviceInfoSnapshot> {
+        loadCalls += 1
+        val failure = nextLoadFailure
+        if (failure != null) {
+            nextLoadFailure = null
+            return Result.failure(failure)
+        }
+        return Result.success(currentSnapshot)
     }
 }
 
@@ -710,3 +946,41 @@ private fun workflowJson(
 }
 
 private fun normalizeName(value: String): String = value.trim().lowercase()
+
+private fun sampleStorageSnapshot(
+    artwork: Long = 0L,
+    playback: Long = 0L,
+    lyricsShare: Long = 0L,
+    tagEdit: Long = 0L,
+): AppStorageSnapshot {
+    val categories = listOfNotNull(
+        AppStorageCategoryUsage(AppStorageCategory.Artwork, artwork),
+        AppStorageCategoryUsage(AppStorageCategory.PlaybackCache, playback).takeIf { playback >= 0L },
+        AppStorageCategoryUsage(AppStorageCategory.LyricsShareTemp, lyricsShare).takeIf { lyricsShare >= 0L },
+        AppStorageCategoryUsage(AppStorageCategory.TagEditTemp, tagEdit).takeIf { tagEdit >= 0L },
+    )
+    return AppStorageSnapshot(
+        totalSizeBytes = categories.sumOf { it.sizeBytes },
+        categories = categories,
+    )
+}
+
+private fun sampleDeviceInfoSnapshot(
+    systemName: String = "Desktop",
+    systemVersion: String = "1.0",
+    resolution: String? = "1920 × 1080 px",
+    cpuDescription: String? = "arm64 · 8 核",
+    totalMemoryBytes: Long? = 8L * 1024 * 1024 * 1024,
+    deviceModel: String? = null,
+): DeviceInfoSnapshot {
+    return DeviceInfoSnapshot(
+        systemName = systemName,
+        systemVersion = systemVersion,
+        resolution = resolution,
+        cpuDescription = cpuDescription,
+        totalMemoryBytes = totalMemoryBytes,
+        deviceModel = deviceModel,
+    )
+}
+
+private fun Long?.orZero(): Long = this ?: 0L

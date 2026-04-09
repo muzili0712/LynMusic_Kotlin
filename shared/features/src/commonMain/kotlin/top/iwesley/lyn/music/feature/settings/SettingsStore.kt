@@ -4,14 +4,21 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 import kotlin.time.Clock
+import top.iwesley.lyn.music.core.model.AppStorageCategory
+import top.iwesley.lyn.music.core.model.AppStorageGateway
+import top.iwesley.lyn.music.core.model.AppStorageSnapshot
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.DeviceInfoGateway
+import top.iwesley.lyn.music.core.model.DeviceInfoSnapshot
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
+import top.iwesley.lyn.music.core.model.UnsupportedAppStorageGateway
+import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
@@ -59,6 +66,13 @@ data class SettingsState(
     val enabled: Boolean = true,
     val workflowJsonInput: String = "",
     val editingWorkflowId: String? = null,
+    val storageSnapshot: AppStorageSnapshot? = null,
+    val storageLoading: Boolean = false,
+    val storageLoaded: Boolean = false,
+    val clearingStorageCategory: AppStorageCategory? = null,
+    val deviceInfoSnapshot: DeviceInfoSnapshot? = null,
+    val deviceInfoLoading: Boolean = false,
+    val deviceInfoLoaded: Boolean = false,
     val message: String? = null,
 )
 
@@ -86,6 +100,9 @@ sealed interface SettingsIntent {
     data class PriorityChanged(val value: String) : SettingsIntent
     data class EnabledChanged(val value: Boolean) : SettingsIntent
     data class WorkflowJsonChanged(val value: String) : SettingsIntent
+    data class LoadStorageUsage(val force: Boolean = false) : SettingsIntent
+    data class ClearStorageCategory(val category: AppStorageCategory) : SettingsIntent
+    data class LoadDeviceInfo(val force: Boolean = false) : SettingsIntent
     data object ImportWorkflow : SettingsIntent
     data object CreateNew : SettingsIntent
     data object CreateNewWorkflow : SettingsIntent
@@ -107,6 +124,8 @@ sealed interface SettingsEffect
 class SettingsStore(
     private val repository: SettingsRepository,
     scope: CoroutineScope,
+    private val appStorageGateway: AppStorageGateway = UnsupportedAppStorageGateway,
+    private val deviceInfoGateway: DeviceInfoGateway = UnsupportedDeviceInfoGateway,
 ) : BaseStore<SettingsState, SettingsIntent, SettingsEffect>(
     initialState = SettingsState(),
     scope = scope,
@@ -180,6 +199,12 @@ class SettingsStore(
                 repository.setSelectedTheme(intent.value)
                 updateState { it.copy(selectedTheme = intent.value, themeInputError = null) }
             }
+
+            is SettingsIntent.LoadStorageUsage -> loadStorageUsage(force = intent.force)
+
+            is SettingsIntent.ClearStorageCategory -> clearStorageCategory(intent.category)
+
+            is SettingsIntent.LoadDeviceInfo -> loadDeviceInfo(force = intent.force)
 
             is SettingsIntent.ThemeTextPaletteSelected -> {
                 repository.setTextPalette(intent.themeId, intent.value)
@@ -534,6 +559,96 @@ class SettingsStore(
         }
     }
 
+    private suspend fun loadStorageUsage(force: Boolean) {
+        val current = state.value
+        if (current.storageLoading) return
+        if (!force && current.storageLoaded) return
+        updateState {
+            it.copy(
+                storageLoading = true,
+                clearingStorageCategory = null,
+            )
+        }
+        val result = appStorageGateway.loadStorageSnapshot()
+        updateState { latest ->
+            result.fold(
+                onSuccess = { snapshot ->
+                    latest.copy(
+                        storageSnapshot = snapshot,
+                        storageLoading = false,
+                        storageLoaded = true,
+                    )
+                },
+                onFailure = { error ->
+                    latest.copy(
+                        storageLoading = false,
+                        message = error.message ?: "缓存统计失败。",
+                    )
+                },
+            )
+        }
+    }
+
+    private suspend fun clearStorageCategory(category: AppStorageCategory) {
+        val current = state.value
+        if (current.storageLoading || current.clearingStorageCategory != null) return
+        updateState { it.copy(clearingStorageCategory = category) }
+        val clearResult = appStorageGateway.clearCategory(category)
+        if (clearResult.isFailure) {
+            updateState {
+                it.copy(
+                    clearingStorageCategory = null,
+                    message = clearResult.exceptionOrNull()?.message ?: "${category.displayName()}清除失败。",
+                )
+            }
+            return
+        }
+        val snapshotResult = appStorageGateway.loadStorageSnapshot()
+        updateState { latest ->
+            snapshotResult.fold(
+                onSuccess = { snapshot ->
+                    latest.copy(
+                        storageSnapshot = snapshot,
+                        storageLoaded = true,
+                        clearingStorageCategory = null,
+                        message = "${category.displayName()}已清除。",
+                    )
+                },
+                onFailure = { error ->
+                    latest.copy(
+                        clearingStorageCategory = null,
+                        message = error.message ?: "${category.displayName()}已清除，但刷新失败。",
+                    )
+                },
+            )
+        }
+    }
+
+    private suspend fun loadDeviceInfo(force: Boolean) {
+        val current = state.value
+        if (current.deviceInfoLoading) return
+        if (!force && current.deviceInfoLoaded) return
+        updateState { it.copy(deviceInfoLoading = true) }
+        val result = deviceInfoGateway.loadDeviceInfoSnapshot()
+        updateState { latest ->
+            result.fold(
+                onSuccess = { snapshot ->
+                    latest.copy(
+                        deviceInfoSnapshot = snapshot,
+                        deviceInfoLoading = false,
+                        deviceInfoLoaded = true,
+                    )
+                },
+                onFailure = { error ->
+                    latest.copy(
+                        deviceInfoLoading = false,
+                        message = error.message ?: "读取设备信息失败。",
+                    )
+                },
+            )
+        }
+    }
+
     private fun SettingsState.toConfig(forceNew: Boolean = false): LyricsSourceConfig? {
         if (name.isBlank() || urlTemplate.isBlank()) return null
         return LyricsSourceConfig(
@@ -620,6 +735,15 @@ class SettingsStore(
                 focusArgb = focus,
             ),
         )
+    }
+
+    private fun AppStorageCategory.displayName(): String {
+        return when (this) {
+            AppStorageCategory.Artwork -> "封面缓存"
+            AppStorageCategory.PlaybackCache -> "播放缓存"
+            AppStorageCategory.LyricsShareTemp -> "歌词分享临时文件"
+            AppStorageCategory.TagEditTemp -> "标签编辑临时文件"
+        }
     }
 
     private fun SettingsState.clearDirectEditor(
