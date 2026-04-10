@@ -71,7 +71,6 @@ class SettingsStoreTest {
         val state = store.state.value
         assertEquals(AppThemeId.Custom, state.selectedTheme)
         assertEquals(customTokens, state.customThemeTokens)
-        assertEquals("#101820", state.customBackgroundHex)
         assertEquals(AppThemeTextPalette.Black, state.textPalettePreferences.custom)
         scope.cancel()
     }
@@ -188,27 +187,56 @@ class SettingsStoreTest {
     }
 
     @Test
-    fun `saving valid custom theme updates repository and clears error`() = runTest {
+    fun `updating custom background color writes through immediately`() = runTest {
         val repository = FakeSettingsRepository(selectedTheme = AppThemeId.Custom)
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val store = SettingsStore(repository, scope)
 
         advanceUntilIdle()
-        store.dispatch(SettingsIntent.CustomThemeBackgroundChanged("#102030"))
-        store.dispatch(SettingsIntent.CustomThemeAccentChanged("#405060"))
-        store.dispatch(SettingsIntent.CustomThemeFocusChanged("#708090"))
-        store.dispatch(SettingsIntent.SaveCustomTheme)
+        store.dispatch(SettingsIntent.CustomThemeColorUpdated(CustomThemeColorRole.Background, 0xFF102030.toInt()))
         advanceUntilIdle()
 
-        val expected = AppThemeTokens(
-            backgroundArgb = 0xFF102030.toInt(),
-            accentArgb = 0xFF405060.toInt(),
-            focusArgb = 0xFF708090.toInt(),
-        )
+        val expected = defaultCustomThemeTokens().copy(backgroundArgb = 0xFF102030.toInt())
         assertEquals(expected, repository.currentCustomThemeTokens())
         assertEquals(expected, store.state.value.customThemeTokens)
-        assertEquals(null, store.state.value.themeInputError)
-        assertEquals("自定义主题已保存。", store.state.value.message)
+        assertEquals(1, repository.setCustomThemeTokensCalls)
+        assertEquals(null, store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
+    fun `updating custom accent color writes through immediately`() = runTest {
+        val repository = FakeSettingsRepository(selectedTheme = AppThemeId.Custom)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.CustomThemeColorUpdated(CustomThemeColorRole.Accent, 0xFF405060.toInt()))
+        advanceUntilIdle()
+
+        val expected = defaultCustomThemeTokens().copy(accentArgb = 0xFF405060.toInt())
+        assertEquals(expected, repository.currentCustomThemeTokens())
+        assertEquals(expected, store.state.value.customThemeTokens)
+        assertEquals(1, repository.setCustomThemeTokensCalls)
+        assertEquals(null, store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
+    fun `updating custom focus color writes through immediately`() = runTest {
+        val repository = FakeSettingsRepository(selectedTheme = AppThemeId.Custom)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.CustomThemeColorUpdated(CustomThemeColorRole.Focus, 0xFF708090.toInt()))
+        advanceUntilIdle()
+
+        val expected = defaultCustomThemeTokens().copy(focusArgb = 0xFF708090.toInt())
+        assertEquals(expected, repository.currentCustomThemeTokens())
+        assertEquals(expected, store.state.value.customThemeTokens)
+        assertEquals(1, repository.setCustomThemeTokensCalls)
+        assertEquals(null, store.state.value.message)
         scope.cancel()
     }
 
@@ -231,25 +259,7 @@ class SettingsStoreTest {
 
         assertEquals(defaultCustomThemeTokens(), repository.currentCustomThemeTokens())
         assertEquals(defaultCustomThemeTokens(), store.state.value.customThemeTokens)
-        assertEquals("#120B0D", store.state.value.customBackgroundHex)
-        scope.cancel()
-    }
-
-    @Test
-    fun `invalid custom theme hex sets error and does not save`() = runTest {
-        val repository = FakeSettingsRepository(selectedTheme = AppThemeId.Custom)
-        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = SettingsStore(repository, scope)
-
-        advanceUntilIdle()
-        store.dispatch(SettingsIntent.CustomThemeBackgroundChanged("#12345"))
-        store.dispatch(SettingsIntent.CustomThemeAccentChanged("#ZZZZZZ"))
-        store.dispatch(SettingsIntent.CustomThemeFocusChanged("#708090"))
-        store.dispatch(SettingsIntent.SaveCustomTheme)
-        advanceUntilIdle()
-
-        assertEquals(0, repository.setCustomThemeTokensCalls)
-        assertEquals("主背景色格式不正确，请使用 #RRGGBB。", store.state.value.themeInputError)
+        assertEquals("自定义主题已重置。", store.state.value.message)
         scope.cancel()
     }
 

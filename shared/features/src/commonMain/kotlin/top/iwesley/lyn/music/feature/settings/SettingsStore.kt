@@ -22,8 +22,6 @@ import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
-import top.iwesley.lyn.music.core.model.formatThemeHexColor
-import top.iwesley.lyn.music.core.model.parseThemeHexColor
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LRCLIB_JSON_MAP_EXTRACTOR
@@ -39,16 +37,18 @@ import top.iwesley.lyn.music.domain.isManagedMusicmatchSource
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceId
 
+enum class CustomThemeColorRole {
+    Background,
+    Accent,
+    Focus,
+}
+
 data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = false,
     val selectedTheme: AppThemeId = AppThemeId.Classic,
     val customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
     val textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
-    val customBackgroundHex: String = formatThemeHexColor(defaultCustomThemeTokens().backgroundArgb),
-    val customAccentHex: String = formatThemeHexColor(defaultCustomThemeTokens().accentArgb),
-    val customFocusHex: String = formatThemeHexColor(defaultCustomThemeTokens().focusArgb),
-    val themeInputError: String? = null,
     val lrcApiUrl: String = "",
     val hasLrcApiSource: Boolean = false,
     val musicmatchUserToken: String = "",
@@ -80,9 +80,7 @@ sealed interface SettingsIntent {
     data class UseSambaCacheChanged(val value: Boolean) : SettingsIntent
     data class ThemeSelected(val value: AppThemeId) : SettingsIntent
     data class ThemeTextPaletteSelected(val themeId: AppThemeId, val value: AppThemeTextPalette) : SettingsIntent
-    data class CustomThemeBackgroundChanged(val value: String) : SettingsIntent
-    data class CustomThemeAccentChanged(val value: String) : SettingsIntent
-    data class CustomThemeFocusChanged(val value: String) : SettingsIntent
+    data class CustomThemeColorUpdated(val role: CustomThemeColorRole, val argb: Int) : SettingsIntent
     data class SelectConfig(val config: LyricsSourceConfig?) : SettingsIntent
     data class SelectLrcApi(val config: LyricsSourceConfig?) : SettingsIntent
     data class SelectMusicmatch(val config: WorkflowLyricsSourceConfig?) : SettingsIntent
@@ -110,7 +108,6 @@ sealed interface SettingsIntent {
     data object ClearLrcApi : SettingsIntent
     data object SaveMusicmatch : SettingsIntent
     data object ClearMusicmatch : SettingsIntent
-    data object SaveCustomTheme : SettingsIntent
     data object ResetCustomTheme : SettingsIntent
     data class ToggleSourceEnabled(val sourceId: String, val enabled: Boolean) : SettingsIntent
     data class DeleteSource(val sourceId: String) : SettingsIntent
@@ -173,10 +170,6 @@ class SettingsStore(
                 updateState { state ->
                     state.copy(
                         customThemeTokens = tokens,
-                        customBackgroundHex = formatThemeHexColor(tokens.backgroundArgb),
-                        customAccentHex = formatThemeHexColor(tokens.accentArgb),
-                        customFocusHex = formatThemeHexColor(tokens.focusArgb),
-                        themeInputError = null,
                     )
                 }
             }
@@ -197,7 +190,7 @@ class SettingsStore(
 
             is SettingsIntent.ThemeSelected -> {
                 repository.setSelectedTheme(intent.value)
-                updateState { it.copy(selectedTheme = intent.value, themeInputError = null) }
+                updateState { it.copy(selectedTheme = intent.value) }
             }
 
             is SettingsIntent.LoadStorageUsage -> loadStorageUsage(force = intent.force)
@@ -215,16 +208,14 @@ class SettingsStore(
                 }
             }
 
-            is SettingsIntent.CustomThemeBackgroundChanged -> updateState {
-                it.copy(customBackgroundHex = intent.value, themeInputError = null)
-            }
-
-            is SettingsIntent.CustomThemeAccentChanged -> updateState {
-                it.copy(customAccentHex = intent.value, themeInputError = null)
-            }
-
-            is SettingsIntent.CustomThemeFocusChanged -> updateState {
-                it.copy(customFocusHex = intent.value, themeInputError = null)
+            is SettingsIntent.CustomThemeColorUpdated -> {
+                val updatedTokens = state.value.customThemeTokens.withUpdatedColor(intent.role, intent.argb)
+                repository.setCustomThemeTokens(updatedTokens)
+                updateState {
+                    it.copy(
+                        customThemeTokens = updatedTokens,
+                    )
+                }
             }
 
             is SettingsIntent.SelectConfig -> updateState {
@@ -450,34 +441,12 @@ class SettingsStore(
                 }
             }
 
-            SettingsIntent.SaveCustomTheme -> {
-                val tokens = state.value.parseCustomThemeDraft().getOrElse { error ->
-                    updateState { it.copy(themeInputError = error.message ?: "颜色格式不正确。") }
-                    return
-                }
-                repository.setCustomThemeTokens(tokens)
-                updateState {
-                    it.copy(
-                        customThemeTokens = tokens,
-                        customBackgroundHex = formatThemeHexColor(tokens.backgroundArgb),
-                        customAccentHex = formatThemeHexColor(tokens.accentArgb),
-                        customFocusHex = formatThemeHexColor(tokens.focusArgb),
-                        themeInputError = null,
-                        message = "自定义主题已保存。",
-                    )
-                }
-            }
-
             SettingsIntent.ResetCustomTheme -> {
                 val tokens = defaultCustomThemeTokens()
                 repository.setCustomThemeTokens(tokens)
                 updateState {
                     it.copy(
                         customThemeTokens = tokens,
-                        customBackgroundHex = formatThemeHexColor(tokens.backgroundArgb),
-                        customAccentHex = formatThemeHexColor(tokens.accentArgb),
-                        customFocusHex = formatThemeHexColor(tokens.focusArgb),
-                        themeInputError = null,
                         message = "自定义主题已重置。",
                     )
                 }
@@ -721,20 +690,15 @@ class SettingsStore(
         )
     }
 
-    private fun SettingsState.parseCustomThemeDraft(): Result<AppThemeTokens> {
-        val background = parseThemeHexColor(customBackgroundHex)
-            ?: return Result.failure(IllegalArgumentException("主背景色格式不正确，请使用 #RRGGBB。"))
-        val accent = parseThemeHexColor(customAccentHex)
-            ?: return Result.failure(IllegalArgumentException("主色格式不正确，请使用 #RRGGBB。"))
-        val focus = parseThemeHexColor(customFocusHex)
-            ?: return Result.failure(IllegalArgumentException("选中 / 落焦色格式不正确，请使用 #RRGGBB。"))
-        return Result.success(
-            AppThemeTokens(
-                backgroundArgb = background,
-                accentArgb = accent,
-                focusArgb = focus,
-            ),
-        )
+    private fun AppThemeTokens.withUpdatedColor(
+        role: CustomThemeColorRole,
+        argb: Int,
+    ): AppThemeTokens {
+        return when (role) {
+            CustomThemeColorRole.Background -> copy(backgroundArgb = argb)
+            CustomThemeColorRole.Accent -> copy(accentArgb = argb)
+            CustomThemeColorRole.Focus -> copy(focusArgb = argb)
+        }
     }
 
     private fun AppStorageCategory.displayName(): String {

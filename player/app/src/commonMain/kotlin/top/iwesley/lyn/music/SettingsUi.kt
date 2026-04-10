@@ -73,9 +73,10 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.deriveAppThemePalette
-import top.iwesley.lyn.music.core.model.parseThemeHexColor
+import top.iwesley.lyn.music.core.model.formatThemeHexColor
 import top.iwesley.lyn.music.core.model.presetThemeTokens
 import top.iwesley.lyn.music.core.model.resolveAppThemeTextPalette
+import top.iwesley.lyn.music.feature.settings.CustomThemeColorRole
 import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.platform.PlatformBackHandler
@@ -161,8 +162,6 @@ internal fun SettingsTab(
         listOf(
             AppThemeId.Classic,
             AppThemeId.Ocean,
-            AppThemeId.Forest,
-            AppThemeId.Sand,
             AppThemeId.Custom,
         )
     }
@@ -215,7 +214,6 @@ internal fun SettingsTab(
                             state = state,
                             selectedThemeTextPalette = selectedThemeTextPalette,
                             themeDisplayOrder = themeDisplayOrder,
-                            settingsFieldColors = settingsFieldColors,
                             onSettingsIntent = onSettingsIntent,
                             showHeading = true,
                             modifier = Modifier
@@ -294,7 +292,6 @@ internal fun SettingsTab(
                                     state = state,
                                     selectedThemeTextPalette = selectedThemeTextPalette,
                                     themeDisplayOrder = themeDisplayOrder,
-                                    settingsFieldColors = settingsFieldColors,
                                     onSettingsIntent = onSettingsIntent,
                                     showHeading = false,
                                     modifier = detailModifier,
@@ -492,12 +489,28 @@ private fun ThemeSettingsPane(
     state: SettingsState,
     selectedThemeTextPalette: AppThemeTextPalette,
     themeDisplayOrder: List<AppThemeId>,
-    settingsFieldColors: androidx.compose.material3.TextFieldColors,
     onSettingsIntent: (SettingsIntent) -> Unit,
     showHeading: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
+    var activeColorRole by remember { mutableStateOf<CustomThemeColorRole?>(null) }
+    LaunchedEffect(state.selectedTheme) {
+        if (state.selectedTheme != AppThemeId.Custom) {
+            activeColorRole = null
+        }
+    }
+    activeColorRole?.let { role ->
+        ThemeColorPickerDialog(
+            label = customThemeColorLabel(role),
+            initialArgb = state.customThemeTokens.colorFor(role),
+            onDismiss = { activeColorRole = null },
+            onConfirm = { argb ->
+                activeColorRole = null
+                onSettingsIntent(SettingsIntent.CustomThemeColorUpdated(role, argb))
+            },
+        )
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -526,11 +539,11 @@ private fun ThemeSettingsPane(
                                 themeId = themeId,
                                 selected = state.selectedTheme == themeId,
                                 tokens = if (themeId == AppThemeId.Custom) state.customThemeTokens else presetThemeTokens(
-                                    themeId
+                                    themeId,
                                 ),
                                 textPalette = resolveAppThemeTextPalette(
                                     themeId,
-                                    state.textPalettePreferences
+                                    state.textPalettePreferences,
                                 ),
                                 onClick = { onSettingsIntent(SettingsIntent.ThemeSelected(themeId)) },
                                 modifier = Modifier.weight(1f),
@@ -548,8 +561,8 @@ private fun ThemeSettingsPane(
                         onSettingsIntent(
                             SettingsIntent.ThemeTextPaletteSelected(
                                 state.selectedTheme,
-                                it
-                            )
+                                it,
+                            ),
                         )
                     },
                 )
@@ -560,56 +573,25 @@ private fun ThemeSettingsPane(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "输入 3 个基础颜色后保存，主界面会立即切换到新的自定义配色。",
+                        text = "点击颜色项选择并立即应用，页面会保留只读色值作为参考。",
                         color = shellColors.secondaryText,
                     )
-                    ThemeColorField(
+                    ThemeColorPickerRow(
                         label = "主背景色",
-                        value = state.customBackgroundHex,
-                        previewArgb = parseThemeHexColor(state.customBackgroundHex)
-                            ?: state.customThemeTokens.backgroundArgb,
-                        onValueChange = {
-                            onSettingsIntent(
-                                SettingsIntent.CustomThemeBackgroundChanged(
-                                    it
-                                )
-                            )
-                        },
-                        colors = settingsFieldColors,
+                        argb = state.customThemeTokens.backgroundArgb,
+                        onClick = { activeColorRole = CustomThemeColorRole.Background },
                     )
-                    ThemeColorField(
+                    ThemeColorPickerRow(
                         label = "主色",
-                        value = state.customAccentHex,
-                        previewArgb = parseThemeHexColor(state.customAccentHex)
-                            ?: state.customThemeTokens.accentArgb,
-                        onValueChange = {
-                            onSettingsIntent(
-                                SettingsIntent.CustomThemeAccentChanged(
-                                    it
-                                )
-                            )
-                        },
-                        colors = settingsFieldColors,
+                        argb = state.customThemeTokens.accentArgb,
+                        onClick = { activeColorRole = CustomThemeColorRole.Accent },
                     )
-                    ThemeColorField(
+                    ThemeColorPickerRow(
                         label = "选中 / 落焦色",
-                        value = state.customFocusHex,
-                        previewArgb = parseThemeHexColor(state.customFocusHex)
-                            ?: state.customThemeTokens.focusArgb,
-                        onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeFocusChanged(it)) },
-                        colors = settingsFieldColors,
+                        argb = state.customThemeTokens.focusArgb,
+                        onClick = { activeColorRole = CustomThemeColorRole.Focus },
                     )
-                    state.themeInputError?.let { error ->
-                        Text(
-                            text = error,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { onSettingsIntent(SettingsIntent.SaveCustomTheme) }) {
-                            Text("保存自定义主题")
-                        }
                         OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ResetCustomTheme) }) {
                             Text("重置自定义主题")
                         }
@@ -1612,30 +1594,48 @@ private fun ThemeTextPaletteToggle(
 }
 
 @Composable
-private fun ThemeColorField(
+private fun ThemeColorPickerRow(
     label: String,
-    value: String,
-    previewArgb: Int,
-    onValueChange: (String) -> Unit,
-    colors: androidx.compose.material3.TextFieldColors,
+    argb: Int,
+    onClick: () -> Unit,
 ) {
+    val shellColors = mainShellColors
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(shellColors.navContainer.copy(alpha = 0.72f))
+            .clickable(onClick = onClick)
+            .border(1.dp, shellColors.cardBorder, RoundedCornerShape(18.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ThemeSwatch(
-            argb = previewArgb,
+            argb = argb,
             modifier = Modifier.size(42.dp),
         )
-        ImeAwareOutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            label = { Text(label) },
+        Column(
             modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(18.dp),
-            singleLine = true,
-            colors = colors,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = formatThemeHexColor(argb),
+                color = shellColors.secondaryText,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        Text(
+            text = "选择颜色",
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
@@ -1669,5 +1669,21 @@ private fun themeTextPaletteLabel(textPalette: AppThemeTextPalette): String {
     return when (textPalette) {
         AppThemeTextPalette.White -> "白字"
         AppThemeTextPalette.Black -> "黑字"
+    }
+}
+
+private fun AppThemeTokens.colorFor(role: CustomThemeColorRole): Int {
+    return when (role) {
+        CustomThemeColorRole.Background -> backgroundArgb
+        CustomThemeColorRole.Accent -> accentArgb
+        CustomThemeColorRole.Focus -> focusArgb
+    }
+}
+
+private fun customThemeColorLabel(role: CustomThemeColorRole): String {
+    return when (role) {
+        CustomThemeColorRole.Background -> "主背景色"
+        CustomThemeColorRole.Accent -> "主色"
+        CustomThemeColorRole.Focus -> "选中 / 落焦色"
     }
 }
