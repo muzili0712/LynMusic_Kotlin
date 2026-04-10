@@ -1,12 +1,17 @@
 package top.iwesley.lyn.music.platform
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.pointed
+import kotlinx.cinterop.toKString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSCachesDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
+import platform.posix.closedir
+import platform.posix.opendir
+import platform.posix.readdir
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 
 fun createIosArtworkCacheStore(): ArtworkCacheStore = IosArtworkCacheStore()
@@ -23,8 +28,10 @@ private class IosArtworkCacheStore : ArtworkCacheStore {
             if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
                 return@runCatching target
             }
+            val cachePrefix = cacheKey.stableArtworkCacheHash()
+            findIosArtworkCacheFile(directory, cachePrefix)?.let { return@runCatching it }
             val payload = readIosRemoteBytes(target) ?: return@runCatching null
-            val output = "$directory/${cacheKey.stableArtworkCacheHash()}${artworkCacheExtension(target, payload)}"
+            val output = "$directory/$cachePrefix${artworkCacheExtension(target, payload)}"
             if (readIosLocalBytes(output)?.isNotEmpty() == true) {
                 return@runCatching output
             }
@@ -33,6 +40,26 @@ private class IosArtworkCacheStore : ArtworkCacheStore {
             }
             output.takeIf { readIosLocalBytes(it)?.isNotEmpty() == true }
         }.getOrNull()
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun findIosArtworkCacheFile(directory: String, cachePrefix: String): String? {
+    val handle = opendir(directory) ?: return null
+    return try {
+        while (true) {
+            val entry = readdir(handle)?.pointed ?: break
+            val name = entry.d_name.toKString()
+            if (name == "." || name == "..") continue
+            if (!name.startsWith(cachePrefix)) continue
+            val path = "$directory/$name"
+            if (readIosLocalBytes(path)?.isNotEmpty() == true) {
+                return path
+            }
+        }
+        null
+    } finally {
+        closedir(handle)
     }
 }
 

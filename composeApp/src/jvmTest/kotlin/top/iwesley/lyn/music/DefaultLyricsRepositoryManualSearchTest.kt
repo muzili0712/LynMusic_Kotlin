@@ -289,10 +289,12 @@ class DefaultLyricsRepositoryManualSearchTest {
         )
 
         val resolved = repository.getLyrics(track)
+        val cachedRows = database.lyricsCacheDao().getByTrack(track.id)
 
         assertNotNull(resolved)
         assertEquals("source-lrcapi", resolved.document.sourceId)
         assertEquals("https://img.example.com/lrcapi.jpg", resolved.artworkLocator)
+        assertEquals("https://img.example.com/lrcapi.jpg", cachedRows.single().artworkLocator)
     }
 
     @Test

@@ -24,10 +24,14 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
             if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
                 return@runCatching target
             }
+            val cachePrefix = cacheKey.stableArtworkCacheHash()
+            directory.listFiles()
+                ?.firstOrNull { file -> file.isFile && file.name.startsWith(cachePrefix) && file.length() > 0L }
+                ?.let { return@runCatching it.absolutePath }
             val payload = URL(target).openStream().use { it.readBytes() }
             if (payload.isEmpty()) return@runCatching null
             val extension = artworkCacheExtension(target, payload)
-            val fileName = "${cacheKey.stableArtworkCacheHash()}$extension"
+            val fileName = "$cachePrefix$extension"
             val output = File(directory, fileName)
             if (output.exists() && output.length() > 0L) {
                 return@runCatching output.absolutePath

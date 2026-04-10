@@ -10,64 +10,70 @@ import java.net.URI
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Paths
-import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import org.jetbrains.skia.Image
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
-import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
-import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
+import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
+import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
+import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 
 @Composable
-actual fun rememberPlatformArtworkBitmap(locator: String?): ImageBitmap? {
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, locator) {
-        value = loadJvmArtworkBitmap(locator)
+actual fun rememberPlatformArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? {
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, locator, cacheRemote) {
+        value = loadJvmArtworkBitmap(locator, cacheRemote)
     }
     return bitmap
 }
 
-private suspend fun loadJvmArtworkBitmap(locator: String?): ImageBitmap? = withContext(Dispatchers.IO) {
+private suspend fun loadJvmArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? = withContext(Dispatchers.IO) {
     runCatching {
-        val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
-        if (rawTarget.isBlank()) return@runCatching null
-        val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
-            val actualUrl = NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
-            if (actualUrl.isBlank()) return@runCatching null
-            val cacheDirectory = File(File(System.getProperty("user.home")), ".lynmusic/artwork-cache").apply { mkdirs() }
-            val cacheKey = rawTarget.stableHash()
-            val existingCacheFile = cacheDirectory
-                .listFiles()
-                ?.firstOrNull { file -> file.isFile && file.name.startsWith(cacheKey) && file.length() > 0L }
-            if (existingCacheFile != null) {
-                existingCacheFile.absolutePath
-            } else {
-                val payload = URL(actualUrl).openStream().use { it.readBytes() }
-                if (payload.isEmpty()) return@runCatching null
-                val cacheFile = cacheDirectory.resolve(
-                    "$cacheKey${inferArtworkFileExtension(locator = actualUrl, bytes = payload)}",
-                )
-                Files.write(cacheFile.toPath(), payload)
-                cacheFile.absolutePath
+        val bytes = loadJvmArtworkBytes(locator, cacheRemote = cacheRemote) ?: return@runCatching null
+        Image.makeFromEncoded(bytes).toComposeImageBitmap()
+    }.getOrNull()
+}
+
+internal suspend fun loadJvmArtworkBytes(
+    locator: String?,
+    cacheRemote: Boolean = true,
+    userHomePath: String = System.getProperty("user.home"),
+    remoteBytesLoader: suspend (String) -> ByteArray? = { target ->
+        URL(target).openStream().use { it.readBytes() }
+    },
+): ByteArray? = withContext(Dispatchers.IO) {
+    runCatching {
+        val normalizedLocator = normalizedArtworkCacheLocator(locator) ?: return@runCatching null
+        val target = resolveArtworkCacheTarget(normalizedLocator) ?: return@runCatching null
+        when {
+            isRemoteArtworkTarget(target) -> {
+                val cacheDirectory = File(File(userHomePath), ".lynmusic/artwork-cache").apply { mkdirs() }
+                val cachePrefix = normalizedLocator.stableArtworkCacheHash()
+                val existingCacheFile = cacheDirectory
+                    .listFiles()
+                    ?.firstOrNull { file -> file.isFile && file.name.startsWith(cachePrefix) && file.length() > 0L }
+                if (existingCacheFile != null) {
+                    Files.readAllBytes(existingCacheFile.toPath())
+                } else {
+                    val payload = remoteBytesLoader(target)
+                    if (payload == null || payload.isEmpty()) return@runCatching null
+                    if (cacheRemote) {
+                        val cacheFile = cacheDirectory.resolve(
+                            "$cachePrefix${inferArtworkFileExtension(locator = target, bytes = payload)}",
+                        )
+                        runCatching { Files.write(cacheFile.toPath(), payload) }
+                    }
+                    payload
+                }
             }
-        } else {
-            rawTarget
-        }
-        if (target.isBlank()) return@runCatching null
-        val bytes = when {
-            target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true) ->
-                URL(target).openStream().use { it.readBytes() }
 
             target.startsWith("file://", ignoreCase = true) ->
                 Files.readAllBytes(Paths.get(URI(target)))
 
             else -> Files.readAllBytes(Paths.get(target))
         }
-        Image.makeFromEncoded(bytes).toComposeImageBitmap()
     }.getOrNull()
 }
 
-private fun String.stableHash(): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray())
-    return digest.joinToString("") { byte -> "%02x".format(byte) }
+private fun isRemoteArtworkTarget(target: String): Boolean {
+    return target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true)
 }

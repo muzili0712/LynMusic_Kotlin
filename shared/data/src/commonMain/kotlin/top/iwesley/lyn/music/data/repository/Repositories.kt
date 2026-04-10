@@ -781,7 +781,7 @@ class DefaultLyricsRepository(
         }
 
         for (source in sources) {
-            val result = when (source) {
+            val sourceResult = when (source) {
                 is LyricsSourceConfig -> requestDirectLyricsResults(
                     track = track,
                     config = source,
@@ -790,16 +790,21 @@ class DefaultLyricsRepository(
                     ResolvedLyricsResult(
                         document = parsed.document,
                         artworkLocator = normalizeArtworkLocator(parsed.artworkLocator),
-                    ).withArtworkOverride(manualArtworkOverride)
+                    )
                 }
 
                 is WorkflowLyricsSourceConfig -> requestWorkflowLyricsDocument(
                     track = track,
                     config = source,
                     requestType = "auto",
-                )?.withArtworkOverride(manualArtworkOverride)
+                )
             } ?: continue
-            storeLyricsDocument(track.id, result.document)
+            val result = sourceResult.withArtworkOverride(manualArtworkOverride)
+            storeLyricsDocument(
+                track.id,
+                sourceResult.document,
+                artworkLocator = sourceResult.artworkLocator,
+            )
             logger.info(LYRICS_LOG_TAG) {
                 "resolved track=$trackLabel source=${source.id} synced=${result.document.isSynced} " +
                     "lines=${result.document.lines.size} artworkLocator=${result.artworkLocator.orEmpty()}"
@@ -915,7 +920,7 @@ class DefaultLyricsRepository(
                     storeLyricsDocument(trackId, appliedDocument)
                     sourceArtwork
                 } else {
-                    val cachedArtworkLocator = cacheArtworkLocator(
+                    val normalizedArtworkLocator = cacheArtworkLocator(
                         trackId = trackId,
                         sourceKey = candidate.sourceId,
                         candidateKey = artworkCandidateKey,
@@ -924,9 +929,9 @@ class DefaultLyricsRepository(
                     persistManualOverride(
                         trackId = trackId,
                         rawPayload = appliedDocument.rawPayload,
-                        artworkLocator = cachedArtworkLocator,
+                        artworkLocator = normalizedArtworkLocator,
                     )
-                    cachedArtworkLocator
+                    normalizedArtworkLocator
                 }
                 AppliedLyricsResult(
                     document = appliedDocument,
@@ -966,7 +971,7 @@ class DefaultLyricsRepository(
                     )
                     sourceTrackArtwork
                 } else {
-                    val cachedArtworkLocator = cacheArtworkLocator(
+                    val normalizedArtworkLocator = cacheArtworkLocator(
                         trackId = trackId,
                         sourceKey = candidate.sourceId,
                         candidateKey = artworkCandidateKey,
@@ -975,9 +980,9 @@ class DefaultLyricsRepository(
                     persistManualOverride(
                         trackId = trackId,
                         rawPayload = existingManualPayload,
-                        artworkLocator = cachedArtworkLocator,
+                        artworkLocator = normalizedArtworkLocator,
                     )
-                    cachedArtworkLocator
+                    normalizedArtworkLocator
                 }
                 AppliedLyricsResult(
                     document = null,
@@ -1164,7 +1169,7 @@ class DefaultLyricsRepository(
         val result = when (mode) {
             LyricsSearchApplyMode.FULL -> {
                 val appliedDocument = fetchWorkflowLyricsForManualApply(trackId, candidate)
-                val cachedArtworkLocator = cacheArtworkLocator(
+                val normalizedArtworkLocator = cacheArtworkLocator(
                     trackId = trackId,
                     sourceKey = candidate.sourceId,
                     candidateKey = candidate.id,
@@ -1173,11 +1178,11 @@ class DefaultLyricsRepository(
                 persistManualOverride(
                     trackId = trackId,
                     rawPayload = appliedDocument.rawPayload,
-                    artworkLocator = cachedArtworkLocator,
+                    artworkLocator = normalizedArtworkLocator,
                 )
                 AppliedLyricsResult(
                     document = appliedDocument,
-                    artworkLocator = cachedArtworkLocator,
+                    artworkLocator = normalizedArtworkLocator,
                 )
             }
 
@@ -1195,7 +1200,7 @@ class DefaultLyricsRepository(
             }
 
             LyricsSearchApplyMode.ARTWORK_ONLY -> {
-                val cachedArtworkLocator = cacheArtworkLocator(
+                val normalizedArtworkLocator = cacheArtworkLocator(
                     trackId = trackId,
                     sourceKey = candidate.sourceId,
                     candidateKey = candidate.id,
@@ -1204,11 +1209,11 @@ class DefaultLyricsRepository(
                 persistManualOverride(
                     trackId = trackId,
                     rawPayload = existingManualPayload,
-                    artworkLocator = cachedArtworkLocator,
+                    artworkLocator = normalizedArtworkLocator,
                 )
                 AppliedLyricsResult(
                     document = null,
-                    artworkLocator = cachedArtworkLocator,
+                    artworkLocator = normalizedArtworkLocator,
                 )
             }
         }
@@ -1242,13 +1247,7 @@ class DefaultLyricsRepository(
     ): String? {
         val normalizedLocator = normalizeArtworkLocator(sourceLocator)?.trim().orEmpty()
         if (normalizedLocator.isBlank()) return null
-        val cacheKey = buildString {
-            append(trackId)
-            append('_')
-            append(sourceKey)
-            append('_')
-            append(candidateKey)
-        }
+        val cacheKey = normalizedLocator
         val cachedLocator = runCatching {
             artworkCacheStore.cache(
                 locator = normalizedLocator,
@@ -1264,7 +1263,7 @@ class DefaultLyricsRepository(
                 "artwork-cache-hit track=$trackId source=$sourceKey candidate=$candidateKey locator=$cachedLocator"
             }
         }
-        return cachedLocator ?: normalizedLocator
+        return normalizedLocator
     }
 
     private fun resolveCachedLyrics(row: LyricsCacheEntity): ResolvedLyricsResult? {

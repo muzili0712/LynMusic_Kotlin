@@ -95,13 +95,14 @@ class LyricsRepositoryManualOverrideTest {
                 favoritedAt = 1L,
             ),
         )
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf("https://img.example.com/manual.jpg" to "/tmp/cache/manual.jpg"),
+        )
         val repository = DefaultLyricsRepository(
             database = database,
             httpClient = RecordingLyricsHttpClient(),
             secureCredentialStore = MapCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
-            artworkCacheStore = FakeArtworkCacheStore(
-                cached = mapOf("https://img.example.com/manual.jpg" to "/tmp/cache/manual.jpg"),
-            ),
+            artworkCacheStore = artworkCacheStore,
             logger = NoopDiagnosticLogger,
         )
 
@@ -130,15 +131,19 @@ class LyricsRepositoryManualOverrideTest {
 
         assertNotNull(overrideRow)
         assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, overrideRow.sourceId)
-        assertEquals("/tmp/cache/manual.jpg", overrideRow.artworkLocator)
+        assertEquals("https://img.example.com/manual.jpg", overrideRow.artworkLocator)
         assertEquals("direct-source", assertNotNull(applied.document).sourceId)
-        assertEquals("/tmp/cache/manual.jpg", applied.artworkLocator)
+        assertEquals("https://img.example.com/manual.jpg", applied.artworkLocator)
         assertNotNull(resolved)
         assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, resolved.document.sourceId)
         assertEquals("manual external line", resolved.document.lines.single().text)
-        assertEquals("/tmp/cache/manual.jpg", resolved.artworkLocator)
-        assertEquals("/tmp/cache/manual.jpg", libraryTrack.artworkLocator)
-        assertEquals("/tmp/cache/manual.jpg", favoriteTrack.artworkLocator)
+        assertEquals("https://img.example.com/manual.jpg", resolved.artworkLocator)
+        assertEquals("https://img.example.com/manual.jpg", libraryTrack.artworkLocator)
+        assertEquals("https://img.example.com/manual.jpg", favoriteTrack.artworkLocator)
+        assertEquals(
+            listOf("https://img.example.com/manual.jpg" to "https://img.example.com/manual.jpg"),
+            artworkCacheStore.requests,
+        )
     }
 
     @Test
@@ -156,6 +161,9 @@ class LyricsRepositoryManualOverrideTest {
                 rawJson = TEST_WORKFLOW_JSON,
             ),
         )
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf("https://img.example.com/workflow.jpg" to "/tmp/cache/workflow.jpg"),
+        )
         val repository = DefaultLyricsRepository(
             database = database,
             httpClient = RecordingLyricsHttpClient(
@@ -169,9 +177,7 @@ class LyricsRepositoryManualOverrideTest {
                 ),
             ),
             secureCredentialStore = MapCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
-            artworkCacheStore = FakeArtworkCacheStore(
-                cached = mapOf("https://img.example.com/workflow.jpg" to "/tmp/cache/workflow.jpg"),
-            ),
+            artworkCacheStore = artworkCacheStore,
             logger = NoopDiagnosticLogger,
         )
 
@@ -195,13 +201,18 @@ class LyricsRepositoryManualOverrideTest {
         val resolved = repository.getLyrics(track)
 
         assertNotNull(overrideRow)
-        assertEquals("/tmp/cache/workflow.jpg", overrideRow.artworkLocator)
+        assertEquals("https://img.example.com/workflow.jpg", overrideRow.artworkLocator)
         assertEquals("workflow-manual", assertNotNull(applied.document).sourceId)
-        assertEquals("/tmp/cache/workflow.jpg", applied.artworkLocator)
+        assertEquals("https://img.example.com/workflow.jpg", applied.artworkLocator)
         assertNotNull(resolved)
         assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, resolved.document.sourceId)
         assertEquals("workflow line", resolved.document.lines.single().text)
-        assertEquals("/tmp/cache/workflow.jpg", libraryTrack.artworkLocator)
+        assertEquals("https://img.example.com/workflow.jpg", resolved.artworkLocator)
+        assertEquals("https://img.example.com/workflow.jpg", libraryTrack.artworkLocator)
+        assertEquals(
+            listOf("https://img.example.com/workflow.jpg" to "https://img.example.com/workflow.jpg"),
+            artworkCacheStore.requests,
+        )
     }
 
     @Test
@@ -429,13 +440,14 @@ class LyricsRepositoryManualOverrideTest {
                 updatedAt = 2L,
             ),
         )
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf("https://img.example.com/art-only.jpg" to "/tmp/cache/art-only.jpg"),
+        )
         val repository = DefaultLyricsRepository(
             database = database,
             httpClient = RecordingLyricsHttpClient(),
             secureCredentialStore = MapCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
-            artworkCacheStore = FakeArtworkCacheStore(
-                cached = mapOf("https://img.example.com/art-only.jpg" to "/tmp/cache/art-only.jpg"),
-            ),
+            artworkCacheStore = artworkCacheStore,
             logger = NoopDiagnosticLogger,
         )
 
@@ -465,15 +477,19 @@ class LyricsRepositoryManualOverrideTest {
 
         assertNotNull(overrideRow)
         assertEquals("", overrideRow.rawPayload)
-        assertEquals("/tmp/cache/art-only.jpg", overrideRow.artworkLocator)
+        assertEquals("https://img.example.com/art-only.jpg", overrideRow.artworkLocator)
         assertNull(applied.document)
-        assertEquals("/tmp/cache/art-only.jpg", applied.artworkLocator)
+        assertEquals("https://img.example.com/art-only.jpg", applied.artworkLocator)
         assertNotNull(resolved)
         assertEquals(NAVIDROME_LYRICS_SOURCE_ID, resolved.document.sourceId)
         assertEquals("source line", resolved.document.lines.single().text)
-        assertEquals("/tmp/cache/art-only.jpg", resolved.artworkLocator)
-        assertEquals("/tmp/cache/art-only.jpg", libraryTrack.artworkLocator)
-        assertEquals("/tmp/cache/art-only.jpg", favoriteTrack.artworkLocator)
+        assertEquals("https://img.example.com/art-only.jpg", resolved.artworkLocator)
+        assertEquals("https://img.example.com/art-only.jpg", libraryTrack.artworkLocator)
+        assertEquals("https://img.example.com/art-only.jpg", favoriteTrack.artworkLocator)
+        assertEquals(
+            listOf("https://img.example.com/art-only.jpg" to "https://img.example.com/art-only.jpg"),
+            artworkCacheStore.requests,
+        )
     }
 
     @Test
@@ -526,6 +542,52 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals("manual line", resolved.document.lines.single().text)
         assertNull(resolved.artworkLocator)
         assertEquals(originalArtwork, libraryTrack.artworkLocator)
+    }
+
+    @Test
+    fun `manual artwork apply persists normalized artwork locator and caches by normalized locator`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        val track = navidromeTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        val rawArtworkLocator = "https://y.gtimg.cn/music/photo_new/T002R800x800M000001O06fF2b3W8Pjpg?max_age=2592000"
+        val normalizedArtworkLocator = "https://y.gtimg.cn/music/photo_new/T002R800x800M000001O06fF2b3W8P.jpg?max_age=2592000"
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf(normalizedArtworkLocator to "/tmp/cache/gtimg.jpg"),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            artworkCacheStore = artworkCacheStore,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val applied = repository.applyLyricsCandidate(
+            trackId = track.id,
+            candidate = top.iwesley.lyn.music.core.model.LyricsSearchCandidate(
+                sourceId = "direct-source",
+                sourceName = "Direct Source",
+                document = plainLyricsDocument("direct-source", "ignored line"),
+                itemId = "song-88",
+                artworkLocator = rawArtworkLocator,
+                isTrackProvided = false,
+            ),
+            mode = LyricsSearchApplyMode.ARTWORK_ONLY,
+        )
+
+        val overrideRow = database.lyricsCacheDao()
+            .getByTrackIdAndSourceId(track.id, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
+        val libraryTrack = RoomLibraryRepository(database).getTracksByIds(listOf(track.id)).single()
+
+        assertNotNull(overrideRow)
+        assertEquals(normalizedArtworkLocator, overrideRow.artworkLocator)
+        assertEquals(normalizedArtworkLocator, applied.artworkLocator)
+        assertEquals(normalizedArtworkLocator, libraryTrack.artworkLocator)
+        assertEquals(
+            listOf(normalizedArtworkLocator to normalizedArtworkLocator),
+            artworkCacheStore.requests,
+        )
     }
 }
 
@@ -624,7 +686,12 @@ private class RecordingLyricsHttpClient(
 private class FakeArtworkCacheStore(
     private val cached: Map<String, String>,
 ) : ArtworkCacheStore {
-    override suspend fun cache(locator: String, cacheKey: String): String? = cached[locator] ?: locator
+    val requests = mutableListOf<Pair<String, String>>()
+
+    override suspend fun cache(locator: String, cacheKey: String): String? {
+        requests += locator to cacheKey
+        return cached[locator] ?: locator
+    }
 }
 
 private class MapCredentialStore(

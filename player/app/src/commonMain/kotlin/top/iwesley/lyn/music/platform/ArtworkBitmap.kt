@@ -4,4 +4,4 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.ImageBitmap
 
 @Composable
-expect fun rememberPlatformArtworkBitmap(locator: String?): ImageBitmap?
+expect fun rememberPlatformArtworkBitmap(locator: String?, cacheRemote: Boolean = true): ImageBitmap?

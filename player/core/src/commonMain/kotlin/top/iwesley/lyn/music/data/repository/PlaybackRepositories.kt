@@ -10,7 +10,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.random.Random
 import kotlin.time.Clock
+import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
+import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
@@ -20,6 +22,7 @@ import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedSystemPlaybackControlsPlatformService
+import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
 
@@ -42,9 +45,12 @@ class DefaultPlaybackRepository(
     private val gateway: PlaybackGateway,
     private val scope: CoroutineScope,
     private val systemPlaybackControlsPlatformService: SystemPlaybackControlsPlatformService = UnsupportedSystemPlaybackControlsPlatformService,
+    private val logger: DiagnosticLogger = NoopDiagnosticLogger,
 ) : PlaybackRepository {
     private val mutableSnapshot = MutableStateFlow(PlaybackSnapshot())
     private var observedCompletionCount = 0L
+    private var loggedArtworkTrackId: String? = null
+    private var loggedDisplayArtworkLocator: String? = null
 
     override val snapshot: StateFlow<PlaybackSnapshot> = mutableSnapshot.asStateFlow()
 
@@ -92,7 +98,8 @@ class DefaultPlaybackRepository(
                         metadataTitle = if (currentTrackChanged) null else snapshot.metadataTitle,
                         metadataArtistName = if (currentTrackChanged) null else snapshot.metadataArtistName,
                         metadataAlbumTitle = if (currentTrackChanged) null else snapshot.metadataAlbumTitle,
-                        metadataArtworkLocator = if (currentTrackChanged) null else snapshot.metadataArtworkLocator,
+                        // Keep temporary artwork overrides stable across live track refreshes.
+                        metadataArtworkLocator = snapshot.metadataArtworkLocator,
                     )
                 }
                 if (snapshotChanged) {
@@ -124,6 +131,7 @@ class DefaultPlaybackRepository(
         }
         scope.launch {
             snapshot.collect { snapshot ->
+                logDisplayArtwork(snapshot)
                 systemPlaybackControlsPlatformService.updateSnapshot(snapshot)
             }
         }
@@ -335,6 +343,22 @@ class DefaultPlaybackRepository(
         }
         return next
     }
+
+    private fun logDisplayArtwork(snapshot: PlaybackSnapshot) {
+        val trackId = snapshot.currentTrack?.id
+        val finalArtwork = snapshot.currentDisplayArtworkLocator?.takeIf { it.isNotBlank() }
+        if (trackId == loggedArtworkTrackId && finalArtwork == loggedDisplayArtworkLocator) {
+            return
+        }
+        loggedArtworkTrackId = trackId
+        loggedDisplayArtworkLocator = finalArtwork
+        logger.debug(PLAYBACK_LOG_TAG) {
+            "display-artwork track=${trackId.orEmpty()} " +
+                "metadata=${snapshot.metadataArtworkLocator.orEmpty()} " +
+                "trackArtwork=${snapshot.currentTrack?.artworkLocator.orEmpty()} " +
+                "final=${finalArtwork.orEmpty()}"
+        }
+    }
 }
 
 data class PlayerRuntimeServices(
@@ -345,6 +369,8 @@ data class PlayerRuntimeServices(
 )
 
 private fun now(): Long = Clock.System.now().toEpochMilliseconds()
+
+private const val PLAYBACK_LOG_TAG = "Playback"
 
 private fun String.toPlaybackMode(): PlaybackMode {
     return runCatching { PlaybackMode.valueOf(this) }.getOrDefault(PlaybackMode.ORDER)

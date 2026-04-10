@@ -180,6 +180,58 @@ class PlaybackRepositoriesTest {
     }
 
     @Test
+    fun `temporary playback artwork override survives live track refresh`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val trackEntity = TrackEntity(
+            id = "track-1",
+            sourceId = "local-1",
+            title = "First Song",
+            artistId = null,
+            artistName = "Artist A",
+            albumId = null,
+            albumTitle = "Album A",
+            durationMs = 180_000L,
+            trackNumber = null,
+            discNumber = null,
+            mediaLocator = "file:///music/track-1.mp3",
+            relativePath = "First Song.mp3",
+            artworkLocator = "/tmp/original.jpg",
+            sizeBytes = 0L,
+            modifiedAt = 0L,
+        )
+        database.trackDao().upsertAll(listOf(trackEntity))
+        val repository = DefaultPlaybackRepository(database, gateway, scope)
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(
+                tracks = listOf(
+                    sampleTrack("track-1", "First Song").copy(artworkLocator = "/tmp/original.jpg"),
+                ),
+                startIndex = 0,
+            )
+            advanceUntilIdle()
+
+            repository.overrideCurrentTrackArtwork("https://img.example.com/override.jpg")
+            advanceUntilIdle()
+            assertEquals("https://img.example.com/override.jpg", repository.snapshot.value.currentDisplayArtworkLocator)
+
+            database.trackDao().upsertAll(listOf(trackEntity.copy(modifiedAt = 1L)))
+            advanceUntilIdle()
+
+            assertEquals("/tmp/original.jpg", repository.snapshot.value.currentTrack?.artworkLocator)
+            assertEquals("https://img.example.com/override.jpg", repository.snapshot.value.metadataArtworkLocator)
+            assertEquals("https://img.example.com/override.jpg", repository.snapshot.value.currentDisplayArtworkLocator)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
     fun `system controls service receives snapshot updates`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()

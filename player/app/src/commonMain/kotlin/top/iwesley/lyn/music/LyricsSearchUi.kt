@@ -938,7 +938,7 @@ private fun LyricsSearchArtworkThumbnail(
     artworkLocator: String?,
     modifier: Modifier = Modifier,
 ) {
-    val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
+    val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator, cacheRemote = false)
     val shellColors = mainShellColors
     Box(
         modifier = modifier

@@ -23,9 +23,13 @@ private class AndroidArtworkCacheStore(
             if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
                 return@runCatching target
             }
+            val cachePrefix = cacheKey.stableArtworkCacheHash()
+            directory.listFiles()
+                ?.firstOrNull { file -> file.isFile && file.name.startsWith(cachePrefix) && file.length() > 0L }
+                ?.let { return@runCatching it.absolutePath }
             val payload = URL(target).openStream().use { it.readBytes() }
             if (payload.isEmpty()) return@runCatching null
-            val fileName = "${cacheKey.stableArtworkCacheHash()}${artworkCacheExtension(target, payload)}"
+            val fileName = "$cachePrefix${artworkCacheExtension(target, payload)}"
             val output = File(directory, fileName)
             if (output.exists() && output.length() > 0L) {
                 return@runCatching output.absolutePath

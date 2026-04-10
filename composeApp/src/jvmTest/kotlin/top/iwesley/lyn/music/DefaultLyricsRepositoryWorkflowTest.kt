@@ -18,6 +18,7 @@ import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.db.LyricsCacheEntity
 import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
@@ -114,7 +115,7 @@ class DefaultLyricsRepositoryWorkflowTest {
 
         assertNotNull(autoLyrics)
         assertEquals("workflow-oiapi", autoLyrics.document.sourceId)
-        assertEquals("/tmp/lynmusic-artwork-cache/rain.jpg", autoLyrics.artworkLocator)
+        assertEquals("https://img.test/rain.jpg", autoLyrics.artworkLocator)
 
         val workflowCandidates = repository.searchWorkflowSongCandidates(track)
 
@@ -123,14 +124,127 @@ class DefaultLyricsRepositoryWorkflowTest {
         val applied = repository.applyWorkflowSongCandidate(track.id, workflowCandidates.first())
         val cachedRows = database.lyricsCacheDao().getByTrack(track.id)
         val storedTrack = database.trackDao().getByIds(listOf(track.id)).single()
+        val workflowRow = cachedRows.first { it.sourceId == "workflow-oiapi" }
+        val manualOverrideRow = cachedRows.first { it.sourceId == MANUAL_LYRICS_OVERRIDE_SOURCE_ID }
 
         assertEquals("workflow-oiapi", assertNotNull(applied.document).sourceId)
-        assertEquals("/tmp/lynmusic-artwork-cache/rain.jpg", applied.artworkLocator)
+        assertEquals("https://img.test/rain.jpg", applied.artworkLocator)
         assertEquals(
             setOf(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, "workflow-oiapi"),
             cachedRows.map { it.sourceId }.toSet(),
         )
+        assertEquals("https://img.test/rain.jpg", workflowRow.artworkLocator)
+        assertEquals("https://img.test/rain.jpg", manualOverrideRow.artworkLocator)
         assertEquals(null, storedTrack.artworkLocator)
+        assertEquals(
+            listOf(
+                "https://img.test/rain.jpg" to "https://img.test/rain.jpg",
+                "https://img.test/rain.jpg" to "https://img.test/rain.jpg",
+            ),
+            artworkCacheStore.requests,
+        )
+    }
+
+    @Test
+    fun `auto workflow fetch keeps source artwork in cache when manual artwork override exists`() = runTest {
+        val database = createTestDatabase()
+        database.lyricsSourceConfigDao().upsert(
+            LyricsSourceConfigEntity(
+                id = "direct-miss",
+                name = "Direct Miss",
+                method = "GET",
+                urlTemplate = "https://lyrics.example/direct",
+                headersTemplate = "",
+                queryTemplate = "",
+                bodyTemplate = "",
+                responseFormat = LyricsResponseFormat.TEXT.name,
+                extractor = "text",
+                priority = 100,
+                enabled = true,
+            ),
+        )
+        database.workflowLyricsSourceConfigDao().upsert(
+            WorkflowLyricsSourceConfigEntity(
+                id = "workflow-oiapi",
+                name = "Workflow OIAPI",
+                priority = 80,
+                enabled = true,
+                rawJson = WORKFLOW_JSON,
+            ),
+        )
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = "track-1",
+                sourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+                rawPayload = "",
+                updatedAt = 1L,
+                artworkLocator = "https://img.test/manual.jpg",
+            ),
+        )
+        val httpClient = WorkflowHttpClient(
+            mapOf(
+                "https://lyrics.example/direct" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = ""),
+                ),
+                "https://oiapi.net/api/QQMusicLyric?keyword=Rain&page=1&limit=10&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = SEARCH_JSON),
+                ),
+                "https://oiapi.net/api/QQMusicLyric?id=11&format=lrc&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = LYRICS_JSON),
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            logger = NoopDiagnosticLogger,
+        )
+        val track = Track(
+            id = "track-1",
+            sourceId = "local-1",
+            title = "Rain",
+            artistName = "Jay",
+            albumTitle = "Album 1",
+            durationMs = 181_000L,
+            mediaLocator = "file:///music/rain.mp3",
+            relativePath = "rain.mp3",
+        )
+        database.trackDao().upsertAll(
+            listOf(
+                top.iwesley.lyn.music.data.db.TrackEntity(
+                    id = track.id,
+                    sourceId = track.sourceId,
+                    title = track.title,
+                    artistId = null,
+                    artistName = track.artistName,
+                    albumId = null,
+                    albumTitle = track.albumTitle,
+                    durationMs = track.durationMs,
+                    trackNumber = null,
+                    discNumber = null,
+                    mediaLocator = track.mediaLocator,
+                    relativePath = track.relativePath,
+                    artworkLocator = null,
+                    sizeBytes = 0L,
+                    modifiedAt = 0L,
+                ),
+            ),
+        )
+
+        val resolvedWithOverride = repository.getLyrics(track)
+        val workflowRow = database.lyricsCacheDao().getByTrack(track.id).first { it.sourceId == "workflow-oiapi" }
+
+        assertNotNull(resolvedWithOverride)
+        assertEquals("https://img.test/manual.jpg", resolvedWithOverride.artworkLocator)
+        assertEquals("https://img.test/rain.jpg", workflowRow.artworkLocator)
+
+        database.lyricsCacheDao().deleteByTrackIdAndSourceId(track.id, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
+
+        val resolvedWithoutOverride = repository.getLyrics(track)
+
+        assertNotNull(resolvedWithoutOverride)
+        assertEquals("https://img.test/rain.jpg", resolvedWithoutOverride.artworkLocator)
     }
 
     @Test
@@ -413,7 +527,12 @@ class DefaultLyricsRepositoryWorkflowTest {
 private class FakeArtworkCacheStore(
     private val cached: Map<String, String>,
 ) : ArtworkCacheStore {
-    override suspend fun cache(locator: String, cacheKey: String): String? = cached[locator] ?: locator
+    val requests = mutableListOf<Pair<String, String>>()
+
+    override suspend fun cache(locator: String, cacheKey: String): String? {
+        requests += locator to cacheKey
+        return cached[locator] ?: locator
+    }
 }
 
 private class WorkflowHttpClient(

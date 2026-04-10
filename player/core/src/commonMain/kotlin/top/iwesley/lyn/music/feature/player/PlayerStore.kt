@@ -2,17 +2,20 @@ package top.iwesley.lyn.music.feature.player
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
+import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.buildLyricsShareSuggestedName
+import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LyricsRepository
@@ -98,6 +101,7 @@ class PlayerStore(
     private val lyricsRepository: LyricsRepository,
     private val storeScope: CoroutineScope,
     private val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
+    private val logger: DiagnosticLogger = NoopDiagnosticLogger,
 ) : BaseStore<PlayerState, PlayerIntent, PlayerEffect>(
     initialState = PlayerState(),
     scope = storeScope,
@@ -151,6 +155,9 @@ class PlayerStore(
                     val lyrics = result?.document
                     val artworkLocator = result?.artworkLocator
                     if (!artworkLocator.isNullOrBlank()) {
+                        logger.debug(PLAYER_LOG_TAG) {
+                            "playback-artwork-override source=auto-lyrics track=${track.id} locator=$artworkLocator"
+                        }
                         playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
                     }
                     updateState {
@@ -456,6 +463,9 @@ class PlayerStore(
         val document = result.document ?: state.value.lyrics
         val artworkLocator = result.artworkLocator
         if (mode != LyricsSearchApplyMode.LYRICS_ONLY && !artworkLocator.isNullOrBlank()) {
+            logger.debug(PLAYER_LOG_TAG) {
+                "playback-artwork-override source=manual-lyrics track=${track.id} locator=$artworkLocator"
+            }
             playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
         }
         updateState {
@@ -488,6 +498,9 @@ class PlayerStore(
         val document = result.document ?: state.value.lyrics
         val artworkLocator = result.artworkLocator
         if (mode != LyricsSearchApplyMode.LYRICS_ONLY && !artworkLocator.isNullOrBlank()) {
+            logger.debug(PLAYER_LOG_TAG) {
+                "playback-artwork-override source=manual-workflow track=${track.id} locator=$artworkLocator"
+            }
             playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
         }
         updateState {
@@ -700,3 +713,5 @@ private fun PlayerState.matchesCurrentLyricsLookupTrack(): Boolean {
         manualLyricsArtistName.trim() == lookupTrack.artistName.orEmpty().trim() &&
         manualLyricsAlbumTitle.trim() == lookupTrack.albumTitle.orEmpty().trim()
 }
+
+private const val PLAYER_LOG_TAG = "Player"

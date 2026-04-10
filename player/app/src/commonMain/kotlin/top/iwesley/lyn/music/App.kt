@@ -80,6 +80,7 @@ fun buildPlayerAppComponent(
         gateway = playerRuntimeServices.playbackGateway,
         scope = sharedGraph.scope,
         systemPlaybackControlsPlatformService = playerRuntimeServices.systemPlaybackControlsPlatformService,
+        logger = sharedGraph.logger,
     )
     return LynMusicAppComponent(
         platform = sharedGraph.platform,
@@ -94,6 +95,7 @@ fun buildPlayerAppComponent(
             lyricsRepository = sharedGraph.lyricsRepository,
             storeScope = sharedGraph.scope,
             lyricsSharePlatformService = playerRuntimeServices.lyricsSharePlatformService,
+            logger = sharedGraph.logger,
         ),
         settingsStore = sharedGraph.settingsStore,
         scope = sharedGraph.scope,

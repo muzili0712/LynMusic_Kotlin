@@ -10,14 +10,22 @@ import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
+import kotlinx.cinterop.pointed
 import kotlinx.cinterop.reinterpret
+import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Image
+import platform.Foundation.NSCachesDirectory
+import platform.Foundation.NSFileManager
 import platform.Foundation.NSData
 import platform.Foundation.NSURL
+import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
+import platform.posix.closedir
+import platform.posix.opendir
+import platform.posix.readdir
 import platform.posix.memcpy
 import platform.posix.SEEK_END
 import platform.posix.SEEK_SET
@@ -26,45 +34,95 @@ import platform.posix.fopen
 import platform.posix.fread
 import platform.posix.fseek
 import platform.posix.ftell
-import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
-import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
-import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
+import platform.posix.fwrite
+import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
+import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
+import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 
 @Composable
-actual fun rememberPlatformArtworkBitmap(locator: String?): ImageBitmap? {
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, locator) {
-        value = loadNativeArtworkBitmap(locator)
+actual fun rememberPlatformArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? {
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, locator, cacheRemote) {
+        value = loadNativeArtworkBitmap(locator, cacheRemote)
     }
     return bitmap
 }
 
-private suspend fun loadNativeArtworkBitmap(locator: String?): ImageBitmap? = withContext(Dispatchers.Default) {
+private suspend fun loadNativeArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? = withContext(Dispatchers.Default) {
     runCatching {
-        val target = resolveArtworkTarget(locator) ?: return@runCatching null
-        val payload = readArtworkBytes(target) ?: return@runCatching null
+        val payload = loadNativeArtworkBytes(locator, cacheRemote) ?: return@runCatching null
         Image.makeFromEncoded(payload).toComposeImageBitmap()
     }.getOrNull()
 }
 
-private suspend fun resolveArtworkTarget(locator: String?): String? {
-    val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
-    if (rawTarget.isBlank()) return null
-    return if (parseNavidromeCoverLocator(rawTarget) != null) {
-        NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget)?.trim()?.takeIf { it.isNotBlank() }
-    } else {
-        rawTarget
-    }
+private suspend fun loadNativeArtworkBytes(locator: String?, cacheRemote: Boolean): ByteArray? = withContext(Dispatchers.Default) {
+    runCatching {
+        val normalizedLocator = normalizedArtworkCacheLocator(locator) ?: return@runCatching null
+        val target = resolveArtworkCacheTarget(normalizedLocator) ?: return@runCatching null
+        when {
+            isRemoteArtworkTarget(target) -> {
+                val cacheDirectory = nativeArtworkCacheDirectory()
+                val cachePrefix = normalizedLocator.stableArtworkCacheHash()
+                val existingCachePath = findNativeArtworkCachePath(cacheDirectory, cachePrefix)
+                if (existingCachePath != null) {
+                    readLocalBytes(existingCachePath)
+                } else {
+                    val payload = readRemoteBytes(target)
+                    if (payload == null || payload.isEmpty()) return@runCatching null
+                    if (cacheRemote) {
+                        val output = "$cacheDirectory/$cachePrefix${inferArtworkFileExtension(locator = target, bytes = payload)}"
+                        writeLocalBytes(output, payload)
+                    }
+                    payload
+                }
+            }
+
+            target.startsWith("file://", ignoreCase = true) ->
+                readLocalBytes(NSURL.URLWithString(target)?.path ?: target.removePrefix("file://"))
+
+            else -> readLocalBytes(target)
+        }
+    }.getOrNull()
 }
 
-private suspend fun readArtworkBytes(target: String): ByteArray? {
-    return when {
-        target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true) ->
-            readRemoteBytes(target)
+@OptIn(ExperimentalForeignApi::class)
+private fun nativeArtworkCacheDirectory(): String {
+    val cachesUrl: NSURL = requireNotNull(
+        NSFileManager.defaultManager.URLForDirectory(
+            directory = NSCachesDirectory,
+            inDomain = NSUserDomainMask,
+            appropriateForURL = null,
+            create = true,
+            error = null,
+        ),
+    )
+    val directory = requireNotNull(cachesUrl.path) + "/lynmusic-artwork-cache"
+    NSFileManager.defaultManager.createDirectoryAtPath(
+        path = directory,
+        withIntermediateDirectories = true,
+        attributes = null,
+        error = null,
+    )
+    return directory
+}
 
-        target.startsWith("file://", ignoreCase = true) ->
-            readLocalBytes(NSURL.URLWithString(target)?.path ?: target.removePrefix("file://"))
-
-        else -> readLocalBytes(target)
+@OptIn(ExperimentalForeignApi::class)
+private fun findNativeArtworkCachePath(directory: String, cachePrefix: String): String? {
+    val handle = opendir(directory) ?: return null
+    return try {
+        while (true) {
+            val entry = readdir(handle)?.pointed ?: break
+            val name = entry.d_name.toKString()
+            if (name == "." || name == "..") continue
+            if (!name.startsWith(cachePrefix)) continue
+            val path = "$directory/$name"
+            if (readLocalBytes(path)?.isNotEmpty() == true) {
+                return path
+            }
+        }
+        null
+    } finally {
+        closedir(handle)
     }
 }
 
@@ -96,6 +154,28 @@ private fun readLocalBytes(path: String): ByteArray? {
     } finally {
         fclose(file)
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun writeLocalBytes(path: String, bytes: ByteArray): Boolean {
+    val file = fopen(path, "wb") ?: return false
+    return try {
+        val written = bytes.usePinned { pinned ->
+            fwrite(
+                pinned.addressOf(0),
+                1.convert(),
+                bytes.size.convert(),
+                file,
+            ).toInt()
+        }
+        written == bytes.size
+    } finally {
+        fclose(file)
+    }
+}
+
+private fun isRemoteArtworkTarget(target: String): Boolean {
+    return target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true)
 }
 
 @OptIn(ExperimentalForeignApi::class)

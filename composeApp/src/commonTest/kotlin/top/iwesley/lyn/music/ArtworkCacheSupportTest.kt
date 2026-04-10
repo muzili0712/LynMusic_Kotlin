@@ -73,5 +73,6 @@ class ArtworkCacheSupportTest {
 
         assertEquals(first, second)
         assertTrue(first.isNotBlank())
+        assertEquals(16, first.length)
     }
 }
