@@ -104,10 +104,44 @@ interface LibraryRepository {
 interface ImportSourceRepository {
     fun observeSources(): Flow<List<SourceWithStatus>>
     suspend fun importLocalFolder(): Result<Unit>
+    suspend fun testSambaSource(draft: SambaSourceDraft): Result<Unit>
+    suspend fun testUpdatedSambaSource(
+        sourceId: String,
+        draft: SambaSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean = true,
+    ): Result<Unit>
     suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit>
+    suspend fun updateSambaSource(
+        sourceId: String,
+        draft: SambaSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean = true,
+    ): Result<Unit>
+    suspend fun testWebDavSource(draft: WebDavSourceDraft): Result<Unit>
+    suspend fun testUpdatedWebDavSource(
+        sourceId: String,
+        draft: WebDavSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean = true,
+    ): Result<Unit>
     suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit>
+    suspend fun updateWebDavSource(
+        sourceId: String,
+        draft: WebDavSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean = true,
+    ): Result<Unit>
+    suspend fun testNavidromeSource(draft: NavidromeSourceDraft): Result<Unit>
+    suspend fun testUpdatedNavidromeSource(
+        sourceId: String,
+        draft: NavidromeSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean = true,
+    ): Result<Unit>
     suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit>
+    suspend fun updateNavidromeSource(
+        sourceId: String,
+        draft: NavidromeSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean = true,
+    ): Result<Unit>
     suspend fun rescanSource(sourceId: String): Result<Unit>
+    suspend fun setSourceEnabled(sourceId: String, enabled: Boolean): Result<Unit>
     suspend fun deleteSource(sourceId: String): Result<Unit>
 }
 
@@ -171,10 +205,17 @@ class RoomLibraryRepository(
 ) : LibraryRepository {
     override val tracks: Flow<List<Track>> = combine(
         database.trackDao().observeAll(),
+        database.importSourceDao().observeAll(),
         database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
-    ) { entities, overrides ->
+    ) { entities, sources, overrides ->
+        val enabledSourceIds = sources.asSequence()
+            .filter { it.enabled }
+            .map { it.id }
+            .toSet()
         val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
-        entities.map { entity -> entity.toDomain(artworkOverrides[entity.id]) }
+        entities
+            .filter { it.sourceId in enabledSourceIds }
+            .map { entity -> entity.toDomain(artworkOverrides[entity.id]) }
     }
 
     override val artists: Flow<List<Artist>> = database.artistDao()
@@ -238,95 +279,221 @@ class RoomImportSourceRepository(
         }
     }
 
+    override suspend fun testSambaSource(draft: SambaSourceDraft): Result<Unit> {
+        return runCatching {
+            val preparedDraft = prepareSambaDraft(draft)
+            gateway.testSamba(preparedDraft)
+        }
+    }
+
+    override suspend fun testUpdatedSambaSource(
+        sourceId: String,
+        draft: SambaSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> {
+        return runCatching {
+            val existing = requireRemoteSource(sourceId, ImportSourceType.SAMBA)
+            val preparedDraft = prepareSambaDraft(draft)
+            val password = resolveUpdatedPassword(
+                existingCredentialKey = existing.credentialKey,
+                password = preparedDraft.password,
+                keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
+            )
+            gateway.testSamba(preparedDraft.copy(password = password))
+        }
+    }
+
     override suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit> {
         return runCatching {
-            val normalizedPath = normalizeSambaPath(draft.path)
-            val label = draft.label.ifBlank {
-                formatSambaEndpoint(
-                    server = draft.server,
-                    port = draft.port,
-                    path = normalizedPath,
-                )
-            }
-            validateImportSourceCreation(label = label)
             val sourceId = newId("smb")
-            val credentialKey = if (draft.password.isBlank()) null else "credential-$sourceId"
-            if (credentialKey != null) {
-                secureCredentialStore.put(credentialKey, draft.password)
-            }
-            val source = ImportSource(
-                id = sourceId,
-                type = ImportSourceType.SAMBA,
-                label = label,
-                rootReference = normalizedPath,
-                server = draft.server,
-                port = draft.port,
-                path = normalizedPath,
-                username = draft.username,
-                credentialKey = credentialKey,
-                createdAt = now(),
+            val preparedDraft = prepareSambaDraft(draft)
+            val newSource = createSambaSource(sourceId, preparedDraft).copy(
+                credentialKey = credentialKeyForNewSource(preparedDraft.password, sourceId),
             )
-            database.importSourceDao().upsert(source.toEntity())
-            runScan(source) {
-                gateway.scanSamba(draft, sourceId)
+            validateImportSourceCreation(label = newSource.label)
+            newSource.credentialKey?.let { secureCredentialStore.put(it, preparedDraft.password) }
+            database.importSourceDao().upsert(newSource.toEntity())
+            runScan(newSource) {
+                gateway.scanSamba(preparedDraft, sourceId)
             }
+        }
+    }
+
+    override suspend fun updateSambaSource(
+        sourceId: String,
+        draft: SambaSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> {
+        return runCatching {
+            val existing = requireRemoteSource(sourceId, ImportSourceType.SAMBA)
+            val preparedDraft = prepareSambaDraft(draft)
+            val updatedSource = createSambaSource(
+                sourceId = existing.id,
+                draft = preparedDraft,
+                createdAt = existing.createdAt,
+                enabled = existing.enabled,
+            )
+            assertUniqueImportSourceLabel(updatedSource.label, excludingSourceId = existing.id)
+            val password = resolveUpdatedPassword(
+                existingCredentialKey = existing.credentialKey,
+                password = preparedDraft.password,
+                keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
+            )
+            val report = gateway.scanSamba(preparedDraft.copy(password = password), sourceId)
+            val credentialKey = resolveUpdatedCredentialKey(
+                sourceId = sourceId,
+                existingCredentialKey = existing.credentialKey,
+                password = password,
+                keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
+            )
+            persistUpdatedCredential(existing.credentialKey, credentialKey, password)
+            persistScan(updatedSource.copy(credentialKey = credentialKey), report)
+        }
+    }
+
+    override suspend fun testWebDavSource(draft: WebDavSourceDraft): Result<Unit> {
+        return runCatching {
+            gateway.testWebDav(prepareWebDavDraft(draft))
+        }
+    }
+
+    override suspend fun testUpdatedWebDavSource(
+        sourceId: String,
+        draft: WebDavSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> {
+        return runCatching {
+            val existing = requireRemoteSource(sourceId, ImportSourceType.WEBDAV)
+            val preparedDraft = prepareWebDavDraft(draft)
+            val password = resolveUpdatedPassword(
+                existingCredentialKey = existing.credentialKey,
+                password = preparedDraft.password,
+                keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
+            )
+            gateway.testWebDav(preparedDraft.copy(password = password))
         }
     }
 
     override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit> {
         return runCatching {
-            val normalizedRootUrl = normalizeWebDavRootUrl(draft.rootUrl)
-            val label = draft.label.ifBlank { normalizedRootUrl }
-            validateImportSourceCreation(label = label)
             val sourceId = newId("dav")
-            val credentialKey = if (draft.password.isBlank()) null else "credential-$sourceId"
-            if (credentialKey != null) {
-                secureCredentialStore.put(credentialKey, draft.password)
-            }
-            val source = ImportSource(
-                id = sourceId,
-                type = ImportSourceType.WEBDAV,
-                label = label,
-                rootReference = normalizedRootUrl,
-                username = draft.username,
-                credentialKey = credentialKey,
-                allowInsecureTls = draft.allowInsecureTls,
-                createdAt = now(),
+            val preparedDraft = prepareWebDavDraft(draft)
+            val source = createWebDavSource(sourceId, preparedDraft).copy(
+                credentialKey = credentialKeyForNewSource(preparedDraft.password, sourceId),
             )
+            validateImportSourceCreation(label = source.label)
+            source.credentialKey?.let { secureCredentialStore.put(it, preparedDraft.password) }
             database.importSourceDao().upsert(source.toEntity())
             runScan(source) {
-                gateway.scanWebDav(draft.copy(rootUrl = normalizedRootUrl), sourceId)
+                gateway.scanWebDav(preparedDraft, sourceId)
             }
+        }
+    }
+
+    override suspend fun updateWebDavSource(
+        sourceId: String,
+        draft: WebDavSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> {
+        return runCatching {
+            val existing = requireRemoteSource(sourceId, ImportSourceType.WEBDAV)
+            val preparedDraft = prepareWebDavDraft(draft)
+            val updatedSource = createWebDavSource(
+                sourceId = existing.id,
+                draft = preparedDraft,
+                createdAt = existing.createdAt,
+                enabled = existing.enabled,
+            )
+            assertUniqueImportSourceLabel(updatedSource.label, excludingSourceId = existing.id)
+            val password = resolveUpdatedPassword(
+                existingCredentialKey = existing.credentialKey,
+                password = preparedDraft.password,
+                keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
+            )
+            val report = gateway.scanWebDav(preparedDraft.copy(password = password), sourceId)
+            val credentialKey = resolveUpdatedCredentialKey(
+                sourceId = sourceId,
+                existingCredentialKey = existing.credentialKey,
+                password = password,
+                keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
+            )
+            persistUpdatedCredential(existing.credentialKey, credentialKey, password)
+            persistScan(updatedSource.copy(credentialKey = credentialKey), report)
+        }
+    }
+
+    override suspend fun testNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
+        return runCatching {
+            gateway.testNavidrome(prepareNavidromeDraft(draft))
+        }
+    }
+
+    override suspend fun testUpdatedNavidromeSource(
+        sourceId: String,
+        draft: NavidromeSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> {
+        return runCatching {
+            val existing = requireRemoteSource(sourceId, ImportSourceType.NAVIDROME)
+            val preparedDraft = prepareNavidromeDraft(draft)
+            val password = resolveUpdatedPassword(
+                existingCredentialKey = existing.credentialKey,
+                password = preparedDraft.password,
+                keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
+            )
+            if (password.isBlank()) {
+                error("Navidrome 来源缺少有效密码。")
+            }
+            gateway.testNavidrome(preparedDraft.copy(password = password))
         }
     }
 
     override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
         return runCatching {
-            val normalizedBaseUrl = normalizeNavidromeBaseUrl(draft.baseUrl)
-            val label = draft.label.ifBlank { normalizedBaseUrl }
-            validateImportSourceCreation(label = label)
             val sourceId = newId("navidrome")
-            val credentialKey = "credential-$sourceId"
-            secureCredentialStore.put(credentialKey, draft.password)
-            val source = ImportSource(
-                id = sourceId,
-                type = ImportSourceType.NAVIDROME,
-                label = label,
-                rootReference = normalizedBaseUrl,
-                username = draft.username.trim(),
-                credentialKey = credentialKey,
-                createdAt = now(),
-            )
+            val preparedDraft = prepareNavidromeDraft(draft)
+            val source = createNavidromeSource(sourceId, preparedDraft).copy(credentialKey = "credential-$sourceId")
+            validateImportSourceCreation(label = source.label)
+            source.credentialKey?.let { secureCredentialStore.put(it, preparedDraft.password) }
             database.importSourceDao().upsert(source.toEntity())
             runScan(source) {
-                gateway.scanNavidrome(
-                    draft = draft.copy(
-                        baseUrl = normalizedBaseUrl,
-                        username = draft.username.trim(),
-                    ),
-                    sourceId = sourceId,
-                )
+                gateway.scanNavidrome(preparedDraft, sourceId)
             }
+        }
+    }
+
+    override suspend fun updateNavidromeSource(
+        sourceId: String,
+        draft: NavidromeSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> {
+        return runCatching {
+            val existing = requireRemoteSource(sourceId, ImportSourceType.NAVIDROME)
+            val preparedDraft = prepareNavidromeDraft(draft)
+            val updatedSource = createNavidromeSource(
+                sourceId = existing.id,
+                draft = preparedDraft,
+                createdAt = existing.createdAt,
+                enabled = existing.enabled,
+            )
+            assertUniqueImportSourceLabel(updatedSource.label, excludingSourceId = existing.id)
+            val password = resolveUpdatedPassword(
+                existingCredentialKey = existing.credentialKey,
+                password = preparedDraft.password,
+                keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
+            )
+            if (password.isBlank()) {
+                error("Navidrome 来源缺少有效密码。")
+            }
+            val report = gateway.scanNavidrome(preparedDraft.copy(password = password), sourceId)
+            val credentialKey = resolveUpdatedCredentialKey(
+                sourceId = sourceId,
+                existingCredentialKey = existing.credentialKey,
+                password = password,
+                keepExistingCredentialWhenBlankPassword = true,
+            )
+            persistUpdatedCredential(existing.credentialKey, credentialKey, password)
+            persistScan(updatedSource.copy(credentialKey = credentialKey), report)
         }
     }
 
@@ -335,6 +502,9 @@ class RoomImportSourceRepository(
             val entity = database.importSourceDao().getById(sourceId)
                 ?: error("Source $sourceId does not exist.")
             val source = entity.toDomain()
+            if (!source.enabled) {
+                error("来源已禁用，请先启用。")
+            }
             runScan(source.copy(lastScannedAt = now())) {
                 when (source.type) {
                     ImportSourceType.LOCAL_FOLDER -> gateway.scanLocalFolder(
@@ -391,6 +561,15 @@ class RoomImportSourceRepository(
         }
     }
 
+    override suspend fun setSourceEnabled(sourceId: String, enabled: Boolean): Result<Unit> {
+        return runCatching {
+            val source = database.importSourceDao().getById(sourceId)?.toDomain()
+                ?: error("Source $sourceId does not exist.")
+            database.importSourceDao().upsert(source.copy(enabled = enabled).toEntity())
+            rebuildLibrarySummaries()
+        }
+    }
+
     override suspend fun deleteSource(sourceId: String): Result<Unit> {
         return runCatching {
             val source = database.importSourceDao().getById(sourceId)?.toDomain()
@@ -402,6 +581,154 @@ class RoomImportSourceRepository(
             database.importIndexStateDao().deleteBySourceId(source.id)
             database.importSourceDao().deleteById(source.id)
             rebuildLibrarySummaries()
+        }
+    }
+
+    private fun prepareSambaDraft(draft: SambaSourceDraft): SambaSourceDraft {
+        val normalizedPath = normalizeSambaPath(draft.path)
+        return draft.copy(
+            label = draft.label.trim(),
+            server = draft.server.trim(),
+            path = normalizedPath,
+            username = draft.username.trim(),
+        )
+    }
+
+    private fun prepareWebDavDraft(draft: WebDavSourceDraft): WebDavSourceDraft {
+        return draft.copy(
+            label = draft.label.trim(),
+            rootUrl = normalizeWebDavRootUrl(draft.rootUrl),
+            username = draft.username.trim(),
+        )
+    }
+
+    private fun prepareNavidromeDraft(draft: NavidromeSourceDraft): NavidromeSourceDraft {
+        return draft.copy(
+            label = draft.label.trim(),
+            baseUrl = normalizeNavidromeBaseUrl(draft.baseUrl),
+            username = draft.username.trim(),
+        )
+    }
+
+    private fun createSambaSource(
+        sourceId: String,
+        draft: SambaSourceDraft,
+        createdAt: Long = now(),
+        enabled: Boolean = true,
+    ): ImportSource {
+        val label = draft.label.ifBlank {
+            formatSambaEndpoint(
+                server = draft.server,
+                port = draft.port,
+                path = draft.path,
+            )
+        }
+        return ImportSource(
+            id = sourceId,
+            type = ImportSourceType.SAMBA,
+            label = label,
+            rootReference = draft.path,
+            server = draft.server,
+            port = draft.port,
+            path = draft.path,
+            username = draft.username,
+            createdAt = createdAt,
+            enabled = enabled,
+        )
+    }
+
+    private fun createWebDavSource(
+        sourceId: String,
+        draft: WebDavSourceDraft,
+        createdAt: Long = now(),
+        enabled: Boolean = true,
+    ): ImportSource {
+        val label = draft.label.ifBlank { draft.rootUrl }
+        return ImportSource(
+            id = sourceId,
+            type = ImportSourceType.WEBDAV,
+            label = label,
+            rootReference = draft.rootUrl,
+            username = draft.username,
+            allowInsecureTls = draft.allowInsecureTls,
+            createdAt = createdAt,
+            enabled = enabled,
+        )
+    }
+
+    private fun createNavidromeSource(
+        sourceId: String,
+        draft: NavidromeSourceDraft,
+        createdAt: Long = now(),
+        enabled: Boolean = true,
+    ): ImportSource {
+        val label = draft.label.ifBlank { draft.baseUrl }
+        return ImportSource(
+            id = sourceId,
+            type = ImportSourceType.NAVIDROME,
+            label = label,
+            rootReference = draft.baseUrl,
+            username = draft.username,
+            createdAt = createdAt,
+            enabled = enabled,
+        )
+    }
+
+    private fun credentialKeyForNewSource(password: String, sourceId: String): String? {
+        return if (password.isBlank()) null else "credential-$sourceId"
+    }
+
+    private suspend fun requireRemoteSource(sourceId: String, type: ImportSourceType): ImportSource {
+        val source = database.importSourceDao().getById(sourceId)?.toDomain()
+            ?: error("Source $sourceId does not exist.")
+        require(source.type == type) { "仅支持编辑 ${type.name} 来源。" }
+        return source
+    }
+
+    private suspend fun assertUniqueImportSourceLabel(
+        label: String,
+        excludingSourceId: String? = null,
+    ) {
+        val existing = database.importSourceDao().getAll()
+            .filterNot { it.id == excludingSourceId }
+        if (hasImportSourceNameConflict(name = label, existing = existing)) {
+            error("音乐源名称已存在。")
+        }
+    }
+
+    private suspend fun resolveUpdatedCredentialKey(
+        sourceId: String,
+        existingCredentialKey: String?,
+        password: String,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): String? {
+        if (password.isNotBlank()) {
+            return existingCredentialKey ?: "credential-$sourceId"
+        }
+        return if (keepExistingCredentialWhenBlankPassword) existingCredentialKey else null
+    }
+
+    private suspend fun resolveUpdatedPassword(
+        existingCredentialKey: String?,
+        password: String,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): String {
+        if (password.isNotBlank()) return password
+        return if (keepExistingCredentialWhenBlankPassword) {
+            existingCredentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
+        } else {
+            ""
+        }
+    }
+
+    private suspend fun persistUpdatedCredential(
+        previousCredentialKey: String?,
+        nextCredentialKey: String?,
+        password: String,
+    ) {
+        when {
+            nextCredentialKey == null && previousCredentialKey != null -> secureCredentialStore.remove(previousCredentialKey)
+            nextCredentialKey != null && password.isNotBlank() -> secureCredentialStore.put(nextCredentialKey, password)
         }
     }
 
@@ -506,7 +833,13 @@ class RoomImportSourceRepository(
     }
 
     private suspend fun rebuildLibrarySummaries() {
+        val enabledSourceIds = database.importSourceDao().getAll()
+            .asSequence()
+            .filter { it.enabled }
+            .map { it.id }
+            .toSet()
         val tracks = database.trackDao().getAll()
+            .filter { it.sourceId in enabledSourceIds }
         database.artistDao().deleteAll()
         database.albumDao().deleteAll()
 
@@ -868,7 +1201,8 @@ class DefaultLyricsRepository(
 
     private suspend fun requestNavidromeLyricsDocument(track: Track): LyricsDocument? {
         val locator = parseNavidromeSongLocator(track.mediaLocator) ?: return null
-        val source = database.importSourceDao().getById(locator.first)?.takeIf { it.type == ImportSourceType.NAVIDROME.name }
+        val source = database.importSourceDao().getById(locator.first)
+            ?.takeIf { it.type == ImportSourceType.NAVIDROME.name && it.enabled }
             ?: return null
         val username = source.username?.trim().orEmpty()
         val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
@@ -1778,6 +2112,7 @@ private fun ImportSourceEntity.toDomain(): ImportSource {
         username = username,
         credentialKey = credentialKey,
         allowInsecureTls = allowInsecureTls,
+        enabled = enabled,
         lastScannedAt = lastScannedAt,
         createdAt = createdAt,
     )
@@ -1795,6 +2130,7 @@ private fun ImportSource.toEntity(): ImportSourceEntity {
         username = username,
         credentialKey = credentialKey,
         allowInsecureTls = allowInsecureTls,
+        enabled = enabled,
         lastScannedAt = lastScannedAt,
         createdAt = createdAt,
     )

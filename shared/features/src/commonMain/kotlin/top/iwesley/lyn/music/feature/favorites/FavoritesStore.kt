@@ -63,14 +63,14 @@ class FavoritesStore(
                 importSourceRepository.observeSources(),
                 preferencesStore.favoritesSourceFilter,
             ) { tracks, favoriteTrackIds, sources, selectedSourceFilter ->
+                val enabledSources = sources.map { it.source }.filter { it.enabled }
                 FavoritesSnapshot(
                     tracks = tracks,
                     favoriteTrackIds = favoriteTrackIds,
                     selectedSourceFilter = selectedSourceFilter,
-                    sourceTypesById = sources.associate { it.source.id to it.source.type },
-                    availableSourceFilters = buildAvailableSourceFilters(sources),
-                    navidromeSourceIds = sources
-                        .map { it.source }
+                    sourceTypesById = enabledSources.associate { it.id to it.type },
+                    availableSourceFilters = buildAvailableSourceFilters(sources.filter { it.source.enabled }),
+                    navidromeSourceIds = enabledSources
                         .filter { it.type == ImportSourceType.NAVIDROME }
                         .mapTo(linkedSetOf()) { it.id },
                 )

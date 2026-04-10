@@ -167,6 +167,24 @@ suspend fun scanNavidromeLibrary(
     )
 }
 
+suspend fun testNavidromeConnection(
+    draft: NavidromeSourceDraft,
+    httpClient: LyricsHttpClient,
+    logger: DiagnosticLogger = NoopDiagnosticLogger,
+) {
+    val resolved = NavidromeResolvedSource(
+        baseUrl = normalizeNavidromeBaseUrl(draft.baseUrl),
+        username = draft.username.trim(),
+        password = draft.password,
+    )
+    requestNavidromeJson(
+        httpClient = httpClient,
+        source = resolved,
+        endpoint = "ping",
+        logger = logger,
+    )
+}
+
 suspend fun requestNavidromeLyrics(
     httpClient: LyricsHttpClient,
     source: NavidromeResolvedSource,
@@ -312,7 +330,7 @@ private suspend fun resolveNavidromeSource(
     locator: String,
 ): NavidromeResolvedSource? {
     val sourceId = parseNavidromeSongLocator(locator)?.first ?: parseNavidromeCoverLocator(locator)?.first ?: return null
-    val entity = database.importSourceDao().getById(sourceId)?.takeIf { it.type == "NAVIDROME" } ?: return null
+    val entity = database.importSourceDao().getById(sourceId)?.takeIf { it.type == "NAVIDROME" && it.enabled } ?: return null
     val username = entity.username?.trim().orEmpty()
     val password = entity.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
     if (username.isBlank() || password.isBlank()) return null

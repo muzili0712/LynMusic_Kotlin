@@ -258,13 +258,57 @@ private class FakePlaylistsImportSourceRepository(
 
     override suspend fun importLocalFolder(): Result<Unit> = Result.success(Unit)
 
+    override suspend fun testSambaSource(draft: SambaSourceDraft): Result<Unit> = Result.success(Unit)
+
+    override suspend fun testUpdatedSambaSource(
+        sourceId: String,
+        draft: SambaSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> = Result.success(Unit)
+
     override suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit> = Result.success(Unit)
+
+    override suspend fun updateSambaSource(
+        sourceId: String,
+        draft: SambaSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> = Result.success(Unit)
+
+    override suspend fun testWebDavSource(draft: WebDavSourceDraft): Result<Unit> = Result.success(Unit)
+
+    override suspend fun testUpdatedWebDavSource(
+        sourceId: String,
+        draft: WebDavSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> = Result.success(Unit)
 
     override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit> = Result.success(Unit)
 
+    override suspend fun updateWebDavSource(
+        sourceId: String,
+        draft: WebDavSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> = Result.success(Unit)
+
+    override suspend fun testNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> = Result.success(Unit)
+
+    override suspend fun testUpdatedNavidromeSource(
+        sourceId: String,
+        draft: NavidromeSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> = Result.success(Unit)
+
     override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> = Result.success(Unit)
 
+    override suspend fun updateNavidromeSource(
+        sourceId: String,
+        draft: NavidromeSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> = Result.success(Unit)
+
     override suspend fun rescanSource(sourceId: String): Result<Unit> = Result.success(Unit)
+
+    override suspend fun setSourceEnabled(sourceId: String, enabled: Boolean): Result<Unit> = Result.success(Unit)
 
     override suspend fun deleteSource(sourceId: String): Result<Unit> = Result.success(Unit)
 }

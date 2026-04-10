@@ -40,14 +40,23 @@ class RoomPlaylistRepository(
         database.playlistDao().observeAll(),
         database.playlistTrackDao().observeAll(),
         database.trackDao().observeAll(),
+        database.importSourceDao().observeAll(),
         database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
-    ) { playlists, playlistTracks, trackEntities, overrides ->
+    ) { playlists, playlistTracks, trackEntities, sources, overrides ->
+        val enabledSourceIds = sources.asSequence()
+            .filter { it.enabled }
+            .map { it.id }
+            .toSet()
         val trackById = trackEntities.associate { entity ->
             entity.id to entity.toDomain(manualArtworkOverridesByTrackId(overrides)[entity.id])
         }
         playlists.map { playlist ->
             val memberTrackIds = playlistTracks.asSequence()
-                .filter { it.playlistId == playlist.id && trackById.containsKey(it.trackId) }
+                .filter {
+                    it.playlistId == playlist.id &&
+                        it.sourceId in enabledSourceIds &&
+                        trackById.containsKey(it.trackId)
+                }
                 .map { it.trackId }
                 .toCollection(linkedSetOf())
             playlist.toSummary(memberTrackIds)
@@ -64,12 +73,16 @@ class RoomPlaylistRepository(
         ) { playlists, playlistTracks, trackEntities, sources, overrides ->
             val playlist = playlists.firstOrNull { it.id == playlistId } ?: return@combine null
             val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
+            val enabledSourceIds = sources.asSequence()
+                .filter { it.enabled }
+                .map { it.id }
+                .toSet()
             val trackById = trackEntities.associate { entity ->
                 entity.id to entity.toDomain(artworkOverrides[entity.id])
             }
             val sourceLabelById = sources.associate { it.id to it.label }
             playlist.toDetail(
-                tracks = playlistTracks,
+                tracks = playlistTracks.filter { it.sourceId in enabledSourceIds },
                 trackById = trackById,
                 sourceLabelById = sourceLabelById,
             )
@@ -151,7 +164,9 @@ class RoomPlaylistRepository(
                 .filter { it.type == ImportSourceType.NAVIDROME.name }
             cleanupRemovedNavidromeSources(navidromeSources.mapTo(linkedSetOf()) { it.id })
             val failures = mutableListOf<String>()
-            navidromeSources.forEach { source ->
+            navidromeSources
+                .filter { it.enabled }
+                .forEach { source ->
                 runCatching { syncSourcePlaylists(source) }
                     .onFailure { throwable ->
                         failures += "${source.label}: ${throwable.message.orEmpty()}"
@@ -414,7 +429,8 @@ class RoomPlaylistRepository(
     }
 
     private suspend fun resolveNavidromeSource(sourceId: String): NavidromeResolvedSource? {
-        val source = database.importSourceDao().getById(sourceId)?.takeIf { it.type == ImportSourceType.NAVIDROME.name }
+        val source = database.importSourceDao().getById(sourceId)
+            ?.takeIf { it.type == ImportSourceType.NAVIDROME.name && it.enabled }
             ?: return null
         return source.toNavidromeResolvedSource()
     }

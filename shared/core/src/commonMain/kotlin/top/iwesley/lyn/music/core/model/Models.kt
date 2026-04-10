@@ -107,6 +107,7 @@ data class ImportSource(
     val username: String? = null,
     val credentialKey: String? = null,
     val allowInsecureTls: Boolean = false,
+    val enabled: Boolean = true,
     val lastScannedAt: Long? = null,
     val createdAt: Long = 0L,
 )
@@ -372,8 +373,11 @@ data class PlatformDescriptor(
 interface ImportSourceGateway {
     suspend fun pickLocalFolder(): LocalFolderSelection?
     suspend fun scanLocalFolder(selection: LocalFolderSelection, sourceId: String): ImportScanReport
+    suspend fun testSamba(draft: SambaSourceDraft)
     suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport
+    suspend fun testWebDav(draft: WebDavSourceDraft)
     suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport
+    suspend fun testNavidrome(draft: NavidromeSourceDraft)
     suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport
 }
 

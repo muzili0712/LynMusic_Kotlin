@@ -90,6 +90,35 @@ internal suspend fun scanJvmWebDav(
     }.getOrThrow()
 }
 
+internal fun testJvmWebDavConnection(
+    draft: WebDavSourceDraft,
+    logger: DiagnosticLogger,
+) {
+    val rootUrl = normalizeWebDavRootUrl(draft.rootUrl)
+    val authEnabled = draft.username.isNotBlank()
+    val sardine = buildJvmSardine(
+        rootUrl = rootUrl,
+        username = draft.username,
+        password = draft.password,
+        allowInsecureTls = draft.allowInsecureTls,
+    )
+    try {
+        logger.debug(WEBDAV_LOG_TAG) {
+            "test-connection rootUrl=$rootUrl auth=$authEnabled insecureTls=${draft.allowInsecureTls} client=sardine"
+        }
+        val resource = sardine.list(rootUrl.ensureTrailingSlash(), 0)
+            .firstOrNull()
+            ?: error("WebDAV 根目录不可访问。")
+        if (!resource.isDirectory) {
+            error("WebDAV 根 URL 不是目录。")
+        }
+    } catch (throwable: Throwable) {
+        throw throwable.asJvmWebDavIOException("测试连接", authEnabled)
+    } finally {
+        sardine.shutdownQuietly()
+    }
+}
+
 internal suspend fun resolveJvmWebDavPlaybackTarget(
     database: LynMusicDatabase,
     secureCredentialStore: SecureCredentialStore,
@@ -97,7 +126,7 @@ internal suspend fun resolveJvmWebDavPlaybackTarget(
     logger: DiagnosticLogger,
 ): JvmWebDavPlaybackTarget? {
     val webDav = parseWebDavLocator(locator) ?: return null
-    val source = database.importSourceDao().getById(webDav.first) ?: error("Missing WebDAV source")
+    val source = database.importSourceDao().getById(webDav.first)?.takeIf { it.enabled } ?: return null
     val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
     val requestUrl = buildWebDavTrackUrl(source.rootReference, webDav.second)
     val authEnabled = source.username.orEmpty().isNotBlank()
@@ -168,7 +197,7 @@ internal suspend fun requestJvmWebDavMetadata(
     logger: DiagnosticLogger,
 ): ImportedTrackCandidate? {
     val webDav = parseWebDavLocator(locator) ?: return null
-    val source = database.importSourceDao().getById(webDav.first) ?: return null
+    val source = database.importSourceDao().getById(webDav.first)?.takeIf { it.enabled } ?: return null
     val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
     val requestUrl = buildWebDavTrackUrl(source.rootReference, webDav.second)
     val extension = webDav.second.substringAfterLast('.', "").ifBlank { "bin" }

@@ -146,7 +146,8 @@ private suspend fun resolveJvmSambaSourceContext(
     secureCredentialStore: SecureCredentialStore,
     locator: Pair<String, String>,
 ): JvmSambaSourceContext {
-    val source = database.importSourceDao().getById(locator.first) ?: error("Samba source missing")
+    val source = database.importSourceDao().getById(locator.first)?.takeIf { it.enabled }
+        ?: error("Samba 来源不可用。")
     val shareName = source.shareName
     val storedPort = shareName?.toIntOrNull()
     val storedPath = when {

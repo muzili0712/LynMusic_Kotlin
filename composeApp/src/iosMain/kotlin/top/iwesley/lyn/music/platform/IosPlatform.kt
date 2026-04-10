@@ -52,6 +52,7 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
+import top.iwesley.lyn.music.domain.testNavidromeConnection
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import platform.CoreFoundation.CFDataCreate
@@ -337,12 +338,24 @@ private class IosImportSourceGateway(
         return ImportScanReport(emptyList(), warnings = listOf("当前 iOS 构建未实现应用内目录扫描，请通过 Files 接入后扩展。"))
     }
 
+    override suspend fun testSamba(draft: SambaSourceDraft) {
+        error("当前 iOS 构建建议通过 Files 连接 SMB。")
+    }
+
     override suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport {
         return ImportScanReport(emptyList(), warnings = listOf("当前 iOS 构建建议通过 Files 连接 SMB。"))
     }
 
+    override suspend fun testWebDav(draft: WebDavSourceDraft) {
+        error("当前 iOS 构建暂未实现应用内 WebDAV。")
+    }
+
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
         return ImportScanReport(emptyList(), warnings = listOf("当前 iOS 构建暂未实现应用内 WebDAV。"))
+    }
+
+    override suspend fun testNavidrome(draft: NavidromeSourceDraft) {
+        testNavidromeConnection(draft, navidromeHttpClient)
     }
 
     override suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport {

@@ -38,7 +38,7 @@ class RoomMusicTagsRepository(
         database.importSourceDao().observeAll(),
     ) { tracks, sources ->
         val localSourceIds = sources
-            .filter { it.type == ImportSourceType.LOCAL_FOLDER.name }
+            .filter { it.type == ImportSourceType.LOCAL_FOLDER.name && it.enabled }
             .mapTo(linkedSetOf()) { it.id }
         tracks.filter { it.sourceId in localSourceIds }.map(TrackEntity::toDomain)
     }
@@ -143,7 +143,13 @@ class RoomMusicTagsRepository(
 }
 
 internal suspend fun rebuildLibrarySummaries(database: LynMusicDatabase) {
+    val enabledSourceIds = database.importSourceDao().getAll()
+        .asSequence()
+        .filter { it.enabled }
+        .map { it.id }
+        .toSet()
     val tracks = database.trackDao().getAll()
+        .filter { it.sourceId in enabledSourceIds }
     database.artistDao().deleteAll()
     database.albumDao().deleteAll()
 

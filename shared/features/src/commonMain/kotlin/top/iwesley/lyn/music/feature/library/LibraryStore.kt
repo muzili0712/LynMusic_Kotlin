@@ -59,13 +59,14 @@ class LibraryStore(
                 importSourceRepository.observeSources(),
                 preferencesStore.librarySourceFilter,
             ) { tracks, albums, artists, sources, selectedSourceFilter ->
+                val enabledSources = sources.map { it.source }.filter { it.enabled }
                 LibrarySnapshot(
                     tracks = tracks,
                     albums = albums,
                     artists = artists,
                     selectedSourceFilter = selectedSourceFilter,
-                    sourceTypesById = sources.associate { it.source.id to it.source.type },
-                    availableSourceFilters = buildAvailableSourceFilters(sources.map { it.source.type }),
+                    sourceTypesById = enabledSources.associate { it.id to it.type },
+                    availableSourceFilters = buildAvailableSourceFilters(enabledSources.map { it.type }),
                 )
             }.collect { snapshot ->
                 updateState { state ->

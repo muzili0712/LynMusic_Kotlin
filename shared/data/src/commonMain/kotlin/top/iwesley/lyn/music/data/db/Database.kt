@@ -44,6 +44,7 @@ data class ImportSourceEntity(
     val username: String?,
     val credentialKey: String?,
     val allowInsecureTls: Boolean,
+    val enabled: Boolean = true,
     val lastScannedAt: Long?,
     val createdAt: Long,
 )
@@ -496,7 +497,7 @@ interface LyricsCacheDao {
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 7,
+    version = 8,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -530,6 +531,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_4_5)
         .addMigrations(MIGRATION_5_6)
         .addMigrations(MIGRATION_6_7)
+        .addMigrations(MIGRATION_7_8)
         .fallbackToDestructiveMigration(true)
         .build()
 }
@@ -659,6 +661,17 @@ val MIGRATION_6_7: Migration = object : Migration(6, 7) {
             """
             CREATE INDEX IF NOT EXISTS index_playlist_remote_binding_sourceId
             ON playlist_remote_binding(sourceId)
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            ALTER TABLE import_source
+            ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1
             """.trimIndent(),
         )
     }

@@ -431,10 +431,13 @@ internal fun MainShellAssistChip(
 internal fun SourceCard(
     state: top.iwesley.lyn.music.core.model.SourceWithStatus,
     enabled: Boolean,
-    onRescan: () -> Unit,
+    onEdit: (() -> Unit)?,
+    onToggleEnabled: () -> Unit,
+    onRescan: (() -> Unit)?,
     onDelete: () -> Unit,
 ) {
     val shellColors = mainShellColors
+    val sourceEnabled = state.source.enabled
     ElevatedCard(
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = shellColors.cardContainer),
@@ -467,20 +470,43 @@ internal fun SourceCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onRescan, enabled = enabled) {
-                        Icon(Icons.Rounded.Sync, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("重扫")
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        onEdit?.let { edit ->
+                            OutlinedButton(onClick = edit, enabled = enabled) {
+                                Icon(Icons.Rounded.Tune, null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("编辑")
+                            }
+                        }
+                        if (sourceEnabled) {
+                            onRescan?.let { rescan ->
+                                OutlinedButton(onClick = rescan, enabled = enabled) {
+                                    Icon(Icons.Rounded.Sync, null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("重扫")
+                                }
+                            }
+                        }
                     }
-                    OutlinedButton(
-                        onClick = onDelete,
-                        enabled = enabled,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    ) {
-                        Icon(Icons.Rounded.Delete, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("删除")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onToggleEnabled, enabled = enabled) {
+                            Icon(Icons.Rounded.CloudSync, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (sourceEnabled) "禁用" else "启用")
+                        }
+                        OutlinedButton(
+                            onClick = onDelete,
+                            enabled = enabled,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Icon(Icons.Rounded.Delete, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("删除")
+                        }
                     }
                 }
             }
@@ -491,11 +517,22 @@ internal fun SourceCard(
                     leadingIcon = { Icon(Icons.Rounded.LibraryMusic, null) })
                 MainShellAssistChip(
                     onClick = {},
-                    label = { Text(if (state.indexState?.lastError == null) "扫描正常" else "扫描失败") },
+                    label = {
+                        Text(
+                            when {
+                                !sourceEnabled -> "已禁用"
+                                state.indexState?.lastError == null -> "扫描正常"
+                                else -> "扫描失败"
+                            },
+                        )
+                    },
                     leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
             }
             state.indexState?.lastError?.takeIf { it.isNotBlank() }?.let {
-                Text(it, color = MaterialTheme.colorScheme.secondary)
+                Text(
+                    text = it,
+                    color = if (sourceEnabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

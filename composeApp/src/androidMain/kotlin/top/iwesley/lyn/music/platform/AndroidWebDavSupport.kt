@@ -86,6 +86,40 @@ internal suspend fun scanAndroidWebDav(
     }.getOrThrow()
 }
 
+internal fun testAndroidWebDavConnection(
+    draft: WebDavSourceDraft,
+    logger: DiagnosticLogger,
+) {
+    val rootUrl = normalizeWebDavRootUrl(draft.rootUrl)
+    val authHeader = buildBasicAuthorizationHeader(draft.username, draft.password)
+    val client = buildAndroidWebDavClient(draft.allowInsecureTls)
+    val request = Request.Builder()
+        .url(rootUrl.ensureTrailingSlash())
+        .header("Depth", "0")
+        .header("Accept", "application/xml, text/xml, */*")
+        .apply {
+            authHeader?.let { header("Authorization", it) }
+        }
+        .method("PROPFIND", WEBDAV_PROPFIND_BODY.toRequestBody(WEBDAV_XML_MEDIA_TYPE))
+        .build()
+    client.newCall(request).execute().use { response ->
+        val payload = response.body.string()
+        logger.debug(WEBDAV_LOG_TAG) {
+            "test-connection url=$rootUrl status=${response.code} responseBytes=${payload.length}"
+        }
+        if (!response.isSuccessful) {
+            val challenge = response.header("WWW-Authenticate").orEmpty()
+            throw IOException(describeWebDavHttpFailure("测试连接", response.code, authHeader != null, challenge))
+        }
+        val rootEntry = parseWebDavMultistatus(payload)
+            .firstOrNull { resolveWebDavRelativePath(rootUrl, it.href)?.isBlank() == true }
+            ?: error("WebDAV 根目录不可访问。")
+        if (!rootEntry.isDirectory) {
+            error("WebDAV 根 URL 不是目录。")
+        }
+    }
+}
+
 internal suspend fun resolveAndroidWebDavPlaybackTarget(
     database: LynMusicDatabase,
     secureCredentialStore: SecureCredentialStore,
@@ -93,7 +127,7 @@ internal suspend fun resolveAndroidWebDavPlaybackTarget(
     logger: DiagnosticLogger,
 ): AndroidWebDavPlaybackTarget? {
     val webDav = parseWebDavLocator(locator) ?: return null
-    val source = database.importSourceDao().getById(webDav.first) ?: error("Missing WebDAV source")
+    val source = database.importSourceDao().getById(webDav.first)?.takeIf { it.enabled } ?: return null
     val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
     val requestUrl = buildWebDavTrackUrl(source.rootReference, webDav.second)
     val headers = buildMap {

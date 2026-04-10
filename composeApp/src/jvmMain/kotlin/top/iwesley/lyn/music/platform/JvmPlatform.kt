@@ -88,6 +88,7 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
+import top.iwesley.lyn.music.domain.testNavidromeConnection
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import com.hierynomus.msdtyp.AccessMask
@@ -525,7 +526,7 @@ private suspend fun resolveJvmSambaTagReadTarget(
     track: Track,
 ): JvmSambaTagReadTarget? {
     val samba = parseSambaLocator(track.mediaLocator) ?: return null
-    val source = database.importSourceDao().getById(samba.first) ?: error("Samba source missing")
+    val source = database.importSourceDao().getById(samba.first)?.takeIf { it.enabled } ?: return null
     val shareName = source.shareName
     val storedPort = shareName?.toIntOrNull()
     val storedPath = when {
@@ -584,6 +585,40 @@ private class JvmImportSourceGateway(
         return ImportScanReport(tracks)
     }
 
+    override suspend fun testSamba(draft: SambaSourceDraft) {
+        val sambaPath = parseSambaPath(draft.path)
+            ?: error("SMB 路径至少需要包含共享名，例如 Media 或 Media/Music。")
+        val endpoint = formatSambaEndpoint(draft.server, draft.port, draft.path)
+        val startedAt = System.currentTimeMillis()
+        logger.info(SAMBA_LOG_TAG) {
+            "test-connect-start server:${draft.server} port:${draft.port} user:${draft.username} " +
+                    "endpoint=$endpoint hasCredentials=${draft.password.isNotBlank()}"
+        }
+        runCatching {
+            SMBClient().connect(draft.server, draft.port ?: DEFAULT_SAMBA_PORT).use { connection ->
+                logger.debug(SAMBA_LOG_TAG) {
+                    "test-connect-ok endpoint=$endpoint remoteHost=${connection.remoteHostname}"
+                }
+                val session = connection.authenticate(AuthenticationContext(draft.username, draft.password.toCharArray(), ""))
+                logger.debug(SAMBA_LOG_TAG) {
+                    "test-auth-ok endpoint=$endpoint share=${sambaPath.shareName}"
+                }
+                val share = session.connectShare(sambaPath.shareName) as DiskShare
+                if (sambaPath.directoryPath.isNotBlank() && !share.folderExists(sambaPath.directoryPath)) {
+                    error("SMB 路径不存在或无法访问。")
+                }
+            }
+        }.onSuccess {
+            logger.info(SAMBA_LOG_TAG) {
+                "test-connect-complete endpoint=$endpoint elapsedMs=${System.currentTimeMillis() - startedAt}"
+            }
+        }.onFailure { throwable ->
+            logger.error(SAMBA_LOG_TAG, throwable) {
+                "test-connect-failed endpoint=$endpoint elapsedMs=${System.currentTimeMillis() - startedAt}"
+            }
+        }.getOrThrow()
+    }
+
     override suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport {
         val sambaPath = parseSambaPath(draft.path)
             ?: error("SMB 路径至少需要包含共享名，例如 Media 或 Media/Music。")
@@ -619,8 +654,16 @@ private class JvmImportSourceGateway(
         }.getOrThrow()
     }
 
+    override suspend fun testWebDav(draft: WebDavSourceDraft) {
+        testJvmWebDavConnection(draft, logger)
+    }
+
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
         return scanJvmWebDav(draft, sourceId, logger)
+    }
+
+    override suspend fun testNavidrome(draft: NavidromeSourceDraft) {
+        testNavidromeConnection(draft, navidromeHttpClient, logger)
     }
 
     override suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport {
@@ -1096,7 +1139,8 @@ private class JvmPlaybackGateway(
     private suspend fun resolveLocator(locator: String): String {
         resolveNavidromeStreamUrl(database, secureCredentialStore, locator)?.let { return it }
         val samba = parseSambaLocator(locator) ?: return locator
-        val source = database.importSourceDao().getById(samba.first) ?: error("Samba source missing")
+        val source = database.importSourceDao().getById(samba.first)?.takeIf { it.enabled }
+            ?: error("Samba 来源不可用。")
         val shareName = source.shareName
         val storedPort = shareName?.toIntOrNull()
         val storedPath = when {

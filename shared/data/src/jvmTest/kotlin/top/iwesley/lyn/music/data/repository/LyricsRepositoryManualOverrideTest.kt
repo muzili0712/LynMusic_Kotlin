@@ -900,13 +900,23 @@ private class FakeImportGateway(
         error("Unexpected local scan")
     }
 
+    override suspend fun testSamba(draft: SambaSourceDraft) {
+        error("Unexpected samba test")
+    }
+
     override suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport {
         error("Unexpected samba scan")
+    }
+
+    override suspend fun testWebDav(draft: WebDavSourceDraft) {
+        error("Unexpected webdav test")
     }
 
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
         error("Unexpected webdav scan")
     }
+
+    override suspend fun testNavidrome(draft: NavidromeSourceDraft) = Unit
 
     override suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport {
         return navidromeReport

@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -67,9 +69,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
+import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
@@ -815,6 +821,17 @@ internal fun SourcesTab(
         unfocusedBorderColor = shellColors.cardBorder,
         disabledBorderColor = shellColors.cardBorder,
     )
+    state.editingSource?.let { editingSource ->
+        RemoteSourceEditorDialog(
+            state = editingSource,
+            isWorking = state.isWorking,
+            constrainWidth = !isMobileSourcesPlatform(platform),
+            testMessage = state.testMessage,
+            fieldColors = importFieldColors,
+            onDismiss = { onImportIntent(ImportIntent.DismissRemoteSourceEditor) },
+            onIntent = onImportIntent,
+        )
+    }
     pendingDeleteSource?.let { source ->
         AlertDialog(
             onDismissRequest = { pendingDeleteSourceId = null },
@@ -846,25 +863,34 @@ internal fun SourcesTab(
             },
         )
     }
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        SectionTitle(
-            title = "导入来源",
-            subtitle = "本地文件夹原地索引，Samba、WebDAV 与 Navidrome 作为远程音乐库。"
-        )
-        state.message?.let { message ->
-            BannerCard(message = message, onDismiss = { onImportIntent(ImportIntent.ClearMessage) })
+    state.testMessage?.let { message ->
+        LaunchedEffect(message) {
+            delay(2_500)
+            onImportIntent(ImportIntent.ClearTestMessage)
         }
-        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+    }
+    Box(
+        modifier = modifier.fillMaxSize(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            SectionTitle(
+                title = "导入来源",
+                subtitle = "本地文件夹原地索引，Samba、WebDAV 与 Navidrome 作为远程音乐库。"
+            )
+            state.message?.let { message ->
+                BannerCard(message = message, onDismiss = { onImportIntent(ImportIntent.ClearMessage) })
+            }
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                 Text("本地文件夹", fontWeight = FontWeight.Bold)
                 Text(
                     if (platform.name == "Android") {
@@ -884,11 +910,11 @@ internal fun SourcesTab(
                 }
             }
         }
-        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                 Text("Navidrome", fontWeight = FontWeight.Bold)
                 if (!state.capabilities.supportsNavidromeImport) {
                     Text("当前平台暂未开放应用内 Navidrome 导入。")
@@ -927,21 +953,29 @@ internal fun SourcesTab(
                         colors = importFieldColors,
                     )
                 }
-                Button(
-                    onClick = { onImportIntent(ImportIntent.AddNavidromeSource) },
-                    enabled = state.capabilities.supportsNavidromeImport && !state.isWorking,
-                ) {
-                    Icon(Icons.Rounded.CloudSync, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("连接并同步")
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        onClick = { onImportIntent(ImportIntent.TestNavidromeSource) },
+                        enabled = state.capabilities.supportsNavidromeImport && !state.isWorking,
+                    ) {
+                        Text("测试连接")
+                    }
+                    Button(
+                        onClick = { onImportIntent(ImportIntent.AddNavidromeSource) },
+                        enabled = state.capabilities.supportsNavidromeImport && !state.isWorking,
+                    ) {
+                        Icon(Icons.Rounded.CloudSync, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("连接并同步")
+                    }
                 }
             }
         }
-        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                 Text("Samba / SMB", fontWeight = FontWeight.Bold)
                 if (!state.capabilities.supportsSambaImport) {
                     Text("当前平台建议通过系统 Files 挂载 SMB 后，再用本地文件夹方式接入。")
@@ -999,21 +1033,29 @@ internal fun SourcesTab(
                         colors = importFieldColors
                     )
                 }
-                Button(
-                    onClick = { onImportIntent(ImportIntent.AddSambaSource) },
-                    enabled = !state.isWorking,
-                ) {
-                    Icon(Icons.Rounded.CloudSync, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("连接并扫描")
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        onClick = { onImportIntent(ImportIntent.TestSambaSource) },
+                        enabled = !state.isWorking,
+                    ) {
+                        Text("测试连接")
+                    }
+                    Button(
+                        onClick = { onImportIntent(ImportIntent.AddSambaSource) },
+                        enabled = !state.isWorking,
+                    ) {
+                        Icon(Icons.Rounded.CloudSync, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("连接并扫描")
+                    }
                 }
             }
         }
-        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                 Text("WebDAV", fontWeight = FontWeight.Bold)
                 if (!state.capabilities.supportsWebDavImport) {
                     Text("当前平台暂未开放应用内 WebDAV 导入。")
@@ -1072,31 +1114,273 @@ internal fun SourcesTab(
                         ),
                     )
                 }
-                Button(
-                    onClick = { onImportIntent(ImportIntent.AddWebDavSource) },
-                    enabled = state.capabilities.supportsWebDavImport && !state.isWorking,
-                ) {
-                    Icon(Icons.Rounded.CloudSync, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("连接并扫描")
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        onClick = { onImportIntent(ImportIntent.TestWebDavSource) },
+                        enabled = state.capabilities.supportsWebDavImport && !state.isWorking,
+                    ) {
+                        Text("测试连接")
+                    }
+                    Button(
+                        onClick = { onImportIntent(ImportIntent.AddWebDavSource) },
+                        enabled = state.capabilities.supportsWebDavImport && !state.isWorking,
+                    ) {
+                        Icon(Icons.Rounded.CloudSync, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("连接并扫描")
+                    }
                 }
             }
         }
-        SectionTitle(title = "已连接来源", subtitle = "重新扫描会刷新索引与歌词缓存匹配。")
-        if (state.sources.isEmpty()) {
-            EmptyStateCard(
-                title = "还没有任何来源",
-                body = "添加来源后，歌曲会在曲库里汇总显示，播放页会根据当前歌曲去匹配歌词。",
-            )
-        } else {
-            state.sources.forEach { source ->
-                SourceCard(
-                    state = source,
-                    enabled = !state.isWorking,
-                    onRescan = { onImportIntent(ImportIntent.RescanSource(source.source.id)) },
-                    onDelete = { pendingDeleteSourceId = source.source.id },
+            SectionTitle(title = "已连接来源", subtitle = "可编辑连接参数、测试连通性，并按需启用或禁用来源。")
+            if (state.sources.isEmpty()) {
+                EmptyStateCard(
+                    title = "还没有任何来源",
+                    body = "添加来源后，歌曲会在曲库里汇总显示，播放页会根据当前歌曲去匹配歌词。",
+                )
+            } else {
+                state.sources.forEach { source ->
+                    SourceCard(
+                        state = source,
+                        enabled = !state.isWorking,
+                        onEdit = if (source.source.type == ImportSourceType.LOCAL_FOLDER) {
+                            null
+                        } else {
+                            { onImportIntent(ImportIntent.OpenRemoteSourceEditor(source.source.id)) }
+                        },
+                        onToggleEnabled = {
+                            onImportIntent(
+                                ImportIntent.ToggleSourceEnabled(
+                                    sourceId = source.source.id,
+                                    enabled = !source.source.enabled,
+                                ),
+                            )
+                        },
+                        onRescan = if (source.source.enabled) {
+                            { onImportIntent(ImportIntent.RescanSource(source.source.id)) }
+                        } else {
+                            null
+                        },
+                        onDelete = { pendingDeleteSourceId = source.source.id },
+                    )
+                }
+            }
+        }
+        if (state.editingSource == null) {
+            state.testMessage?.let { message ->
+                ToastCard(
+                    message = message,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 20.dp, vertical = 24.dp),
                 )
             }
         }
     }
+}
+
+@Composable
+private fun RemoteSourceEditorDialog(
+    state: top.iwesley.lyn.music.feature.importing.RemoteSourceEditorState,
+    isWorking: Boolean,
+    constrainWidth: Boolean,
+    testMessage: String?,
+    fieldColors: androidx.compose.material3.TextFieldColors,
+    onDismiss: () -> Unit,
+    onIntent: (ImportIntent) -> Unit,
+) {
+    val shellColors = mainShellColors
+    Dialog(
+        onDismissRequest = {
+            if (!isWorking) {
+                onDismiss()
+            }
+        },
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp, vertical = 24.dp),
+        ) {
+            MainShellElevatedCard(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .then(
+                        if (constrainWidth) {
+                            Modifier
+                                .fillMaxWidth(0.72f)
+                                .widthIn(max = 372.dp)
+                        } else {
+                            Modifier.fillMaxWidth()
+                        },
+                    )
+                    .fillMaxHeight(0.6f),
+                shape = RoundedCornerShape(28.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Text(
+                        when (state.type) {
+                            ImportSourceType.SAMBA -> "编辑 Samba 来源"
+                            ImportSourceType.WEBDAV -> "编辑 WebDAV 来源"
+                            ImportSourceType.NAVIDROME -> "编辑 Navidrome 来源"
+                            ImportSourceType.LOCAL_FOLDER -> "编辑来源"
+                        },
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .heightIn(max = 372.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        if (state.hasStoredCredential) {
+                            Text(
+                                "已保存凭据，密码留空会继续使用当前凭据。",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        ImeAwareOutlinedTextField(
+                            value = state.label,
+                            onValueChange = { onIntent(ImportIntent.RemoteSourceLabelChanged(it)) },
+                            label = { Text("名称") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = fieldColors,
+                        )
+                        when (state.type) {
+                            ImportSourceType.SAMBA -> {
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    ImeAwareOutlinedTextField(
+                                        value = state.server,
+                                        onValueChange = { onIntent(ImportIntent.RemoteSourceServerChanged(it)) },
+                                        label = { Text("服务器地址") },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(18.dp),
+                                        colors = fieldColors,
+                                    )
+                                    ImeAwareOutlinedTextField(
+                                        value = state.port,
+                                        onValueChange = { onIntent(ImportIntent.RemoteSourcePortChanged(it)) },
+                                        label = { Text("端口") },
+                                        modifier = Modifier.width(140.dp),
+                                        shape = RoundedCornerShape(18.dp),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        colors = fieldColors,
+                                    )
+                                }
+                                ImeAwareOutlinedTextField(
+                                    value = state.path,
+                                    onValueChange = { onIntent(ImportIntent.RemoteSourcePathChanged(it)) },
+                                    label = { Text("路径（Share/子目录）") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(18.dp),
+                                    colors = fieldColors,
+                                )
+                            }
+
+                            ImportSourceType.WEBDAV,
+                            ImportSourceType.NAVIDROME,
+                            -> {
+                                ImeAwareOutlinedTextField(
+                                    value = state.rootUrl,
+                                    onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
+                                    label = {
+                                        Text(if (state.type == ImportSourceType.WEBDAV) "根 URL" else "服务器地址")
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(18.dp),
+                                    colors = fieldColors,
+                                )
+                            }
+
+                            ImportSourceType.LOCAL_FOLDER -> Unit
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ImeAwareOutlinedTextField(
+                                value = state.username,
+                                onValueChange = { onIntent(ImportIntent.RemoteSourceUsernameChanged(it)) },
+                                label = { Text("用户名") },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(18.dp),
+                                colors = fieldColors,
+                            )
+                            ImeAwareOutlinedTextField(
+                                value = state.password,
+                                onValueChange = { onIntent(ImportIntent.RemoteSourcePasswordChanged(it)) },
+                                label = {
+                                    Text(if (state.hasStoredCredential) "密码（留空沿用）" else "密码")
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(18.dp),
+                                colors = fieldColors,
+                            )
+                        }
+                        if (state.type == ImportSourceType.WEBDAV) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Text("允许自签名证书", fontWeight = FontWeight.Medium)
+                                Switch(
+                                    checked = state.allowInsecureTls,
+                                    onCheckedChange = { onIntent(ImportIntent.RemoteSourceAllowInsecureTlsChanged(it)) },
+                                    colors = SwitchDefaults.colors(
+                                        uncheckedThumbColor = MaterialTheme.colorScheme.background,
+                                        uncheckedBorderColor = shellColors.cardBorder,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(
+                            onClick = onDismiss,
+                            enabled = !isWorking,
+                        ) {
+                            Text("取消")
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        OutlinedButton(
+                            onClick = { onIntent(ImportIntent.TestRemoteSource) },
+                            enabled = !isWorking,
+                        ) {
+                            Text("测试连接")
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Button(
+                            onClick = { onIntent(ImportIntent.SaveRemoteSource) },
+                            enabled = !isWorking,
+                        ) {
+                            Text("保存并重扫")
+                        }
+                    }
+                }
+            }
+            testMessage?.let { message ->
+                ToastCard(
+                    message = message,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 20.dp, vertical = 24.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun isMobileSourcesPlatform(platform: PlatformDescriptor): Boolean {
+    return platform.name == "Android" || platform.name == "iPhone / iPad"
 }

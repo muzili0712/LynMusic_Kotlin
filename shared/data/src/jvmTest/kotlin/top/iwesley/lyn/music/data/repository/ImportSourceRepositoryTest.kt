@@ -5,6 +5,7 @@ import java.nio.file.Files
 import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.ImportScanReport
@@ -182,6 +183,104 @@ class ImportSourceRepositoryTest {
         assertEquals("音乐源名称已存在。", result.exceptionOrNull()?.message)
         assertEquals(1, database.importSourceDao().getAll().size)
     }
+
+    @Test
+    fun `testing samba source does not persist source rows`() = runTest {
+        val database = createImportTestDatabase()
+        val gateway = RecordingImportSourceGateway()
+        val repository = createRepository(database = database, gateway = gateway)
+
+        val result = repository.testSambaSource(
+            SambaSourceDraft(
+                label = "家庭 NAS",
+                server = "nas.local",
+                path = "Media/Music",
+                username = "",
+                password = "",
+            ),
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, gateway.sambaTestCount)
+        assertEquals(0, gateway.sambaScanCount)
+        assertTrue(database.importSourceDao().getAll().isEmpty())
+    }
+
+    @Test
+    fun `updating navidrome source with blank password keeps existing credential`() = runTest {
+        val database = createImportTestDatabase()
+        val gateway = RecordingImportSourceGateway()
+        val credentials = ImportTestSecureCredentialStore(mutableMapOf("credential-nav-1" to "old-password"))
+        database.importSourceDao().upsert(
+            ImportSourceEntity(
+                id = "nav-1",
+                type = ImportSourceType.NAVIDROME.name,
+                label = "Navidrome",
+                rootReference = "https://nav.example.com",
+                server = null,
+                shareName = null,
+                directoryPath = null,
+                username = "demo",
+                credentialKey = "credential-nav-1",
+                allowInsecureTls = false,
+                enabled = true,
+                lastScannedAt = null,
+                createdAt = 1L,
+            ),
+        )
+        val repository = RoomImportSourceRepository(
+            database = database,
+            gateway = gateway,
+            secureCredentialStore = credentials,
+        )
+
+        val result = repository.updateNavidromeSource(
+            sourceId = "nav-1",
+            draft = NavidromeSourceDraft(
+                label = "Navidrome",
+                baseUrl = "https://nav2.example.com",
+                username = "demo2",
+                password = "",
+            ),
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, gateway.navidromeScanCount)
+        assertEquals("old-password", gateway.lastNavidromeScanDraft?.password)
+        val updated = assertNotNull(database.importSourceDao().getById("nav-1"))
+        assertEquals("https://nav2.example.com", updated.rootReference)
+        assertEquals("demo2", updated.username)
+        assertEquals("old-password", credentials.get("credential-nav-1"))
+    }
+
+    @Test
+    fun `set source enabled toggles source without deleting tracks`() = runTest {
+        val database = createImportTestDatabase()
+        database.importSourceDao().upsert(
+            importSourceEntity(
+                id = "local-1",
+                type = ImportSourceType.LOCAL_FOLDER,
+                label = "下载目录",
+                rootReference = "folder://downloads",
+            ),
+        )
+        database.trackDao().upsertAll(
+            listOf(
+                trackEntity(
+                    id = "track-1",
+                    sourceId = "local-1",
+                    title = "Song",
+                ),
+            ),
+        )
+        val repository = createRepository(database = database)
+
+        val result = repository.setSourceEnabled("local-1", enabled = false)
+
+        assertTrue(result.isSuccess)
+        assertEquals(false, database.importSourceDao().getById("local-1")?.enabled)
+        assertEquals(1, database.trackDao().count())
+    }
 }
 
 private fun createRepository(
@@ -229,9 +328,13 @@ private class RecordingImportSourceGateway(
     private val scanReport: ImportScanReport = ImportScanReport(tracks = emptyList()),
 ) : ImportSourceGateway {
     var localFolderScanCount: Int = 0
+    var sambaTestCount: Int = 0
     var sambaScanCount: Int = 0
+    var webDavTestCount: Int = 0
     var webDavScanCount: Int = 0
+    var navidromeTestCount: Int = 0
     var navidromeScanCount: Int = 0
+    var lastNavidromeScanDraft: NavidromeSourceDraft? = null
 
     override suspend fun pickLocalFolder(): LocalFolderSelection? = nextLocalFolderSelection
 
@@ -240,9 +343,17 @@ private class RecordingImportSourceGateway(
         return scanReport
     }
 
+    override suspend fun testSamba(draft: SambaSourceDraft) {
+        sambaTestCount += 1
+    }
+
     override suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport {
         sambaScanCount += 1
         return scanReport
+    }
+
+    override suspend fun testWebDav(draft: WebDavSourceDraft) {
+        webDavTestCount += 1
     }
 
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
@@ -250,8 +361,13 @@ private class RecordingImportSourceGateway(
         return scanReport
     }
 
+    override suspend fun testNavidrome(draft: NavidromeSourceDraft) {
+        navidromeTestCount += 1
+    }
+
     override suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport {
         navidromeScanCount += 1
+        lastNavidromeScanDraft = draft
         return scanReport
     }
 }
@@ -268,4 +384,28 @@ private class ImportTestSecureCredentialStore(
     override suspend fun remove(key: String) {
         values.remove(key)
     }
+}
+
+private fun trackEntity(
+    id: String,
+    sourceId: String,
+    title: String,
+): top.iwesley.lyn.music.data.db.TrackEntity {
+    return top.iwesley.lyn.music.data.db.TrackEntity(
+        id = id,
+        sourceId = sourceId,
+        title = title,
+        artistId = null,
+        artistName = null,
+        albumId = null,
+        albumTitle = null,
+        durationMs = 0L,
+        trackNumber = null,
+        discNumber = null,
+        mediaLocator = "file:///tmp/$title.mp3",
+        relativePath = "$title.mp3",
+        artworkLocator = null,
+        sizeBytes = 0L,
+        modifiedAt = 0L,
+    )
 }

@@ -50,12 +50,19 @@ class RoomFavoritesRepository(
     override val favoriteTracks: Flow<List<Track>> = combine(
         favoriteRows,
         database.trackDao().observeAll(),
+        database.importSourceDao().observeAll(),
         database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
-    ) { favorites, tracks, overrides ->
+    ) { favorites, tracks, sources, overrides ->
+        val enabledSourceIds = sources.asSequence()
+            .filter { it.enabled }
+            .map { it.id }
+            .toSet()
         val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
-        val trackById = tracks.associate { track ->
-            track.id to track.toDomain(artworkOverrides[track.id])
-        }
+        val trackById = tracks
+            .filter { it.sourceId in enabledSourceIds }
+            .associate { track ->
+                track.id to track.toDomain(artworkOverrides[track.id])
+            }
         favorites.mapNotNull { trackById[it.trackId] }
     }
 
@@ -85,7 +92,7 @@ class RoomFavoritesRepository(
         return runCatching {
             val failures = mutableListOf<String>()
             database.importSourceDao().getAll()
-                .filter { it.type == ImportSourceType.NAVIDROME.name }
+                .filter { it.type == ImportSourceType.NAVIDROME.name && it.enabled }
                 .forEach { source ->
                     runCatching { syncNavidromeFavorites(source) }
                         .onFailure { throwable ->
@@ -200,7 +207,8 @@ class RoomFavoritesRepository(
     }
 
     private suspend fun resolveNavidromeSource(sourceId: String): NavidromeResolvedSource? {
-        val source = database.importSourceDao().getById(sourceId)?.takeIf { it.type == ImportSourceType.NAVIDROME.name }
+        val source = database.importSourceDao().getById(sourceId)
+            ?.takeIf { it.type == ImportSourceType.NAVIDROME.name && it.enabled }
             ?: return null
         return source.toNavidromeResolvedSource()
     }

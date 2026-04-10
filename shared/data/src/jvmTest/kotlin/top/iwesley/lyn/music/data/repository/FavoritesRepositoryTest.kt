@@ -521,12 +521,24 @@ private class FakeImportSourceGateway(
         return localFolderReport
     }
 
+    override suspend fun testSamba(draft: SambaSourceDraft) {
+        error("Unexpected Samba test")
+    }
+
     override suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport {
         error("Unexpected Samba scan")
     }
 
+    override suspend fun testWebDav(draft: WebDavSourceDraft) {
+        error("Unexpected WebDAV test")
+    }
+
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
         error("Unexpected WebDAV scan")
+    }
+
+    override suspend fun testNavidrome(draft: NavidromeSourceDraft) {
+        error("Unexpected Navidrome test")
     }
 
     override suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport {
