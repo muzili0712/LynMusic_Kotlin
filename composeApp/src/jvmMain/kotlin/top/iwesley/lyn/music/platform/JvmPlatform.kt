@@ -1048,12 +1048,22 @@ private class JvmPlaybackGateway(
                 mutableState.update {
                     it.copy(
                         durationMs = info.duration().coerceAtLeast(0L),
-                        metadataTitle = sanitizeJvmVlcMetadataTitle(metaData.value(Meta.TITLE)) ?: it.metadataTitle,
-                        metadataArtistName = metaData.value(Meta.ARTIST)
-                            .ifBlank { metaData.value(Meta.ALBUM_ARTIST) }
-                            .ifBlank { it.metadataArtistName },
-                        metadataAlbumTitle = metaData.value(Meta.ALBUM)
-                            .ifBlank { it.metadataAlbumTitle },
+                        metadataTitle = resolveJvmVlcMetadataFallback(
+                            primaryValue = track?.title,
+                            vlcValue = sanitizeJvmVlcMetadataTitle(metaData.value(Meta.TITLE)),
+                            previousValue = it.metadataTitle,
+                        ),
+                        metadataArtistName = resolveJvmVlcMetadataFallback(
+                            primaryValue = track?.artistName,
+                            vlcValue = metaData.value(Meta.ARTIST)
+                                .ifBlank { metaData.value(Meta.ALBUM_ARTIST) },
+                            previousValue = it.metadataArtistName,
+                        ),
+                        metadataAlbumTitle = resolveJvmVlcMetadataFallback(
+                            primaryValue = track?.albumTitle,
+                            vlcValue = metaData.value(Meta.ALBUM),
+                            previousValue = it.metadataAlbumTitle,
+                        ),
                         errorMessage = null,
                     )
                 }
@@ -1561,6 +1571,16 @@ internal fun sanitizeJvmVlcMetadataTitle(title: String?): String? {
         return null
     }
     return normalized
+}
+
+internal fun resolveJvmVlcMetadataFallback(
+    primaryValue: String?,
+    vlcValue: String?,
+    previousValue: String?,
+): String? {
+    if (!primaryValue.isNullOrBlank()) return null
+    return vlcValue?.trim()?.takeIf { it.isNotBlank() }
+        ?: previousValue?.trim()?.takeIf { it.isNotBlank() }
 }
 
 private val INTERNAL_VLC_TITLE_PREFIXES = listOf(
