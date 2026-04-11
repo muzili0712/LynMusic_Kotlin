@@ -25,6 +25,9 @@ import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+import top.iwesley.lyn.music.domain.PRESET_OIAPI_QQMUSIC_SOURCE_ID
+import top.iwesley.lyn.music.domain.PRESET_OIAPI_QQMUSIC_SOURCE_NAME
+import top.iwesley.lyn.music.domain.PRESET_OIAPI_QQMUSIC_SOURCE_PRIORITY
 
 class SettingsRepositoryTest {
 
@@ -99,6 +102,60 @@ class SettingsRepositoryTest {
         assertEquals(LRCLIB_JSON_MAP_EXTRACTOR, saved.single().extractor)
         assertEquals(100, saved.single().priority)
         assertEquals(true, saved.single().enabled)
+    }
+
+    @Test
+    fun `ensure defaults seeds oiapi qqmusic preset workflow when absent`() = runTest {
+        val database = createSettingsTestDatabase()
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
+
+        repository.ensureDefaults()
+
+        val direct = database.lyricsSourceConfigDao().getAll()
+        val workflows = database.workflowLyricsSourceConfigDao().getAll()
+        assertEquals(1, direct.size)
+        assertEquals("lrclib", direct.single().id)
+        assertEquals(1, workflows.size)
+        assertEquals(PRESET_OIAPI_QQMUSIC_SOURCE_ID, workflows.single().id)
+        assertEquals(PRESET_OIAPI_QQMUSIC_SOURCE_NAME, workflows.single().name)
+        assertEquals(PRESET_OIAPI_QQMUSIC_SOURCE_PRIORITY, workflows.single().priority)
+        assertEquals(false, workflows.single().enabled)
+        assertEquals(true, workflows.single().rawJson.contains("https://oiapi.net/api/QQMusicLyric"))
+    }
+
+    @Test
+    fun `ensure defaults keeps existing workflow with preset id`() = runTest {
+        val database = createSettingsTestDatabase()
+        database.workflowLyricsSourceConfigDao().upsert(
+            workflowEntity(id = PRESET_OIAPI_QQMUSIC_SOURCE_ID, name = "My QQMusic Source"),
+        )
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
+
+        repository.ensureDefaults()
+
+        val workflows = database.workflowLyricsSourceConfigDao().getAll()
+        assertEquals(1, workflows.size)
+        assertEquals(PRESET_OIAPI_QQMUSIC_SOURCE_ID, workflows.single().id)
+        assertEquals("My QQMusic Source", workflows.single().name)
+    }
+
+    @Test
+    fun `ensure defaults skips preset workflow when name already exists`() = runTest {
+        val database = createSettingsTestDatabase()
+        database.workflowLyricsSourceConfigDao().upsert(
+            workflowEntity(id = "wf-oiapi", name = " ${PRESET_OIAPI_QQMUSIC_SOURCE_NAME.lowercase()} "),
+        )
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
+
+        repository.ensureDefaults()
+
+        val workflows = database.workflowLyricsSourceConfigDao().getAll()
+        assertEquals(1, workflows.size)
+        assertEquals("wf-oiapi", workflows.single().id)
+        assertEquals(" ${PRESET_OIAPI_QQMUSIC_SOURCE_NAME.lowercase()} ", workflows.single().name)
     }
 
     @Test

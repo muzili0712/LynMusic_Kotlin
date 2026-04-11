@@ -72,6 +72,7 @@ import top.iwesley.lyn.music.domain.requestNavidromeLyrics
 import top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrl
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
+import top.iwesley.lyn.music.domain.buildPresetOiapiQqMusicWorkflowJson
 import top.iwesley.lyn.music.domain.buildWorkflowRequest
 import top.iwesley.lyn.music.domain.extractWorkflowEnrichmentStepCapture
 import top.iwesley.lyn.music.domain.extractWorkflowLyricsPayload
@@ -917,28 +918,22 @@ class DefaultSettingsRepository(
     override suspend fun ensureDefaults() {
         val existing = database.lyricsSourceConfigDao().getAll()
         if (existing.isEmpty()) {
-            val reservedNames = database.workflowLyricsSourceConfigDao().getAll()
-                .mapTo(mutableSetOf()) { normalizeLyricsSourceName(it.name) }
-            defaultLyricsSourceConfigs().forEach { config ->
-                if (normalizeLyricsSourceName(config.name) !in reservedNames) {
-                    database.lyricsSourceConfigDao().upsert(config.toEntity())
+            seedDefaultDirectLyricsSources()
+        } else {
+            migrateBuiltInLrclibConfig(existing)?.let { migrated ->
+                database.lyricsSourceConfigDao().upsert(migrated)
+                LEGACY_BUILT_IN_LRCLIB_SOURCE_IDS.forEach { legacyId ->
+                    database.lyricsSourceConfigDao().delete(legacyId)
                 }
             }
-            return
-        }
 
-        migrateBuiltInLrclibConfig(existing)?.let { migrated ->
-            database.lyricsSourceConfigDao().upsert(migrated)
-            LEGACY_BUILT_IN_LRCLIB_SOURCE_IDS.forEach { legacyId ->
-                database.lyricsSourceConfigDao().delete(legacyId)
-            }
+            database.lyricsSourceConfigDao().getAll()
+                .mapNotNull(::sanitizeBuiltInLrclibConfig)
+                .forEach { config ->
+                    database.lyricsSourceConfigDao().upsert(config)
+                }
         }
-
-        database.lyricsSourceConfigDao().getAll()
-            .mapNotNull(::sanitizeBuiltInLrclibConfig)
-            .forEach { config ->
-                database.lyricsSourceConfigDao().upsert(config)
-            }
+        seedDefaultWorkflowLyricsSources()
     }
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
@@ -1091,6 +1086,39 @@ class DefaultSettingsRepository(
         val hasWorkflowConflict = database.workflowLyricsSourceConfigDao().getAll().any { it.id == sourceId && it.id != currentWorkflowId }
         if (hasDirectConflict || hasWorkflowConflict) {
             error("歌词源 id 已存在。")
+        }
+    }
+
+    private suspend fun seedDefaultDirectLyricsSources() {
+        val workflowConfigs = database.workflowLyricsSourceConfigDao().getAll()
+        val reservedIds = workflowConfigs.mapTo(mutableSetOf()) { it.id }
+        val reservedNames = workflowConfigs.mapTo(mutableSetOf()) { normalizeLyricsSourceName(it.name) }
+        defaultLyricsSourceConfigs().forEach { config ->
+            val normalizedName = normalizeLyricsSourceName(config.name)
+            if (config.id !in reservedIds && normalizedName !in reservedNames) {
+                database.lyricsSourceConfigDao().upsert(config.toEntity())
+                reservedIds += config.id
+                reservedNames += normalizedName
+            }
+        }
+    }
+
+    private suspend fun seedDefaultWorkflowLyricsSources() {
+        val directConfigs = database.lyricsSourceConfigDao().getAll()
+        val reservedIds = directConfigs.mapTo(mutableSetOf()) { it.id }
+        val reservedNames = directConfigs.mapTo(mutableSetOf()) { normalizeLyricsSourceName(it.name) }
+        database.workflowLyricsSourceConfigDao().getAll().forEach { entity ->
+            reservedIds += entity.id
+            reservedNames += normalizeLyricsSourceName(entity.name)
+        }
+        defaultWorkflowLyricsSourceConfigs().forEach { config ->
+            val normalizedName = normalizeLyricsSourceName(config.name)
+            if (config.id in reservedIds || normalizedName in reservedNames) {
+                return@forEach
+            }
+            database.workflowLyricsSourceConfigDao().upsert(config.toEntity())
+            reservedIds += config.id
+            reservedNames += normalizedName
         }
     }
 
@@ -2267,9 +2295,15 @@ fun defaultLyricsSourceConfigs(): List<LyricsSourceConfig> {
             queryTemplate = LRCLIB_DEFAULT_QUERY_TEMPLATE,
             responseFormat = LyricsResponseFormat.JSON,
             extractor = LRCLIB_JSON_MAP_EXTRACTOR,
-            priority = 100,
+            priority = 50,
             enabled = true,
         ),
+    )
+}
+
+fun defaultWorkflowLyricsSourceConfigs(): List<WorkflowLyricsSourceConfig> {
+    return listOf(
+        parseWorkflowLyricsSourceConfig(buildPresetOiapiQqMusicWorkflowJson()),
     )
 }
 

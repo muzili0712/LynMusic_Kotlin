@@ -13,6 +13,7 @@ import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_ID
 import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_NAME
 import top.iwesley.lyn.music.domain.MUSICMATCH_LYRICS_EXTRACTOR
 import top.iwesley.lyn.music.domain.buildManagedMusicmatchWorkflowJson
+import top.iwesley.lyn.music.domain.buildPresetOiapiQqMusicWorkflowJson
 import top.iwesley.lyn.music.domain.extractManagedMusicmatchUserToken
 import top.iwesley.lyn.music.domain.extractWorkflowLyricsPayload
 import top.iwesley.lyn.music.domain.extractWorkflowSongCandidates
@@ -21,6 +22,15 @@ import top.iwesley.lyn.music.domain.parseWorkflowLyricsDocument
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 
 class WorkflowLyricsEngineTest {
+
+    @Test
+    fun `oiapi preset builder remains parseable with placeholder templates`() {
+        val config = parseWorkflowLyricsSourceConfig(buildPresetOiapiQqMusicWorkflowJson())
+
+        assertEquals("custom-oiapi-qqmusic", config.id)
+        assertEquals("keyword={title} {artist}&page=1&limit=10&type=json", config.search.request.queryTemplate)
+        assertEquals("id={candidate.id}&format=lrc&type=json", config.lyrics.steps.single().request.queryTemplate)
+    }
 
     @Test
     fun `oiapi workflow json parses and extracts candidates`() {

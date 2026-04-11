@@ -7,9 +7,13 @@ import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.data.repository.defaultWorkflowLyricsSourceConfigs
 import top.iwesley.lyn.music.data.repository.defaultLyricsSourceConfigs
 import top.iwesley.lyn.music.data.repository.LRCLIB_JSON_MAP_EXTRACTOR
 import top.iwesley.lyn.music.data.repository.sanitizeLrclibQueryTemplate
+import top.iwesley.lyn.music.domain.PRESET_OIAPI_QQMUSIC_SOURCE_ID
+import top.iwesley.lyn.music.domain.PRESET_OIAPI_QQMUSIC_SOURCE_NAME
+import top.iwesley.lyn.music.domain.PRESET_OIAPI_QQMUSIC_SOURCE_PRIORITY
 import top.iwesley.lyn.music.domain.buildLyricsRequest
 import top.iwesley.lyn.music.domain.parseLyricsPayload
 import top.iwesley.lyn.music.domain.parseLyricsPayloadResult
@@ -346,6 +350,22 @@ class LyricsEngineTest {
         assertEquals("LRCLIB", configs[0].name)
         assertTrue(configs.all { it.urlTemplate == "https://lrclib.net/api/search" })
         assertTrue(configs.all { it.queryTemplate == "track_name={title}&artist_name={artist}" })
+    }
+
+    @Test
+    fun `default workflow lyrics sources include oiapi qqmusic entry`() {
+        val configs = defaultWorkflowLyricsSourceConfigs()
+
+        assertEquals(1, configs.size)
+        assertEquals(PRESET_OIAPI_QQMUSIC_SOURCE_ID, configs[0].id)
+        assertEquals(PRESET_OIAPI_QQMUSIC_SOURCE_NAME, configs[0].name)
+        assertEquals(PRESET_OIAPI_QQMUSIC_SOURCE_PRIORITY, configs[0].priority)
+        assertEquals(false, configs[0].enabled)
+        assertEquals("https://oiapi.net/api/QQMusicLyric", configs[0].search.request.url)
+        assertEquals(LyricsResponseFormat.JSON, configs[0].search.request.responseFormat)
+        assertEquals("data.content", configs[0].lyrics.steps.single().payloadPath)
+        assertEquals("message", configs[0].lyrics.steps.single().fallbackPayloadPath)
+        assertEquals(LyricsResponseFormat.LRC, configs[0].lyrics.steps.single().format)
     }
 
     @Test

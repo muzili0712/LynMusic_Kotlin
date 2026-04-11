@@ -510,11 +510,21 @@ private fun validatePlaceholders(
 }
 
 private fun extractTemplateVariables(template: String): List<String> {
-    return Regex("""\{([^}]+)}""")
-        .findAll(template)
-        .map { it.groupValues[1].trim() }
-        .filter { it.isNotEmpty() }
-        .toList()
+    if ('{' !in template || '}' !in template) return emptyList()
+    val variables = mutableListOf<String>()
+    var searchFrom = 0
+    while (searchFrom < template.length) {
+        val start = template.indexOf('{', startIndex = searchFrom)
+        if (start < 0) break
+        val end = template.indexOf('}', startIndex = start + 1)
+        if (end < 0) break
+        template.substring(start + 1, end)
+            .trim()
+            .takeIf { it.isNotEmpty() }
+            ?.let(variables::add)
+        searchFrom = end + 1
+    }
+    return variables
 }
 
 private fun appendWorkflowQuery(url: String, query: String): String {
