@@ -31,7 +31,7 @@ data class AppThemeTextPalettePreferences(
 )
 
 data class AppThemeSelection(
-    val themeId: AppThemeId = AppThemeId.Classic,
+    val themeId: AppThemeId = AppThemeId.Ocean,
 )
 
 data class AppThemePalette(

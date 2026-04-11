@@ -286,7 +286,7 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
 
     private fun readSelectedTheme(): AppThemeId {
         val name = defaults.stringForKey(KEY_SELECTED_THEME)
-        return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Classic
+        return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Ocean
     }
 
     private fun readCustomThemeTokens(): AppThemeTokens {

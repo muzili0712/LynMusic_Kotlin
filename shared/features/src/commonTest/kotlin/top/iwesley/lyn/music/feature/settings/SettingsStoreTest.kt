@@ -844,7 +844,7 @@ class SettingsStoreTest {
 
 private class FakeSettingsRepository(
     sources: List<LyricsSourceDefinition> = emptyList(),
-    selectedTheme: AppThemeId = AppThemeId.Classic,
+    selectedTheme: AppThemeId = AppThemeId.Ocean,
     customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
     textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
     desktopVlcAutoDetectedPath: String? = null,

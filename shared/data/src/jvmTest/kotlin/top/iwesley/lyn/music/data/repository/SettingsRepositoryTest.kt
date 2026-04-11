@@ -29,12 +29,12 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 class SettingsRepositoryTest {
 
     @Test
-    fun `theme preferences default to classic theme`() = runTest {
+    fun `theme preferences default to classic white theme`() = runTest {
         val database = createSettingsTestDatabase()
         val preferences = FakePreferencesStore()
         val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
 
-        assertEquals(AppThemeId.Classic, repository.selectedTheme.value)
+        assertEquals(AppThemeId.Ocean, repository.selectedTheme.value)
         assertEquals(defaultCustomThemeTokens(), repository.customThemeTokens.value)
         assertEquals(defaultThemeTextPalettePreferences(), repository.textPalettePreferences.value)
         assertEquals(AppThemeTextPalette.Black, repository.textPalettePreferences.value.forest)
@@ -214,7 +214,7 @@ private fun createSettingsTestDatabase(): LynMusicDatabase {
 
 private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreferencesStore, DesktopVlcPreferencesStore {
     override val useSambaCache = MutableStateFlow(true)
-    override val selectedTheme = MutableStateFlow(AppThemeId.Classic)
+    override val selectedTheme = MutableStateFlow(AppThemeId.Ocean)
     override val customThemeTokens = MutableStateFlow(defaultCustomThemeTokens())
     override val textPalettePreferences = MutableStateFlow(defaultThemeTextPalettePreferences())
     override val desktopVlcManualPath = MutableStateFlow<String?>(null)

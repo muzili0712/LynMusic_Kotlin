@@ -48,7 +48,7 @@ enum class CustomThemeColorRole {
 data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = false,
-    val selectedTheme: AppThemeId = AppThemeId.Classic,
+    val selectedTheme: AppThemeId = AppThemeId.Ocean,
     val customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
     val textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
     val lrcApiUrl: String = "",

@@ -318,7 +318,7 @@ private class AndroidAppPreferencesStore(
 
     private fun readSelectedTheme(): AppThemeId {
         val name = preferences.getString(KEY_SELECTED_THEME, null)
-        return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Classic
+        return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Ocean
     }
 
     private fun readCustomThemeTokens(): AppThemeTokens {

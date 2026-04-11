@@ -316,7 +316,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
 
     private fun readSelectedTheme(): AppThemeId {
         val name = loadProperties().getProperty(KEY_SELECTED_THEME)
-        return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Classic
+        return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Ocean
     }
 
     private fun readDesktopVlcManualPath(): String? {
