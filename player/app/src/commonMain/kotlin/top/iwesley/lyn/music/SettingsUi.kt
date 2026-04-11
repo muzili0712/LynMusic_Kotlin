@@ -1,7 +1,7 @@
 package top.iwesley.lyn.music
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,15 +59,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import lynmusic.player.app.generated.resources.Res
+import lynmusic.player.app.generated.resources.about_app_wechat_qr
+import org.jetbrains.compose.resources.imageResource
 import top.iwesley.lyn.music.core.model.AppStorageCategory
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
@@ -83,7 +85,6 @@ import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.ui.mainShellColors
-import kotlin.math.min
 
 @Composable
 internal fun SettingsTab(
@@ -1197,11 +1198,11 @@ private fun AboutAppSettingsPane(
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
                 )
-                Text(
-                    text = ABOUT_APP_SUMMARY,
-                    color = shellColors.secondaryText,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+//                Text(
+//                    text = ABOUT_APP_SUMMARY,
+//                    color = shellColors.secondaryText,
+//                    style = MaterialTheme.typography.bodySmall,
+//                )
             }
         }
         AboutDeviceInfoCard(title = "开发者") {
@@ -1223,11 +1224,11 @@ private fun AboutAppSettingsPane(
                 value = ABOUT_APP_WECHAT_ACCOUNT,
             )
             Text(
-                text = "公众号图片",
+                text = "公众号二维码",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            AboutAppQrPlaceholder(
+            AboutAppQrImage(
                 modifier = Modifier
                     .fillMaxWidth(0.58f)
                     .widthIn(max = 220.dp)
@@ -1235,7 +1236,7 @@ private fun AboutAppSettingsPane(
                     .align(Alignment.CenterHorizontally),
             )
             Text(
-                text = "当前为占位示意图，后续可替换成真实二维码或宣传图。",
+                text = "扫码关注公众号，获取更新和交流信息。",
                 style = MaterialTheme.typography.bodySmall,
                 color = shellColors.secondaryText,
             )
@@ -1489,7 +1490,7 @@ private fun AboutAppFieldRow(
 }
 
 @Composable
-private fun AboutAppQrPlaceholder(
+private fun AboutAppQrImage(
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
@@ -1498,22 +1499,14 @@ private fun AboutAppQrPlaceholder(
             .clip(RoundedCornerShape(22.dp))
             .background(Color.White)
             .border(1.dp, shellColors.cardBorder, RoundedCornerShape(22.dp))
-            .padding(16.dp),
+            .padding(12.dp),
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val cells = 21
-            val cellSize = min(size.width, size.height) / cells.toFloat()
-            for (row in 0 until cells) {
-                for (column in 0 until cells) {
-                    if (!isAboutAppQrModuleFilled(row, column, cells)) continue
-                    drawRect(
-                        color = Color(0xFF111111),
-                        topLeft = Offset(column * cellSize, row * cellSize),
-                        size = Size(cellSize, cellSize),
-                    )
-                }
-            }
-        }
+        Image(
+            bitmap = imageResource(Res.drawable.about_app_wechat_qr),
+            contentDescription = "公众号二维码",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 
@@ -1553,53 +1546,6 @@ private fun formatStorageSize(sizeBytes: Long): String {
     return "$formatted ${units[unitIndex]}"
 }
 
-private fun isAboutAppQrModuleFilled(
-    row: Int,
-    column: Int,
-    cells: Int,
-): Boolean {
-    if (
-        isAboutAppQrFinderModule(row, column, 0, 0) ||
-        isAboutAppQrFinderModule(row, column, cells - 7, 0) ||
-        isAboutAppQrFinderModule(row, column, 0, cells - 7)
-    ) {
-        return true
-    }
-    if (
-        isAboutAppQrReservedArea(row, column, 0, 0) ||
-        isAboutAppQrReservedArea(row, column, cells - 7, 0) ||
-        isAboutAppQrReservedArea(row, column, 0, cells - 7)
-    ) {
-        return false
-    }
-    if (row == 6 || column == 6) {
-        return (row + column) % 2 == 0
-    }
-    return ((row * 3 + column * 5 + row * column) % 7 == 0) || ((row + column) % 11 == 0)
-}
-
-private fun isAboutAppQrFinderModule(
-    row: Int,
-    column: Int,
-    left: Int,
-    top: Int,
-): Boolean {
-    val localRow = row - top
-    val localColumn = column - left
-    if (localRow !in 0..6 || localColumn !in 0..6) return false
-    return localRow == 0 || localRow == 6 || localColumn == 0 || localColumn == 6 ||
-            (localRow in 2..4 && localColumn in 2..4)
-}
-
-private fun isAboutAppQrReservedArea(
-    row: Int,
-    column: Int,
-    left: Int,
-    top: Int,
-): Boolean {
-    return row in (top - 1)..(top + 7) && column in (left - 1)..(left + 7)
-}
-
 private fun deviceInfoDisplayValue(value: String?, loading: Boolean): String {
     return when {
         value != null && value.isNotBlank() -> value
@@ -1615,10 +1561,10 @@ private fun deviceInfoMemoryValue(totalMemoryBytes: Long?, loading: Boolean): St
 
 private const val ABOUT_APP_NAME = "LynMusic"
 private const val ABOUT_APP_SUMMARY =
-    "以下开发者、项目地址和公众号信息为占位演示，可后续替换成真实内容。"
-private const val ABOUT_APP_DEVELOPER = "假装是开发者小林"
-private const val ABOUT_APP_PROJECT_URL = "https://example.com/lynmusic-demo"
-private const val ABOUT_APP_WECHAT_ACCOUNT = "假装有个公众号"
+    "以下为开发者、项目地址和公众号信息。"
+private const val ABOUT_APP_DEVELOPER = "锋风"
+private const val ABOUT_APP_PROJECT_URL = "https://github.com/wesley666/LynMusic"
+private const val ABOUT_APP_WECHAT_ACCOUNT = "锋风"
 
 @Composable
 private fun ThemePresetCard(
