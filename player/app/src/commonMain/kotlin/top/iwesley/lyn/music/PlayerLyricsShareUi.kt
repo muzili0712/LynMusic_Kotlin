@@ -1433,7 +1433,8 @@ private fun LyricsShareFullscreenPreviewOverlay(
                 .clickable(
                     interactionSource = contentInteractionSource,
                     indication = null,
-                ) { },
+                    onClick = onDismiss,
+                ),
         ) {
             if (previewBitmap != null) {
                 LyricsSharePreviewContent(
