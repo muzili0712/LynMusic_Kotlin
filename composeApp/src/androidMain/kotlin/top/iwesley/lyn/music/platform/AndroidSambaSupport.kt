@@ -19,12 +19,14 @@ import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File as SmbFile
 import java.io.IOException
+import kotlin.time.TimeSource
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
+import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
@@ -116,23 +118,30 @@ private class AndroidSambaDataSource(
     private val logger: DiagnosticLogger,
 ) : BaseDataSource(true) {
     private var activeStream: AndroidSambaOpenedStream? = null
+    private var knownTotalSize: Long? = null
     private var bytesRemaining: Long = C.LENGTH_UNSET.toLong()
     private var currentOffset: Long = 0L
     private var currentUri: Uri? = null
     private var opened = false
+    private val readAheadBuffer = ByteArray(SAMBA_READ_AHEAD_BYTES)
+    private var readAheadStartOffset: Long = 0L
+    private var readAheadLength: Int = 0
 
     override fun open(dataSpec: DataSpec): Long {
         transferInitializing(dataSpec)
         closeStream()
         val requestedPosition = dataSpec.position.coerceAtLeast(0L)
+        val openStartedAt = TimeSource.Monotonic.markNow()
         return runCatching {
-            val stream = openAndroidSambaStream(context)
+            val stream = openAndroidSambaStream(context, knownTotalSize)
             if (requestedPosition > stream.totalSize) {
                 throw IOException("请求位置超出文件大小: $requestedPosition > ${stream.totalSize}")
             }
+            knownTotalSize = stream.totalSize
             activeStream = stream
             currentOffset = requestedPosition
             currentUri = dataSpec.uri
+            resetReadAheadBuffer()
             bytesRemaining = when {
                 dataSpec.length != C.LENGTH_UNSET.toLong() -> minOf(
                     dataSpec.length,
@@ -142,7 +151,8 @@ private class AndroidSambaDataSource(
             }
             logger.info(SAMBA_LOG_TAG) {
                 "direct-open source=${context.sourceId} endpoint=${context.endpoint} share=${context.shareName} " +
-                    "remotePath=${context.remotePath} position=$requestedPosition length=${dataSpec.length}"
+                    "remotePath=${context.remotePath} position=$requestedPosition length=${dataSpec.length} " +
+                    "elapsedMs=${openStartedAt.elapsedNow().inWholeMilliseconds}"
             }
             opened = true
             transferStarted(dataSpec)
@@ -167,14 +177,24 @@ private class AndroidSambaDataSource(
             else -> minOf(length.toLong(), bytesRemaining).toInt()
         }
         return try {
-            val bytesRead = stream.file.read(buffer, currentOffset, offset, bytesToRead)
-            if (bytesRead <= 0) {
+            if (availableReadAheadBytes() <= 0) {
+                val filledBytes = fillReadAheadBuffer(stream, bytesToRead)
+                if (filledBytes <= 0) {
+                    return C.RESULT_END_OF_INPUT
+                }
+            }
+            val availableBytes = availableReadAheadBytes()
+            if (availableBytes <= 0) {
                 C.RESULT_END_OF_INPUT
             } else {
-                logger.debug(SAMBA_LOG_TAG) {
-                    "direct-read source=${context.sourceId} endpoint=${context.endpoint} share=${context.shareName} " +
-                        "remotePath=${context.remotePath} offset=$currentOffset bytes=$bytesRead"
-                }
+                val copyStart = (currentOffset - readAheadStartOffset).toInt()
+                val bytesRead = minOf(bytesToRead, availableBytes)
+                readAheadBuffer.copyInto(
+                    destination = buffer,
+                    destinationOffset = offset,
+                    startIndex = copyStart,
+                    endIndex = copyStart + bytesRead,
+                )
                 currentOffset += bytesRead.toLong()
                 if (bytesRemaining != C.LENGTH_UNSET.toLong()) {
                     bytesRemaining -= bytesRead.toLong()
@@ -183,9 +203,16 @@ private class AndroidSambaDataSource(
                 bytesRead
             }
         } catch (throwable: Throwable) {
-            logger.error(SAMBA_LOG_TAG, throwable) {
-                "direct-failed stage=read source=${context.sourceId} endpoint=${context.endpoint} " +
-                    "share=${context.shareName} remotePath=${context.remotePath} offset=$currentOffset"
+            if (throwable.isInterruptedSambaCancellation()) {
+                logger.debug(SAMBA_LOG_TAG) {
+                    "direct-cancelled stage=read source=${context.sourceId} endpoint=${context.endpoint} " +
+                        "share=${context.shareName} remotePath=${context.remotePath} offset=$currentOffset"
+                }
+            } else {
+                logger.error(SAMBA_LOG_TAG, throwable) {
+                    "direct-failed stage=read source=${context.sourceId} endpoint=${context.endpoint} " +
+                        "share=${context.shareName} remotePath=${context.remotePath} offset=$currentOffset"
+                }
             }
             throw throwable.asAndroidSambaPlaybackIOException("读取", context)
         }
@@ -202,6 +229,7 @@ private class AndroidSambaDataSource(
         currentUri = null
         bytesRemaining = C.LENGTH_UNSET.toLong()
         currentOffset = 0L
+        resetReadAheadBuffer()
         if (opened) {
             opened = false
             transferEnded()
@@ -217,10 +245,55 @@ private class AndroidSambaDataSource(
         runCatching { stream.connection.close() }
         runCatching { stream.client.close() }
     }
+
+    private fun availableReadAheadBytes(): Int {
+        val delta = currentOffset - readAheadStartOffset
+        if (delta < 0L || delta >= readAheadLength) {
+            return 0
+        }
+        return readAheadLength - delta.toInt()
+    }
+
+    private fun fillReadAheadBuffer(
+        stream: AndroidSambaOpenedStream,
+        requestedBytes: Int,
+    ): Int {
+        val remainingHint = when {
+            bytesRemaining == C.LENGTH_UNSET.toLong() -> readAheadBuffer.size.toLong()
+            else -> bytesRemaining
+        }
+        val targetBytes = minOf(
+            readAheadBuffer.size.toLong(),
+            maxOf(requestedBytes, SAMBA_MIN_READ_AHEAD_BYTES).toLong(),
+            remainingHint.coerceAtLeast(1L),
+        ).toInt()
+        val readStartedAt = TimeSource.Monotonic.markNow()
+        val bytesRead = stream.file.read(readAheadBuffer, currentOffset, 0, targetBytes)
+        if (bytesRead > 0) {
+            readAheadStartOffset = currentOffset
+            readAheadLength = bytesRead
+            val elapsedMs = readStartedAt.elapsedNow().inWholeMilliseconds
+            if (elapsedMs >= SLOW_SAMBA_READ_THRESHOLD_MS) {
+                logger.warn(SAMBA_LOG_TAG) {
+                    "direct-read-slow source=${context.sourceId} endpoint=${context.endpoint} share=${context.shareName} " +
+                        "remotePath=${context.remotePath} offset=$currentOffset bytes=$bytesRead request=$targetBytes elapsedMs=$elapsedMs"
+                }
+            }
+        } else {
+            resetReadAheadBuffer()
+        }
+        return bytesRead
+    }
+
+    private fun resetReadAheadBuffer() {
+        readAheadStartOffset = 0L
+        readAheadLength = 0
+    }
 }
 
 private fun openAndroidSambaStream(
     context: AndroidSambaPlaybackContext,
+    knownTotalSize: Long? = null,
 ): AndroidSambaOpenedStream {
     val client = SMBClient()
     return try {
@@ -229,7 +302,7 @@ private fun openAndroidSambaStream(
             AuthenticationContext(context.username, context.password.toCharArray(), ""),
         )
         val share = session.connectShare(context.shareName) as DiskShare
-        val totalSize = share.getFileInformation(context.remotePath)
+        val totalSize = knownTotalSize ?: share.getFileInformation(context.remotePath)
             .standardInformation
             .endOfFile
         val file = share.openFile(
@@ -268,3 +341,17 @@ private fun Throwable.asAndroidSambaPlaybackIOException(
 }
 
 private const val SAMBA_LOG_TAG = "Samba"
+private const val SAMBA_READ_AHEAD_BYTES = 128 * 1024
+private const val SAMBA_MIN_READ_AHEAD_BYTES = 32 * 1024
+private const val SLOW_SAMBA_READ_THRESHOLD_MS = 400L
+
+private fun Throwable.isInterruptedSambaCancellation(): Boolean {
+    var current: Throwable? = this
+    while (current != null) {
+        if (current is InterruptedException) {
+            return true
+        }
+        current = current.cause
+    }
+    return false
+}
