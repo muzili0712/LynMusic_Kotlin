@@ -1,6 +1,9 @@
 package top.iwesley.lyn.music.feature.player
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsDocument
@@ -108,6 +111,8 @@ class PlayerStore(
 ) {
     private var currentLyricsTrackId: String? = null
     private var currentLyricsRequestKey: String? = null
+    private var currentLyricsLoadRequestId: Long = 0L
+    private var lyricsLoadJob: Job? = null
     private var currentSharePreviewRequestId: Long = 0L
     private var lastPlaybackErrorKey: PlaybackErrorKey? = null
 
@@ -127,9 +132,11 @@ class PlayerStore(
                 updateState { current ->
                     current.copy(
                         snapshot = snapshot,
+                        isLyricsLoading = if (trackChanged || snapshot.currentTrack == null) false else current.isLyricsLoading,
+                        lyrics = if (trackChanged || snapshot.currentTrack == null) null else current.lyrics,
                         isQueueVisible = if (snapshot.currentTrack == null) false else current.isQueueVisible,
                         highlightedLineIndex = findHighlightedLine(
-                            lyrics = current.lyrics,
+                            lyrics = if (trackChanged || snapshot.currentTrack == null) null else current.lyrics,
                             positionMs = snapshot.positionMs,
                         ),
                         isManualLyricsSearchVisible = if (trackChanged) false else current.isManualLyricsSearchVisible,
@@ -158,28 +165,13 @@ class PlayerStore(
                 val lookupTrack = snapshot.toLyricsLookupTrack()
                 val requestKey = lookupTrack?.lyricsRequestKey()
                 if (track != null && shouldLoadLyrics(track, requestKey)) {
-                    currentLyricsTrackId = track.id
-                    currentLyricsRequestKey = requestKey
-                    updateState { it.copy(isLyricsLoading = true, lyrics = null) }
-                    val result = runCatching { lyricsRepository.getLyrics(lookupTrack ?: track) }.getOrNull()
-                    val lyrics = result?.document
-                    val artworkLocator = result?.artworkLocator
-                    if (!artworkLocator.isNullOrBlank()) {
-                        logger.debug(PLAYER_LOG_TAG) {
-                            "playback-artwork-override source=auto-lyrics track=${track.id} locator=$artworkLocator"
-                        }
-                        playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
-                    }
-                    updateState {
-                        it.copy(
-                            isLyricsLoading = false,
-                            lyrics = lyrics,
-                            highlightedLineIndex = findHighlightedLine(lyrics, snapshot.positionMs),
-                        )
-                    }
+                    launchAutomaticLyricsLoad(
+                        track = track,
+                        lookupTrack = lookupTrack ?: track,
+                        requestKey = requestKey,
+                    )
                 } else if (track == null) {
-                    currentLyricsTrackId = null
-                    currentLyricsRequestKey = null
+                    cancelAutomaticLyricsLoad(resetTracking = true)
                     updateState { it.copy(isLyricsLoading = false, lyrics = null, highlightedLineIndex = -1) }
                 }
             }
@@ -655,6 +647,75 @@ class PlayerStore(
 
     private fun invalidateLyricsSharePreviewRequests() {
         currentSharePreviewRequestId += 1
+    }
+
+    private fun launchAutomaticLyricsLoad(
+        track: Track,
+        lookupTrack: Track,
+        requestKey: String?,
+    ) {
+        val requestId = nextLyricsLoadRequestId(
+            trackId = track.id,
+            requestKey = requestKey,
+        )
+        val previousJob = lyricsLoadJob
+        updateState { it.copy(isLyricsLoading = true, lyrics = null, highlightedLineIndex = -1) }
+        lyricsLoadJob = storeScope.launch {
+            previousJob?.cancelAndJoin()
+            if (!isLatestLyricsRequest(requestId, track.id, requestKey)) return@launch
+            val result = runCatching { lyricsRepository.getLyrics(lookupTrack) }.getOrNull()
+            if (!isActive || !isLatestLyricsRequest(requestId, track.id, requestKey)) return@launch
+            val lyrics = result?.document
+            val artworkLocator = result?.artworkLocator
+            if (!artworkLocator.isNullOrBlank() && isLatestLyricsRequest(requestId, track.id, requestKey)) {
+                logger.debug(PLAYER_LOG_TAG) {
+                    "playback-artwork-override source=auto-lyrics track=${track.id} locator=$artworkLocator"
+                }
+                playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
+            }
+            updateState { latest ->
+                if (!isLatestLyricsRequest(requestId, track.id, requestKey)) {
+                    latest
+                } else {
+                    latest.copy(
+                        isLyricsLoading = false,
+                        lyrics = lyrics,
+                        highlightedLineIndex = findHighlightedLine(lyrics, latest.snapshot.positionMs),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun cancelAutomaticLyricsLoad(resetTracking: Boolean) {
+        lyricsLoadJob?.cancel()
+        lyricsLoadJob = null
+        currentLyricsLoadRequestId += 1
+        if (resetTracking) {
+            currentLyricsTrackId = null
+            currentLyricsRequestKey = null
+        }
+    }
+
+    private fun nextLyricsLoadRequestId(
+        trackId: String,
+        requestKey: String?,
+    ): Long {
+        lyricsLoadJob?.cancel()
+        currentLyricsTrackId = trackId
+        currentLyricsRequestKey = requestKey
+        currentLyricsLoadRequestId += 1
+        return currentLyricsLoadRequestId
+    }
+
+    private fun isLatestLyricsRequest(
+        requestId: Long,
+        trackId: String,
+        requestKey: String?,
+    ): Boolean {
+        return requestId == currentLyricsLoadRequestId &&
+            trackId == currentLyricsTrackId &&
+            requestKey == currentLyricsRequestKey
     }
 
     private fun nextLyricsSharePreviewRequestId(): Long {

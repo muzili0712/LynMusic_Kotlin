@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.feature.player
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -174,6 +175,53 @@ class PlayerStoreQueueTest {
         scope.cancel()
     }
 
+    @Test
+    fun `playback snapshot keeps up while previous automatic lyrics request is still pending`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
+        val lyricsRepository = DeferredQueueLyricsRepository()
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        assertEquals(listOf("track-1"), lyricsRepository.requestedTrackIds)
+
+        playbackRepository.updateSnapshot(sampleSnapshot().copy(currentIndex = 2))
+        advanceUntilIdle()
+
+        assertEquals("track-3", store.state.value.snapshot.currentTrack?.id)
+        assertEquals(true, store.state.value.isLyricsLoading)
+        assertEquals(listOf("track-1", "track-3"), lyricsRepository.requestedTrackIds)
+
+        lyricsRepository.complete(
+            trackId = "track-1",
+            result = resolvedLyricsResult(
+                sourceId = "source-track-1",
+                line = "lyrics for track-1",
+                artworkLocator = "/tmp/track-1.jpg",
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals("track-3", store.state.value.snapshot.currentTrack?.id)
+        assertEquals(null, store.state.value.lyrics)
+        assertEquals(null, playbackRepository.lastArtworkOverride)
+
+        lyricsRepository.complete(
+            trackId = "track-3",
+            result = resolvedLyricsResult(
+                sourceId = "source-track-3",
+                line = "lyrics for track-3",
+                artworkLocator = "/tmp/track-3.jpg",
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals("track-3", store.state.value.snapshot.currentTrack?.id)
+        assertEquals("lyrics for track-3", store.state.value.lyrics?.rawPayload)
+        assertEquals("/tmp/track-3.jpg", playbackRepository.lastArtworkOverride)
+        scope.cancel()
+    }
+
     private fun sampleSnapshot(): PlaybackSnapshot {
         return PlaybackSnapshot(
             queue = listOf(
@@ -320,4 +368,61 @@ private class RecordingQueueLyricsRepository(
     ): AppliedLyricsResult {
         error("Not used in queue tests")
     }
+}
+
+private class DeferredQueueLyricsRepository : LyricsRepository {
+    private val pendingResults = mutableMapOf<String, CompletableDeferred<ResolvedLyricsResult?>>()
+
+    val requestedTrackIds = mutableListOf<String>()
+
+    fun complete(trackId: String, result: ResolvedLyricsResult?) {
+        pendingResults.getOrPut(trackId) { CompletableDeferred() }.complete(result)
+    }
+
+    override suspend fun getLyrics(track: Track): ResolvedLyricsResult? {
+        requestedTrackIds += track.id
+        return pendingResults.getOrPut(track.id) { CompletableDeferred() }.await()
+    }
+
+    override suspend fun searchLyricsCandidates(
+        track: Track,
+        includeTrackProvidedCandidate: Boolean,
+    ): List<LyricsSearchCandidate> = emptyList()
+
+    override suspend fun applyLyricsCandidate(
+        trackId: String,
+        candidate: LyricsSearchCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
+        error("Not used in queue tests")
+    }
+
+    override suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate> = emptyList()
+
+    override suspend fun resolveWorkflowSongCandidate(track: Track, candidate: WorkflowSongCandidate): ResolvedLyricsResult {
+        error("Not used in queue tests")
+    }
+
+    override suspend fun applyWorkflowSongCandidate(
+        trackId: String,
+        candidate: WorkflowSongCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
+        error("Not used in queue tests")
+    }
+}
+
+private fun resolvedLyricsResult(
+    sourceId: String,
+    line: String,
+    artworkLocator: String? = null,
+): ResolvedLyricsResult {
+    return ResolvedLyricsResult(
+        document = LyricsDocument(
+            lines = listOf(LyricsLine(timestampMs = null, text = line)),
+            sourceId = sourceId,
+            rawPayload = line,
+        ),
+        artworkLocator = artworkLocator,
+    )
 }
