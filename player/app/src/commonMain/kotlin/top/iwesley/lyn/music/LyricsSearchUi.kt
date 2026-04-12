@@ -144,6 +144,7 @@ internal fun LyricsSearchOverlayDialog(
                 val layoutProfile = buildLayoutProfile(
                     maxWidth = maxWidth,
                     maxHeight = maxHeight,
+                    platform = currentPlatformDescriptor,
                     density = density,
                 )
                 val wideLayout = layoutProfile.isWideLayout
@@ -375,6 +376,7 @@ private fun LyricsSearchFormPane(
                 val layoutProfile = buildLayoutProfile(
                     maxWidth = maxWidth,
                     maxHeight = maxHeight,
+                    platform = currentPlatformDescriptor,
                     density = density,
                 )
                 val stackedFields = layoutProfile.usesStackedFields

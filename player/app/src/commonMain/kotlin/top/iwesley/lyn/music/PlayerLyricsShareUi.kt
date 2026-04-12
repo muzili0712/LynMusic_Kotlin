@@ -477,6 +477,7 @@ private fun ManualLyricsSearchFormPane(
                 val layoutProfile = buildLayoutProfile(
                     maxWidth = maxWidth,
                     maxHeight = maxHeight,
+                    platform = currentPlatformDescriptor,
                     density = density,
                 )
                 val stackedFields = layoutProfile.usesStackedFields

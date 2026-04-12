@@ -211,9 +211,10 @@ internal fun SettingsTab(
             val layoutProfile = buildLayoutProfile(
                 maxWidth = maxWidth,
                 maxHeight = maxHeight,
+                platform = currentPlatformDescriptor,
                 density = density,
             )
-            val desktopLayout = layoutProfile.isDesktopLayout
+            val desktopLayout = layoutProfile.isExpandedLayout
             PlatformBackHandler(
                 enabled = !desktopLayout && mobileNavigation is SettingsMobileNavigation.Detail,
                 onBack = { mobileDetailSectionName = null },

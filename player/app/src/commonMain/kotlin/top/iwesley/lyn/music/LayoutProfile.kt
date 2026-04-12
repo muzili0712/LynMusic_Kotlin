@@ -3,7 +3,7 @@ package top.iwesley.lyn.music
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.unit.min
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import kotlin.math.roundToInt
 
@@ -45,8 +45,16 @@ internal data class LayoutProfile(
     val isCompactShell: Boolean
         get() = maxWidth < COMPACT_SHELL_MIN_WIDTH
 
-    val isDesktopLayout: Boolean
-        get() = !isCompactShell
+    /**
+     * 桌面端永远走大屏布局
+     * 手机不走大屏布局
+     * 平板走大屏布局
+     */
+    val isExpandedLayout: Boolean
+        get() = !isMobilePlatform || min(maxWidth, maxHeight) >= 600.dp && isLandscape
+
+    val isExpandedDevice: Boolean
+        get() = !isMobilePlatform || min(maxWidth, maxHeight) >= 600.dp
 
     val isWideLayout: Boolean
         get() = maxWidth >= WIDE_LAYOUT_MIN_WIDTH
@@ -67,7 +75,7 @@ internal data class LayoutProfile(
 internal fun buildLayoutProfile(
     maxWidth: Dp,
     maxHeight: Dp,
-    platform: PlatformDescriptor? = null,
+    platform: PlatformDescriptor,
     density: Density? = null,
 ): LayoutProfile = LayoutProfile(
     maxWidth = maxWidth,

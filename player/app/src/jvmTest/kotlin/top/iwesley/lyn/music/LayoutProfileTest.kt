@@ -33,7 +33,7 @@ class LayoutProfileTest {
 
         assertFalse(profile.isMobilePlatform)
         assertTrue(profile.isLandscape)
-        assertTrue(profile.isDesktopLayout)
+        assertTrue(profile.isExpandedLayout)
         assertTrue(profile.isWideLayout)
         assertFalse(profile.usesTapToRevealPlaybackLyrics)
     }

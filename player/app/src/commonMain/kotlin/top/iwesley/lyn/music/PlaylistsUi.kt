@@ -283,6 +283,7 @@ internal fun PlaylistsTab(
         val layoutProfile = buildLayoutProfile(
             maxWidth = maxWidth,
             maxHeight = maxHeight,
+            platform = currentPlatformDescriptor,
             density = density,
         )
         val wide = layoutProfile.isWideLayout

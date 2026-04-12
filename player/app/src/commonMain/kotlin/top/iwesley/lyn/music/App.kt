@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -137,198 +138,206 @@ fun App(component: LynMusicAppComponent) {
             )
         }
 
-    LynMusicTheme(
-        themeTokens = shellThemeTokens,
-        textPalette = shellTextPalette,
-    ) {
-        BoxWithConstraints(
-            modifier = Modifier.fillMaxSize(),
+    CompositionLocalProvider(LocalPlatformDescriptor provides component.platform) {
+        LynMusicTheme(
+            themeTokens = shellThemeTokens,
+            textPalette = shellTextPalette,
         ) {
-            val density = LocalDensity.current
-            playerState.message?.let { message ->
-                LaunchedEffect(message) {
-                    kotlinx.coroutines.delay(2_500)
-                    component.playerStore.dispatch(PlayerIntent.ClearMessage)
-                }
-            }
-            playlistsState.message?.let { message ->
-                LaunchedEffect(message) {
-                    kotlinx.coroutines.delay(2_500)
-                    component.playlistsStore.dispatch(PlaylistsIntent.ClearMessage)
-                }
-            }
-            val layoutProfile = buildLayoutProfile(
-                maxWidth = maxWidth,
-                maxHeight = maxHeight,
-                platform = component.platform,
-                density = density,
-            )
-            val compact = layoutProfile.isCompactShell
-            val mobilePortraitMiniPlayer = layoutProfile.usesPortraitMiniPlayer
-            val shellColors = mainShellColors
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background),
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxSize(),
             ) {
-                if (compact) {
-                    MobileShell(
-                        selectedTab = selectedTab,
-                        onTabSelected = { selectedTab = it },
-                        platform = component.platform,
-                        libraryState = libraryState,
-                        playlistsState = playlistsState,
-                        favoritesState = favoritesState,
-                        musicTagsState = musicTagsState,
-                        musicTagsEffects = component.musicTagsStore.effects,
-                        importState = importState,
-                        playerState = playerState,
-                        settingsState = settingsState,
-                        onLibraryIntent = component.libraryStore::dispatch,
-                        onPlaylistsIntent = component.playlistsStore::dispatch,
-                        onFavoritesIntent = component.favoritesStore::dispatch,
-                        onMusicTagsIntent = component.musicTagsStore::dispatch,
-                        onImportIntent = component.importStore::dispatch,
-                        onPlayerIntent = component.playerStore::dispatch,
-                        onSettingsIntent = component.settingsStore::dispatch,
-                        libraryNavigationTarget = pendingLibraryNavigationTarget,
-                        onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
-                        mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
-                        hideMiniPlayerBar = selectedTab == AppTab.Tags && isMusicTagsMobileEditorVisible,
-                        onMobileEditorVisibilityChanged = { isMusicTagsMobileEditorVisible = it },
-                        onOpenAddToPlaylist = {
-                            pendingPlaylistTrack = playerState.snapshot.currentTrack
-                        },
-                    )
-                } else {
-                    DesktopShell(
-                        selectedTab = selectedTab,
-                        onTabSelected = { selectedTab = it },
-                        platform = component.platform,
-                        libraryState = libraryState,
-                        playlistsState = playlistsState,
-                        favoritesState = favoritesState,
-                        musicTagsState = musicTagsState,
-                        musicTagsEffects = component.musicTagsStore.effects,
-                        importState = importState,
-                        playerState = playerState,
-                        settingsState = settingsState,
-                        onLibraryIntent = component.libraryStore::dispatch,
-                        onPlaylistsIntent = component.playlistsStore::dispatch,
-                        onFavoritesIntent = component.favoritesStore::dispatch,
-                        onMusicTagsIntent = component.musicTagsStore::dispatch,
-                        onImportIntent = component.importStore::dispatch,
-                        onPlayerIntent = component.playerStore::dispatch,
-                        onSettingsIntent = component.settingsStore::dispatch,
-                        libraryNavigationTarget = pendingLibraryNavigationTarget,
-                        onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
-                        onOpenAddToPlaylist = {
-                            pendingPlaylistTrack = playerState.snapshot.currentTrack
-                        },
-                    )
+                val density = LocalDensity.current
+                playerState.message?.let { message ->
+                    LaunchedEffect(message) {
+                        kotlinx.coroutines.delay(2_500)
+                        component.playerStore.dispatch(PlayerIntent.ClearMessage)
+                    }
                 }
-
-                LynMusicTheme(
-                    themeTokens = CLASSIC_APP_THEME_TOKENS,
-                    textPalette = AppThemeTextPalette.White,
-                ) {
-                    PlayerDrawerHost(
-                        visible = playerState.isExpanded,
-                        platform = component.platform,
-                        logger = component.logger,
-                        state = playerState,
-                        lyricsShareThemeTokens = shellThemeTokens,
-                        lyricsShareTextPalette = shellTextPalette,
-                        onPlayerIntent = component.playerStore::dispatch,
-                        isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
-                        onToggleFavorite = {
-                            playerState.snapshot.currentTrack?.let { track ->
-                                component.favoritesStore.dispatch(
-                                    FavoritesIntent.ToggleFavorite(
-                                        track
-                                    )
-                                )
-                            }
-                        },
-                        onOpenAddToPlaylist = {
-                            pendingPlaylistTrack = playerState.snapshot.currentTrack
-                        },
-                        onOpenQueue = {
-                            component.playerStore.dispatch(PlayerIntent.QueueVisibilityChanged(true))
-                        },
-                        onOpenLibraryNavigationTarget = { target ->
-                            component.playerStore.dispatch(PlayerIntent.ExpandedChanged(false))
-                            pendingLibraryNavigationTarget = target
-                            selectedTab = AppTab.Library
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                playlistsState.message?.let { message ->
+                    LaunchedEffect(message) {
+                        kotlinx.coroutines.delay(2_500)
+                        component.playlistsStore.dispatch(PlaylistsIntent.ClearMessage)
+                    }
                 }
-                QueueDrawer(
-                    state = playerState,
-                    compact = compact,
-                    onPlayerIntent = component.playerStore::dispatch,
-                    modifier = Modifier.fillMaxSize(),
+                val layoutProfile = buildLayoutProfile(
+                    maxWidth = maxWidth,
+                    maxHeight = maxHeight,
+                    platform = component.platform,
+                    density = density,
                 )
-                if (playerState.isManualLyricsSearchVisible) {
-                    ManualLyricsSearchOverlay(
-                        state = playerState,
-                        onPlayerIntent = component.playerStore::dispatch,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-                pendingPlaylistTrack?.let { track ->
-                    PlaylistAddDialog(
-                        track = track,
-                        targets = buildPlaylistAddTargets(
-                            playlists = playlistsState.playlists,
-                            favoriteTrackIds = favoritesState.favoriteTrackIds,
-                            trackId = track.id,
-                        ),
-                        onDismiss = { pendingPlaylistTrack = null },
-                        onAddTarget = { target ->
-                            pendingPlaylistTrack = null
-                            when (target.kind) {
-                                PlaylistKind.SYSTEM_LIKED -> {
+                val compact = layoutProfile.isCompactShell
+                val mobilePortraitMiniPlayer = layoutProfile.usesPortraitMiniPlayer
+                val shellColors = mainShellColors
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                ) {
+                    if (compact) {
+                        MobileShell(
+                            selectedTab = selectedTab,
+                            onTabSelected = { selectedTab = it },
+                            platform = component.platform,
+                            libraryState = libraryState,
+                            playlistsState = playlistsState,
+                            favoritesState = favoritesState,
+                            musicTagsState = musicTagsState,
+                            musicTagsEffects = component.musicTagsStore.effects,
+                            importState = importState,
+                            playerState = playerState,
+                            settingsState = settingsState,
+                            onLibraryIntent = component.libraryStore::dispatch,
+                            onPlaylistsIntent = component.playlistsStore::dispatch,
+                            onFavoritesIntent = component.favoritesStore::dispatch,
+                            onMusicTagsIntent = component.musicTagsStore::dispatch,
+                            onImportIntent = component.importStore::dispatch,
+                            onPlayerIntent = component.playerStore::dispatch,
+                            onSettingsIntent = component.settingsStore::dispatch,
+                            libraryNavigationTarget = pendingLibraryNavigationTarget,
+                            onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
+                            mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
+                            hideMiniPlayerBar = selectedTab == AppTab.Tags && isMusicTagsMobileEditorVisible,
+                            onMobileEditorVisibilityChanged = {
+                                isMusicTagsMobileEditorVisible = it
+                            },
+                            onOpenAddToPlaylist = {
+                                pendingPlaylistTrack = playerState.snapshot.currentTrack
+                            },
+                        )
+                    } else {
+                        DesktopShell(
+                            selectedTab = selectedTab,
+                            onTabSelected = { selectedTab = it },
+                            platform = component.platform,
+                            libraryState = libraryState,
+                            playlistsState = playlistsState,
+                            favoritesState = favoritesState,
+                            musicTagsState = musicTagsState,
+                            musicTagsEffects = component.musicTagsStore.effects,
+                            importState = importState,
+                            playerState = playerState,
+                            settingsState = settingsState,
+                            onLibraryIntent = component.libraryStore::dispatch,
+                            onPlaylistsIntent = component.playlistsStore::dispatch,
+                            onFavoritesIntent = component.favoritesStore::dispatch,
+                            onMusicTagsIntent = component.musicTagsStore::dispatch,
+                            onImportIntent = component.importStore::dispatch,
+                            onPlayerIntent = component.playerStore::dispatch,
+                            onSettingsIntent = component.settingsStore::dispatch,
+                            libraryNavigationTarget = pendingLibraryNavigationTarget,
+                            onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
+                            onOpenAddToPlaylist = {
+                                pendingPlaylistTrack = playerState.snapshot.currentTrack
+                            },
+                        )
+                    }
+
+                    LynMusicTheme(
+                        themeTokens = CLASSIC_APP_THEME_TOKENS,
+                        textPalette = AppThemeTextPalette.White,
+                    ) {
+                        PlayerDrawerHost(
+                            visible = playerState.isExpanded,
+                            platform = component.platform,
+                            logger = component.logger,
+                            state = playerState,
+                            lyricsShareThemeTokens = shellThemeTokens,
+                            lyricsShareTextPalette = shellTextPalette,
+                            onPlayerIntent = component.playerStore::dispatch,
+                            isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
+                            onToggleFavorite = {
+                                playerState.snapshot.currentTrack?.let { track ->
                                     component.favoritesStore.dispatch(
-                                        FavoritesIntent.EnsureFavorite(
+                                        FavoritesIntent.ToggleFavorite(
                                             track
                                         )
                                     )
                                 }
-
-                                PlaylistKind.USER -> {
-                                    component.playlistsStore.dispatch(
-                                        PlaylistsIntent.AddTrackToPlaylist(target.id, track),
+                            },
+                            onOpenAddToPlaylist = {
+                                pendingPlaylistTrack = playerState.snapshot.currentTrack
+                            },
+                            onOpenQueue = {
+                                component.playerStore.dispatch(
+                                    PlayerIntent.QueueVisibilityChanged(
+                                        true
                                     )
+                                )
+                            },
+                            onOpenLibraryNavigationTarget = { target ->
+                                component.playerStore.dispatch(PlayerIntent.ExpandedChanged(false))
+                                pendingLibraryNavigationTarget = target
+                                selectedTab = AppTab.Library
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    QueueDrawer(
+                        state = playerState,
+                        compact = compact,
+                        onPlayerIntent = component.playerStore::dispatch,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (playerState.isManualLyricsSearchVisible) {
+                        ManualLyricsSearchOverlay(
+                            state = playerState,
+                            onPlayerIntent = component.playerStore::dispatch,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    pendingPlaylistTrack?.let { track ->
+                        PlaylistAddDialog(
+                            track = track,
+                            targets = buildPlaylistAddTargets(
+                                playlists = playlistsState.playlists,
+                                favoriteTrackIds = favoritesState.favoriteTrackIds,
+                                trackId = track.id,
+                            ),
+                            onDismiss = { pendingPlaylistTrack = null },
+                            onAddTarget = { target ->
+                                pendingPlaylistTrack = null
+                                when (target.kind) {
+                                    PlaylistKind.SYSTEM_LIKED -> {
+                                        component.favoritesStore.dispatch(
+                                            FavoritesIntent.EnsureFavorite(
+                                                track
+                                            )
+                                        )
+                                    }
+
+                                    PlaylistKind.USER -> {
+                                        component.playlistsStore.dispatch(
+                                            PlaylistsIntent.AddTrackToPlaylist(target.id, track),
+                                        )
+                                    }
                                 }
-                            }
-                        },
-                        onCreatePlaylistAndAdd = { name ->
-                            pendingPlaylistTrack = null
-                            component.playlistsStore.dispatch(
-                                PlaylistsIntent.CreatePlaylistAndAddTrack(name, track),
-                            )
-                        },
-                    )
-                }
-                playerState.message?.let { message ->
-                    ToastCard(
-                        message = message,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(horizontal = 20.dp, vertical = 24.dp)
-                            .navigationBarsPadding(),
-                    )
-                }
-                playlistsState.message?.let { message ->
-                    ToastCard(
-                        message = message,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(horizontal = 20.dp, vertical = 84.dp)
-                            .navigationBarsPadding(),
-                    )
+                            },
+                            onCreatePlaylistAndAdd = { name ->
+                                pendingPlaylistTrack = null
+                                component.playlistsStore.dispatch(
+                                    PlaylistsIntent.CreatePlaylistAndAddTrack(name, track),
+                                )
+                            },
+                        )
+                    }
+                    playerState.message?.let { message ->
+                        ToastCard(
+                            message = message,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(horizontal = 20.dp, vertical = 24.dp)
+                                .navigationBarsPadding(),
+                        )
+                    }
+                    playlistsState.message?.let { message ->
+                        ToastCard(
+                            message = message,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(horizontal = 20.dp, vertical = 84.dp)
+                                .navigationBarsPadding(),
+                        )
+                    }
                 }
             }
         }
