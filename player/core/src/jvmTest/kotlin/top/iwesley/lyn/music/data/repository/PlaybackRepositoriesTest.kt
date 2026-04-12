@@ -5,6 +5,7 @@ import java.nio.file.Files
 import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -12,6 +13,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -112,6 +114,46 @@ class PlaybackRepositoriesTest {
             assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
             assertEquals(loadCountBeforeCompletion + 1, gateway.loadCalls.size)
             assertEquals("track-2", gateway.loadCalls.last().track.id)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `concurrent skip next commands are serialized until prior load finishes`() = runTest {
+        val database = createTestDatabase()
+        val gateway = BlockingPlaybackGateway()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(database, gateway, scope)
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 0)
+            advanceUntilIdle()
+
+            val firstSkipGate = CompletableDeferred<Unit>()
+            gateway.nextLoadGate = firstSkipGate
+            val firstSkipJob = launch { repository.skipNext() }
+            advanceUntilIdle()
+
+            val secondSkipGate = CompletableDeferred<Unit>()
+            gateway.nextLoadGate = secondSkipGate
+            val secondSkipJob = launch { repository.skipNext() }
+            advanceUntilIdle()
+
+            assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
+            assertEquals(listOf("track-1", "track-2"), gateway.loadCalls.map { it.track.id })
+
+            firstSkipGate.complete(Unit)
+            secondSkipGate.complete(Unit)
+            firstSkipJob.join()
+            secondSkipJob.join()
+            advanceUntilIdle()
+
+            assertEquals("track-3", repository.snapshot.value.currentTrack?.id)
+            assertEquals(listOf("track-1", "track-2", "track-3"), gateway.loadCalls.map { it.track.id })
         } finally {
             repository.close()
             scope.cancel()
@@ -453,6 +495,47 @@ private class FakePlaybackGateway(
             completionCount = mutableState.value.completionCount + 1,
         )
     }
+}
+
+private class BlockingPlaybackGateway : PlaybackGateway {
+    private val mutableState = MutableStateFlow(PlaybackGatewayState())
+
+    var nextLoadGate: CompletableDeferred<Unit>? = null
+    val loadCalls = mutableListOf<LoadCall>()
+
+    override val state: StateFlow<PlaybackGatewayState> = mutableState.asStateFlow()
+
+    override suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long) {
+        loadCalls += LoadCall(track, playWhenReady, startPositionMs)
+        nextLoadGate?.also { gate ->
+            nextLoadGate = null
+            gate.await()
+        }
+        mutableState.value = mutableState.value.copy(
+            isPlaying = playWhenReady,
+            positionMs = startPositionMs,
+            durationMs = track.durationMs,
+            errorMessage = null,
+        )
+    }
+
+    override suspend fun play() {
+        mutableState.value = mutableState.value.copy(isPlaying = true)
+    }
+
+    override suspend fun pause() {
+        mutableState.value = mutableState.value.copy(isPlaying = false)
+    }
+
+    override suspend fun seekTo(positionMs: Long) {
+        mutableState.value = mutableState.value.copy(positionMs = positionMs)
+    }
+
+    override suspend fun setVolume(volume: Float) {
+        mutableState.value = mutableState.value.copy(volume = volume)
+    }
+
+    override suspend fun release() = Unit
 }
 
 private class FakeSystemPlaybackControlsPlatformService : SystemPlaybackControlsPlatformService {

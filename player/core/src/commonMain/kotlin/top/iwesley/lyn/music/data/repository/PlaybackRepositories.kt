@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.random.Random
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -50,6 +52,7 @@ class DefaultPlaybackRepository(
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
 ) : PlaybackRepository {
     private val mutableSnapshot = MutableStateFlow(PlaybackSnapshot())
+    private val playbackCommandMutex = Mutex()
     private var observedCompletionCount = 0L
     private var loggedArtworkTrackId: String? = null
     private var loggedDisplayArtworkLocator: String? = null
@@ -127,7 +130,9 @@ class DefaultPlaybackRepository(
                     )
                 }
                 if (completionChanged) {
-                    advance(autoTriggered = true)
+                    playbackCommandMutex.withLock {
+                        advance(autoTriggered = true)
+                    }
                 }
             }
         }
@@ -140,92 +145,108 @@ class DefaultPlaybackRepository(
     }
 
     override suspend fun playTracks(tracks: List<Track>, startIndex: Int) {
-        if (tracks.isEmpty()) return
-        val index = startIndex.coerceIn(0, tracks.lastIndex)
-        mutableSnapshot.value = PlaybackSnapshot(
-            queue = tracks,
-            currentIndex = index,
-            mode = mutableSnapshot.value.mode,
-            isPlaying = true,
-            positionMs = 0L,
-            durationMs = tracks[index].durationMs,
-            volume = mutableSnapshot.value.volume,
-            metadataTitle = null,
-            metadataArtistName = null,
-            metadataAlbumTitle = null,
-            metadataArtworkLocator = null,
-        )
-        loadGatewaySafely(tracks[index], playWhenReady = true, startPositionMs = 0L)
-        persistSnapshot()
+        playbackCommandMutex.withLock {
+            if (tracks.isEmpty()) return
+            val index = startIndex.coerceIn(0, tracks.lastIndex)
+            mutableSnapshot.value = PlaybackSnapshot(
+                queue = tracks,
+                currentIndex = index,
+                mode = mutableSnapshot.value.mode,
+                isPlaying = true,
+                positionMs = 0L,
+                durationMs = tracks[index].durationMs,
+                volume = mutableSnapshot.value.volume,
+                metadataTitle = null,
+                metadataArtistName = null,
+                metadataAlbumTitle = null,
+                metadataArtworkLocator = null,
+            )
+            loadGatewaySafely(tracks[index], playWhenReady = true, startPositionMs = 0L)
+            persistSnapshot()
+        }
     }
 
     override suspend fun togglePlayPause() {
-        if (mutableSnapshot.value.currentTrack == null) return
-        if (mutableSnapshot.value.isPlaying) {
-            gateway.pause()
-        } else {
-            gateway.play()
+        playbackCommandMutex.withLock {
+            if (mutableSnapshot.value.currentTrack == null) return
+            if (mutableSnapshot.value.isPlaying) {
+                gateway.pause()
+            } else {
+                gateway.play()
+            }
         }
     }
 
     override suspend fun skipNext() {
-        advance(autoTriggered = false)
+        playbackCommandMutex.withLock {
+            advance(autoTriggered = false)
+        }
     }
 
     override suspend fun skipPrevious() {
-        val snapshot = mutableSnapshot.value
-        if (snapshot.queue.isEmpty()) return
-        if (snapshot.mode != PlaybackMode.REPEAT_ONE && snapshot.positionMs > 5_000) {
-            gateway.seekTo(0L)
-            mutableSnapshot.update { it.copy(positionMs = 0L) }
-            persistSnapshot()
-            return
+        playbackCommandMutex.withLock {
+            val snapshot = mutableSnapshot.value
+            if (snapshot.queue.isEmpty()) return
+            if (snapshot.mode != PlaybackMode.REPEAT_ONE && snapshot.positionMs > 5_000) {
+                gateway.seekTo(0L)
+                mutableSnapshot.update { it.copy(positionMs = 0L) }
+                persistSnapshot()
+                return
+            }
+            val previousIndex = when {
+                snapshot.mode == PlaybackMode.SHUFFLE && snapshot.queue.size > 1 -> randomIndex(snapshot.queue.lastIndex, snapshot.currentIndex)
+                snapshot.currentIndex > 0 -> snapshot.currentIndex - 1
+                else -> 0
+            }
+            loadIndex(previousIndex, playWhenReady = true)
         }
-        val previousIndex = when {
-            snapshot.mode == PlaybackMode.SHUFFLE && snapshot.queue.size > 1 -> randomIndex(snapshot.queue.lastIndex, snapshot.currentIndex)
-            snapshot.currentIndex > 0 -> snapshot.currentIndex - 1
-            else -> 0
-        }
-        loadIndex(previousIndex, playWhenReady = true)
     }
 
     override suspend fun seekTo(positionMs: Long) {
-        gateway.seekTo(positionMs)
-        mutableSnapshot.update { it.copy(positionMs = positionMs.coerceAtLeast(0L)) }
-        persistSnapshot()
+        playbackCommandMutex.withLock {
+            gateway.seekTo(positionMs)
+            mutableSnapshot.update { it.copy(positionMs = positionMs.coerceAtLeast(0L)) }
+            persistSnapshot()
+        }
     }
 
     override suspend fun setVolume(volume: Float) {
         val normalized = volume.coerceIn(0f, 1f)
-        gateway.setVolume(normalized)
-        mutableSnapshot.update { it.copy(volume = normalized) }
+        playbackCommandMutex.withLock {
+            gateway.setVolume(normalized)
+            mutableSnapshot.update { it.copy(volume = normalized) }
+        }
     }
 
     override suspend fun cycleMode() {
-        val nextMode = when (mutableSnapshot.value.mode) {
-            PlaybackMode.ORDER -> PlaybackMode.SHUFFLE
-            PlaybackMode.SHUFFLE -> PlaybackMode.REPEAT_ONE
-            PlaybackMode.REPEAT_ONE -> PlaybackMode.ORDER
+        playbackCommandMutex.withLock {
+            val nextMode = when (mutableSnapshot.value.mode) {
+                PlaybackMode.ORDER -> PlaybackMode.SHUFFLE
+                PlaybackMode.SHUFFLE -> PlaybackMode.REPEAT_ONE
+                PlaybackMode.REPEAT_ONE -> PlaybackMode.ORDER
+            }
+            mutableSnapshot.update { it.copy(mode = nextMode) }
+            persistSnapshot()
         }
-        mutableSnapshot.update { it.copy(mode = nextMode) }
-        persistSnapshot()
     }
 
     override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) {
-        val snapshot = mutableSnapshot.value
-        val currentTrack = snapshot.currentTrack ?: return
-        val currentIndex = snapshot.currentIndex
-        if (currentIndex !in snapshot.queue.indices) return
-        val updatedQueue = snapshot.queue.toMutableList().also { queue ->
-            queue[currentIndex] = currentTrack.copy(
-                artworkLocator = artworkLocator ?: currentTrack.artworkLocator,
-            )
-        }
-        mutableSnapshot.update {
-            it.copy(
-                queue = updatedQueue,
-                metadataArtworkLocator = artworkLocator ?: it.metadataArtworkLocator,
-            )
+        playbackCommandMutex.withLock {
+            val snapshot = mutableSnapshot.value
+            val currentTrack = snapshot.currentTrack ?: return
+            val currentIndex = snapshot.currentIndex
+            if (currentIndex !in snapshot.queue.indices) return
+            val updatedQueue = snapshot.queue.toMutableList().also { queue ->
+                queue[currentIndex] = currentTrack.copy(
+                    artworkLocator = artworkLocator ?: currentTrack.artworkLocator,
+                )
+            }
+            mutableSnapshot.update {
+                it.copy(
+                    queue = updatedQueue,
+                    metadataArtworkLocator = artworkLocator ?: it.metadataArtworkLocator,
+                )
+            }
         }
     }
 
@@ -235,13 +256,17 @@ class DefaultPlaybackRepository(
     }
 
     private suspend fun playCurrentTrack() {
-        if (mutableSnapshot.value.currentTrack == null) return
-        gateway.play()
+        playbackCommandMutex.withLock {
+            if (mutableSnapshot.value.currentTrack == null) return
+            gateway.play()
+        }
     }
 
     private suspend fun pauseCurrentTrack() {
-        if (mutableSnapshot.value.currentTrack == null) return
-        gateway.pause()
+        playbackCommandMutex.withLock {
+            if (mutableSnapshot.value.currentTrack == null) return
+            gateway.pause()
+        }
     }
 
     private suspend fun advance(autoTriggered: Boolean) {
