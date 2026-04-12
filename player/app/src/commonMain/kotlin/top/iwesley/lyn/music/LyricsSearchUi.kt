@@ -103,7 +103,15 @@ internal fun LyricsSearchOverlayDialog(
     val secondaryTextColor = shellColors.secondaryText
     var pendingConfirmation by remember { mutableStateOf<LyricsSearchApplyConfirmation?>(null) }
     var mobileScreen by remember { mutableStateOf(LyricsSearchMobileScreen.FORM) }
-    PlatformBackHandler(onBack = onDismiss)
+    PlatformBackHandler(
+        onBack = {
+            when {
+                pendingConfirmation != null -> pendingConfirmation = null
+                mobileScreen == LyricsSearchMobileScreen.RESULTS -> mobileScreen = LyricsSearchMobileScreen.FORM
+                else -> onDismiss()
+            }
+        },
+    )
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
