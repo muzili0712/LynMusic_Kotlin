@@ -244,10 +244,6 @@ internal fun QueueDrawer(
     if (state.snapshot.currentTrack == null) return
     val shellColors = mainShellColors
     val listState = rememberLazyListState()
-    PlatformBackHandler(
-        enabled = state.isQueueVisible,
-        onBack = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) },
-    )
     LaunchedEffect(state.isQueueVisible, state.snapshot.currentIndex, state.snapshot.queue.size) {
         if (state.isQueueVisible && state.snapshot.currentIndex in state.snapshot.queue.indices) {
             listState.scrollToItem((state.snapshot.currentIndex - 2).coerceAtLeast(0))
@@ -259,6 +255,10 @@ internal fun QueueDrawer(
         enter = fadeIn(animationSpec = tween(durationMillis = 220)),
         exit = fadeOut(animationSpec = tween(durationMillis = 180)),
     ) {
+        // Register this only while visible so it takes precedence over the underlying player overlay.
+        PlatformBackHandler(
+            onBack = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) },
+        )
         Box(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
