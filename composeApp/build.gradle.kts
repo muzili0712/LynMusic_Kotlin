@@ -1,3 +1,4 @@
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -26,6 +27,7 @@ val appVersionCode = sharedVersionConfig.getValue("APP_VERSION_CODE").toInt()
 val appVersionName = sharedVersionConfig.getValue("APP_VERSION_NAME")
 val desktopPackageVersion = sharedVersionConfig
     .getValue("APP_DESKTOP_PACKAGE_VERSION")
+val androidArtifactBaseName = "LynMusic-$appVersionName"
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -164,6 +166,16 @@ android {
 
 dependencies {
     debugImplementation(libs.compose.uiTooling)
+}
+
+android.applicationVariants.configureEach {
+    val hasMultipleOutputs = outputs.size > 1
+    outputs.configureEach {
+        val abiFilter = filters.find { it.filterType == "ABI" }?.identifier
+        val outputLabel = abiFilter ?: if (hasMultipleOutputs) "universal" else null
+        val outputSuffix = listOfNotNull(buildType.name, outputLabel).joinToString("-")
+        (this as BaseVariantOutputImpl).outputFileName = "$androidArtifactBaseName-$outputSuffix.apk"
+    }
 }
 
 compose.desktop {
