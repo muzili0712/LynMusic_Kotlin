@@ -18,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
@@ -143,6 +144,7 @@ fun App(component: LynMusicAppComponent) {
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize(),
         ) {
+            val density = LocalDensity.current
             playerState.message?.let { message ->
                 LaunchedEffect(message) {
                     kotlinx.coroutines.delay(2_500)
@@ -159,6 +161,7 @@ fun App(component: LynMusicAppComponent) {
                 maxWidth = maxWidth,
                 maxHeight = maxHeight,
                 platform = component.platform,
+                density = density,
             )
             val compact = layoutProfile.isCompactShell
             val mobilePortraitMiniPlayer = layoutProfile.usesPortraitMiniPlayer

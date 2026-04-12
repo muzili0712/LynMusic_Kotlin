@@ -1,8 +1,11 @@
 package top.iwesley.lyn.music
 
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.toSize
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
+import kotlin.math.roundToInt
 
 internal enum class LayoutOrientation {
     Portrait,
@@ -13,7 +16,20 @@ internal data class LayoutProfile(
     val maxWidth: Dp,
     val maxHeight: Dp,
     val platform: PlatformDescriptor? = null,
+    val density: Density? = null,
 ) {
+    init {
+        val orientationLabel =
+            if (maxWidth > maxHeight) LayoutOrientation.Landscape else LayoutOrientation.Portrait
+        val maxWidthPxLabel = density?.run { "${maxWidth.toPx().roundToInt()}px" }
+        val maxHeightPxLabel = density?.run { "${maxHeight.toPx().roundToInt()}px" }
+        println(
+            "LayoutProfile init: platform=${platform?.name ?: "unknown"} " +
+                "maxWidth=$maxWidth${maxWidthPxLabel?.let { " ($it)" } ?: ""} " +
+                "maxHeight=$maxHeight${maxHeightPxLabel?.let { " ($it)" } ?: ""} " +
+                "orientation=$orientationLabel",
+        )
+    }
     val orientation: LayoutOrientation =
         if (maxWidth > maxHeight) LayoutOrientation.Landscape else LayoutOrientation.Portrait
 
@@ -52,7 +68,13 @@ internal fun buildLayoutProfile(
     maxWidth: Dp,
     maxHeight: Dp,
     platform: PlatformDescriptor? = null,
-): LayoutProfile = LayoutProfile(maxWidth = maxWidth, maxHeight = maxHeight, platform = platform)
+    density: Density? = null,
+): LayoutProfile = LayoutProfile(
+    maxWidth = maxWidth,
+    maxHeight = maxHeight,
+    platform = platform,
+    density = density,
+)
 
 internal fun PlatformDescriptor.isMobilePlatform(): Boolean {
     return name == ANDROID_PLATFORM_NAME || name == IOS_PLATFORM_NAME

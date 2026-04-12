@@ -63,6 +63,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -472,7 +473,12 @@ private fun ManualLyricsSearchFormPane(
                     .fillMaxSize()
                     .padding(18.dp),
             ) {
-                val layoutProfile = buildLayoutProfile(maxWidth = maxWidth, maxHeight = maxHeight)
+                val density = LocalDensity.current
+                val layoutProfile = buildLayoutProfile(
+                    maxWidth = maxWidth,
+                    maxHeight = maxHeight,
+                    density = density,
+                )
                 val stackedFields = layoutProfile.usesStackedFields
                 val buttonSpacing = if (stackedFields) 8.dp else 10.dp
                 Column(
@@ -931,10 +937,12 @@ internal fun LyricsShareOverlay(
                     .fillMaxSize()
                     .padding(22.dp),
             ) {
+                val density = LocalDensity.current
                 val layoutProfile = buildLayoutProfile(
                     maxWidth = maxWidth,
                     maxHeight = maxHeight,
                     platform = platform,
+                    density = density,
                 )
                 val wideLayout = layoutProfile.isWideLayout
                 val narrowActions = layoutProfile.usesNarrowActionLayout

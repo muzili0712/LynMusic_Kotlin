@@ -62,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -206,7 +207,12 @@ internal fun SettingsTab(
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize(),
         ) {
-            val layoutProfile = buildLayoutProfile(maxWidth = maxWidth, maxHeight = maxHeight)
+            val density = LocalDensity.current
+            val layoutProfile = buildLayoutProfile(
+                maxWidth = maxWidth,
+                maxHeight = maxHeight,
+                density = density,
+            )
             val desktopLayout = layoutProfile.isDesktopLayout
             PlatformBackHandler(
                 enabled = !desktopLayout && mobileNavigation is SettingsMobileNavigation.Detail,

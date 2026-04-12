@@ -743,6 +743,7 @@ private fun PlayerOverlay(
                 maxWidth = maxWidth,
                 maxHeight = maxHeight,
                 platform = platform,
+                density = LocalDensity.current,
             )
             val wide = layoutProfile.isWideLayout
             val useTapToRevealLyrics = layoutProfile.usesTapToRevealPlaybackLyrics
