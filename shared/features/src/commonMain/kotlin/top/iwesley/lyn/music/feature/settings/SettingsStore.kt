@@ -37,6 +37,7 @@ import top.iwesley.lyn.music.domain.extractManagedMusicmatchUserToken
 import top.iwesley.lyn.music.domain.isManagedLrcApiSource
 import top.iwesley.lyn.music.domain.isManagedMusicmatchSource
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
+import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceEnabled
 import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceId
 
 enum class CustomThemeColorRole {
@@ -332,7 +333,10 @@ class SettingsStore(
                         val workflow = config
                         it.copy(
                             editingWorkflowId = workflow.id,
-                            workflowJsonInput = workflow.rawJson,
+                            workflowJsonInput = rewriteWorkflowLyricsSourceEnabled(
+                                rawJson = workflow.rawJson,
+                                enabled = workflow.enabled,
+                            ),
                             message = null,
                         )
                     }

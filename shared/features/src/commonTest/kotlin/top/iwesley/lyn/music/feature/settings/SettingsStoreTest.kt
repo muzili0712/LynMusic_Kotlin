@@ -412,6 +412,29 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun `selecting workflow source rewrites enabled flag in editor json to current source state`() = runTest {
+        val workflow = sampleWorkflowSource(
+            rawJson = workflowJson(
+                id = "wf-1",
+                name = "Workflow Source",
+                enabled = false,
+            ),
+        ).copy(enabled = true)
+        val repository = FakeSettingsRepository(listOf(sampleDirectSource(), workflow))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ViewWorkflow(workflow))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("wf-1", state.editingWorkflowId)
+        assertTrue(state.workflowJsonInput.contains("\"enabled\": true"))
+        scope.cancel()
+    }
+
+    @Test
     fun `creating new direct source from edit saves a second source`() = runTest {
         val direct = sampleDirectSource()
         val repository = FakeSettingsRepository(listOf(direct))
@@ -1063,13 +1086,14 @@ private fun sampleLrcApiSource(
 private fun workflowJson(
     id: String,
     name: String,
+    enabled: Boolean = true,
 ): String {
     return """
         {
           "id": "$id",
           "name": "$name",
           "kind": "workflow",
-          "enabled": true,
+          "enabled": $enabled,
           "priority": 5,
           "search": {
             "method": "GET",

@@ -6,6 +6,8 @@ import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.AppThemeId
@@ -18,6 +20,7 @@ import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
+import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.withThemePalette
@@ -157,6 +160,49 @@ class SettingsRepositoryTest {
         assertEquals(1, workflows.size)
         assertEquals("wf-oiapi", workflows.single().id)
         assertEquals(" ${PRESET_OIAPI_QQMUSIC_SOURCE_NAME.lowercase()} ", workflows.single().name)
+    }
+
+    @Test
+    fun `workflow lyrics sources synchronize raw json enabled flag from entity state`() = runTest {
+        val database = createSettingsTestDatabase()
+        database.workflowLyricsSourceConfigDao().upsert(
+            workflowEntity(
+                id = "wf-1",
+                name = "Workflow Source",
+                enabled = true,
+                rawJson = workflowJson(id = "wf-1", name = "Workflow Source", enabled = false),
+            ),
+        )
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
+
+        val workflow = repository.lyricsSources.first()
+            .filterIsInstance<WorkflowLyricsSourceConfig>()
+            .single()
+
+        assertEquals(true, workflow.enabled)
+        assertTrue(workflow.rawJson.contains("\"enabled\": true"))
+    }
+
+    @Test
+    fun `toggling workflow enabled rewrites persisted raw json enabled flag`() = runTest {
+        val database = createSettingsTestDatabase()
+        database.workflowLyricsSourceConfigDao().upsert(
+            workflowEntity(
+                id = "wf-1",
+                name = "Workflow Source",
+                enabled = false,
+                rawJson = workflowJson(id = "wf-1", name = "Workflow Source", enabled = false),
+            ),
+        )
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
+
+        repository.setLyricsSourceEnabled("wf-1", enabled = true)
+
+        val saved = database.workflowLyricsSourceConfigDao().getById("wf-1")
+        assertEquals(true, saved?.enabled)
+        assertTrue(saved?.rawJson?.contains("\"enabled\": true") == true)
     }
 
     @Test
@@ -345,26 +391,29 @@ private fun directEntity(
 private fun workflowEntity(
     id: String,
     name: String,
+    enabled: Boolean = true,
+    rawJson: String = workflowJson(id = id, name = name, enabled = enabled),
 ): WorkflowLyricsSourceConfigEntity {
     return WorkflowLyricsSourceConfigEntity(
         id = id,
         name = name,
         priority = 0,
-        enabled = true,
-        rawJson = workflowJson(id = id, name = name),
+        enabled = enabled,
+        rawJson = rawJson,
     )
 }
 
 private fun workflowJson(
     id: String,
     name: String,
+    enabled: Boolean = true,
 ): String {
     return """
         {
           "id": "$id",
           "name": "$name",
           "kind": "workflow",
-          "enabled": true,
+          "enabled": $enabled,
           "priority": 0,
           "search": {
             "method": "GET",

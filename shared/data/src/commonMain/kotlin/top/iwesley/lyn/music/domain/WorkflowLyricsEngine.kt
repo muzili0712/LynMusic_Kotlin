@@ -111,6 +111,19 @@ fun rewriteWorkflowLyricsSourceId(
     return prettyWorkflowJson.encodeToString(JsonElement.serializer(), updatedRoot)
 }
 
+fun rewriteWorkflowLyricsSourceEnabled(
+    rawJson: String,
+    enabled: Boolean,
+): String {
+    val root = workflowJson.parseToJsonElement(rawJson.trim()).jsonObjectOrThrow("workflow root")
+    val updatedRoot = JsonObject(
+        root.toMutableMap().apply {
+            put("enabled", JsonPrimitive(enabled))
+        },
+    )
+    return prettyWorkflowJson.encodeToString(JsonElement.serializer(), updatedRoot)
+}
+
 fun validateWorkflowLyricsSourceConfig(config: WorkflowLyricsSourceConfig) {
     require(config.id.isNotBlank()) { "workflow.id 不能为空。" }
     require(config.name.isNotBlank()) { "workflow.name 不能为空。" }

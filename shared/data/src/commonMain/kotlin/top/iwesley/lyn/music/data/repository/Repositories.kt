@@ -88,6 +88,7 @@ import top.iwesley.lyn.music.domain.parseLrc
 import top.iwesley.lyn.music.domain.DEFAULT_DIRECT_LYRICS_SELECTION
 import top.iwesley.lyn.music.domain.rankDirectLyricsCandidates
 import top.iwesley.lyn.music.domain.rankWorkflowSongCandidates
+import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceEnabled
 import top.iwesley.lyn.music.domain.scoreDirectLyricsCandidate
 import top.iwesley.lyn.music.domain.serializeLyricsDocument
 import top.iwesley.lyn.music.domain.validateWorkflowLyricsSourceConfig
@@ -993,7 +994,12 @@ class DefaultSettingsRepository(
         }
         val workflow = database.workflowLyricsSourceConfigDao().getById(sourceId)
         if (workflow != null) {
-            database.workflowLyricsSourceConfigDao().upsert(workflow.copy(enabled = enabled))
+            database.workflowLyricsSourceConfigDao().upsert(
+                workflow.copy(
+                    enabled = enabled,
+                    rawJson = rewriteWorkflowLyricsSourceEnabled(workflow.rawJson, enabled),
+                ),
+            )
         }
     }
 
@@ -2225,12 +2231,14 @@ private fun LyricsSourceConfig.toEntity(): LyricsSourceConfigEntity {
 
 private fun WorkflowLyricsSourceConfigEntity.toDomainOrNull(): WorkflowLyricsSourceConfig? {
     return runCatching {
-        parseWorkflowLyricsSourceConfig(rawJson).copy(
+        val parsed = parseWorkflowLyricsSourceConfig(rawJson)
+        val syncedRawJson = if (parsed.enabled == enabled) parsed.rawJson else rewriteWorkflowLyricsSourceEnabled(parsed.rawJson, enabled)
+        parsed.copy(
             id = id,
             name = name,
             priority = priority,
             enabled = enabled,
-            rawJson = rawJson,
+            rawJson = syncedRawJson,
         )
     }.getOrNull()
 }
