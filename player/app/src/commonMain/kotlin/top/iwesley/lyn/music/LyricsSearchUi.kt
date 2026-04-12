@@ -147,7 +147,7 @@ internal fun LyricsSearchOverlayDialog(
                     platform = currentPlatformDescriptor,
                     density = density,
                 )
-                val wideLayout = layoutProfile.isWideLayout
+                val wideLayout = layoutProfile.isExpandedLayout
                 if (wideLayout) {
                     Column(
                         modifier = Modifier.fillMaxSize(),
@@ -379,7 +379,7 @@ private fun LyricsSearchFormPane(
                     platform = currentPlatformDescriptor,
                     density = density,
                 )
-                val stackedFields = layoutProfile.usesStackedFields
+                val stackedFields = layoutProfile.isCompactLayout
                 val buttonSpacing = if (stackedFields) 8.dp else 10.dp
                 Column(
                     modifier = Modifier

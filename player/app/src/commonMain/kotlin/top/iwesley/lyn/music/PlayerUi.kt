@@ -745,8 +745,8 @@ private fun PlayerOverlay(
                 platform = platform,
                 density = LocalDensity.current,
             )
-            val wide = layoutProfile.isWideLayout
-            val useTapToRevealLyrics = layoutProfile.usesTapToRevealPlaybackLyrics
+            val wide = layoutProfile.isExpandedLayout
+            val useTapToRevealLyrics = layoutProfile.isCompactLayout
             LaunchedEffect(platform.name, maxWidth, maxHeight) {
                 logger.debug(PLAYER_UI_LOG_TAG) {
                     "platform=${platform.name} maxWidth=$maxWidth maxHeight=$maxHeight orientation=${layoutProfile.orientation} wide=$wide useTapToRevealLyrics=$useTapToRevealLyrics"

@@ -18,9 +18,6 @@ class LayoutProfileTest {
 
         assertTrue(profile.isMobilePlatform)
         assertTrue(profile.isPortrait)
-        assertTrue(profile.isCompactShell)
-        assertTrue(profile.usesPortraitMiniPlayer)
-        assertTrue(profile.usesTapToRevealPlaybackLyrics)
     }
 
     @Test
@@ -34,8 +31,6 @@ class LayoutProfileTest {
         assertFalse(profile.isMobilePlatform)
         assertTrue(profile.isLandscape)
         assertTrue(profile.isExpandedLayout)
-        assertTrue(profile.isWideLayout)
-        assertFalse(profile.usesTapToRevealPlaybackLyrics)
     }
 
     private fun androidPlatform(): PlatformDescriptor = PlatformDescriptor(

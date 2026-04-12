@@ -165,8 +165,8 @@ fun App(component: LynMusicAppComponent) {
                     platform = component.platform,
                     density = density,
                 )
-                val compact = layoutProfile.isCompactShell
-                val mobilePortraitMiniPlayer = layoutProfile.usesPortraitMiniPlayer
+                val compact = layoutProfile.isCompactLayout
+                val mobilePortraitMiniPlayer = layoutProfile.isCompactLayout
                 val shellColors = mainShellColors
                 Box(
                     modifier = Modifier

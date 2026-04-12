@@ -286,7 +286,7 @@ internal fun PlaylistsTab(
             platform = currentPlatformDescriptor,
             density = density,
         )
-        val wide = layoutProfile.isWideLayout
+        val wide = layoutProfile.isExpandedLayout
         if (showCreateDialog) {
             PlaylistNameDialog(
                 onDismiss = { showCreateDialog = false },

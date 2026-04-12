@@ -12,6 +12,9 @@ internal enum class LayoutOrientation {
     Landscape,
 }
 
+/**
+ * real device width or BoxWithConstraints
+ */
 internal data class LayoutProfile(
     val maxWidth: Dp,
     val maxHeight: Dp,
@@ -42,8 +45,8 @@ internal data class LayoutProfile(
     val isMobilePlatform: Boolean
         get() = platform?.isMobilePlatform() == true
 
-    val isCompactShell: Boolean
-        get() = maxWidth < COMPACT_SHELL_MIN_WIDTH
+//    val isCompactShell: Boolean
+//        get() = maxWidth < COMPACT_SHELL_MIN_WIDTH
 
     /**
      * 桌面端永远走大屏布局
@@ -53,23 +56,18 @@ internal data class LayoutProfile(
     val isExpandedLayout: Boolean
         get() = !isMobilePlatform || min(maxWidth, maxHeight) >= 600.dp && isLandscape
 
+    val isCompactLayout: Boolean
+        get() = !isExpandedLayout //手机横屏会返回true
+        //get() = isMobilePlatform && isPortrait  手机横屏会返回false
+
     val isExpandedDevice: Boolean
         get() = !isMobilePlatform || min(maxWidth, maxHeight) >= 600.dp
 
-    val isWideLayout: Boolean
-        get() = maxWidth >= WIDE_LAYOUT_MIN_WIDTH
-
-    val usesNarrowActionLayout: Boolean
-        get() = maxWidth < NARROW_ACTIONS_MAX_WIDTH
-
-    val usesStackedFields: Boolean
-        get() = maxWidth < STACKED_FIELDS_MAX_WIDTH
-
-    val usesPortraitMiniPlayer: Boolean
-        get() = isCompactShell && isPortrait
-
-    val usesTapToRevealPlaybackLyrics: Boolean
-        get() = isMobilePlatform && isPortrait
+//    val isWideLayout: Boolean
+//        get() = maxWidth >= WIDE_LAYOUT_MIN_WIDTH
+//
+//    val usesStackedFields: Boolean
+//        get() = maxWidth < STACKED_FIELDS_MAX_WIDTH
 }
 
 internal fun buildLayoutProfile(

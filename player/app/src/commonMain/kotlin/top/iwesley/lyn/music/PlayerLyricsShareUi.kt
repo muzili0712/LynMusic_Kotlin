@@ -480,7 +480,7 @@ private fun ManualLyricsSearchFormPane(
                     platform = currentPlatformDescriptor,
                     density = density,
                 )
-                val stackedFields = layoutProfile.usesStackedFields
+                val stackedFields = layoutProfile.isCompactLayout
                 val buttonSpacing = if (stackedFields) 8.dp else 10.dp
                 Column(
                     modifier = Modifier
@@ -945,9 +945,9 @@ internal fun LyricsShareOverlay(
                     platform = platform,
                     density = density,
                 )
-                val wideLayout = layoutProfile.isWideLayout
-                val narrowActions = layoutProfile.usesNarrowActionLayout
-                val mobileActions = layoutProfile.isMobilePlatform
+                val wideLayout = layoutProfile.isExpandedLayout
+                val narrowActions = layoutProfile.isCompactLayout
+                val mobileActions = layoutProfile.isCompactLayout
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
