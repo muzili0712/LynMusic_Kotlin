@@ -11,20 +11,23 @@ import androidx.compose.ui.window.rememberWindowState
 import java.awt.Dimension
 import top.iwesley.lyn.music.platform.createJvmAppComponent
 
-fun main() = application {
-    val appComponent = remember { createJvmAppComponent() }
-    val windowState = rememberWindowState(
-        size = DpSize(1440.dp, 900.dp),
-    )
-    Window(
-        onCloseRequest = ::exitApplication,
-        title = "LynMusic",
-        state = windowState,
-        icon = painterResource("desktop-icon.png"),
-    ) {
-        SideEffect {
-            window.minimumSize = Dimension(1200, 720)
+fun main() {
+    installJvmUncaughtExceptionHandler()
+    application {
+        val appComponent = remember { createJvmAppComponent() }
+        val windowState = rememberWindowState(
+            size = DpSize(1440.dp, 900.dp),
+        )
+        Window(
+            onCloseRequest = ::exitApplication,
+            title = "LynMusic",
+            state = windowState,
+            icon = painterResource("desktop-icon.png"),
+        ) {
+            SideEffect {
+                window.minimumSize = Dimension(1200, 720)
+            }
+            App(appComponent)
         }
-        App(appComponent)
     }
 }

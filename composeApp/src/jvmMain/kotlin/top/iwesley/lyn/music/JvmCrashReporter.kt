@@ -1,0 +1,169 @@
+package top.iwesley.lyn.music
+
+import java.awt.BorderLayout
+import java.awt.Dimension
+import java.awt.Font
+import java.awt.GraphicsEnvironment
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
+import java.io.PrintWriter
+import java.io.StringWriter
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.swing.JButton
+import javax.swing.JFrame
+import javax.swing.JLabel
+import javax.swing.JPanel
+import javax.swing.JScrollPane
+import javax.swing.JTextArea
+import javax.swing.SwingUtilities
+import javax.swing.WindowConstants
+import javax.swing.border.EmptyBorder
+import kotlin.system.exitProcess
+
+internal fun installJvmUncaughtExceptionHandler() {
+    val currentHandler = Thread.getDefaultUncaughtExceptionHandler()
+    if (currentHandler is JvmUncaughtExceptionHandler) return
+    Thread.setDefaultUncaughtExceptionHandler(JvmUncaughtExceptionHandler())
+}
+
+private class JvmUncaughtExceptionHandler : Thread.UncaughtExceptionHandler {
+    private val isHandlingCrash = AtomicBoolean(false)
+
+    override fun uncaughtException(thread: Thread, throwable: Throwable) {
+        if (!isHandlingCrash.compareAndSet(false, true)) {
+            System.err.println("Unhandled exception while crash reporter was already active.")
+            throwable.printStackTrace(System.err)
+            exitProcess(JVM_CRASH_EXIT_CODE)
+        }
+
+        val report = formatJvmCrashReport(threadName = thread.name, throwable = throwable)
+        runCatching {
+            if (GraphicsEnvironment.isHeadless()) {
+                System.err.println(report)
+            } else {
+                showJvmCrashWindowAndWait(report)
+            }
+        }.onFailure { reportFailure ->
+            System.err.println(report)
+            System.err.println("Failed to show LynMusic crash report window.")
+            reportFailure.printStackTrace(System.err)
+        }
+        exitProcess(JVM_CRASH_EXIT_CODE)
+    }
+}
+
+internal fun formatJvmCrashReport(
+    threadName: String,
+    throwable: Throwable,
+    maxChars: Int = MAX_JVM_CRASH_REPORT_CHARS,
+): String {
+    val writer = StringWriter()
+    PrintWriter(writer).use { printer ->
+        printer.println("LynMusic Desktop Crash")
+        printer.println("Thread: $threadName")
+        printer.println("Exception: ${throwable.javaClass.name}")
+        throwable.message?.takeIf { it.isNotBlank() }?.let { message ->
+            printer.println("Message: $message")
+        }
+        printer.println()
+        throwable.printStackTrace(printer)
+    }
+    return truncateJvmCrashReport(writer.toString(), maxChars)
+}
+
+private fun truncateJvmCrashReport(report: String, maxChars: Int): String {
+    if (report.length <= maxChars) return report
+    val suffix = "\n\n[crash report truncated]\n"
+    return if (maxChars <= suffix.length) {
+        suffix.take(maxChars)
+    } else {
+        report.take(maxChars - suffix.length) + suffix
+    }
+}
+
+private fun showJvmCrashWindowAndWait(report: String) {
+    if (SwingUtilities.isEventDispatchThread()) {
+        val secondaryLoop = Toolkit.getDefaultToolkit().systemEventQueue.createSecondaryLoop()
+        val frame = buildJvmCrashFrame(report) {
+            secondaryLoop.exit()
+        }
+        frame.isVisible = true
+        secondaryLoop.enter()
+        return
+    }
+
+    val windowClosed = CountDownLatch(1)
+    SwingUtilities.invokeAndWait {
+        val frame = buildJvmCrashFrame(report) {
+            windowClosed.countDown()
+        }
+        frame.isVisible = true
+    }
+    windowClosed.await()
+}
+
+private fun buildJvmCrashFrame(report: String, onClosed: () -> Unit): JFrame {
+    val closed = AtomicBoolean(false)
+    val frame = JFrame("LynMusic 崩溃报告")
+
+    fun closeWindow() {
+        if (closed.compareAndSet(false, true)) {
+            frame.dispose()
+            onClosed()
+        }
+    }
+
+    val reportText = JTextArea(report).apply {
+        isEditable = false
+        lineWrap = false
+        font = Font(Font.MONOSPACED, Font.PLAIN, 12)
+        caretPosition = 0
+    }
+    val copyButton = JButton("复制堆栈").apply {
+        addActionListener {
+            Toolkit.getDefaultToolkit()
+                .systemClipboard
+                .setContents(StringSelection(report), null)
+            text = "已复制"
+        }
+    }
+    val exitButton = JButton("退出").apply {
+        addActionListener {
+            closeWindow()
+        }
+    }
+    val buttonPanel = JPanel().apply {
+        add(copyButton)
+        add(exitButton)
+    }
+    val contentPanel = JPanel(BorderLayout(0, 12)).apply {
+        border = EmptyBorder(16, 16, 16, 16)
+        add(
+            JLabel("LynMusic 遇到未捕获异常。应用将退出，你可以复制下面的崩溃堆栈给开发者用于排查。"),
+            BorderLayout.NORTH,
+        )
+        add(JScrollPane(reportText), BorderLayout.CENTER)
+        add(buttonPanel, BorderLayout.SOUTH)
+    }
+
+    return frame.apply {
+        defaultCloseOperation = WindowConstants.DO_NOTHING_ON_CLOSE
+        contentPane = contentPanel
+        minimumSize = Dimension(720, 480)
+        size = Dimension(900, 640)
+        setLocationRelativeTo(null)
+        addWindowListener(
+            object : WindowAdapter() {
+                override fun windowClosing(event: WindowEvent) {
+                    closeWindow()
+                }
+            },
+        )
+    }
+}
+
+private const val JVM_CRASH_EXIT_CODE = 10
+private const val MAX_JVM_CRASH_REPORT_CHARS = 120_000
