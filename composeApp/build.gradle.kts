@@ -190,6 +190,7 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Pkg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "LynMusic"
             packageVersion = desktopPackageVersion
+            modules("java.management", "jdk.management")
             macOS {
                 bundleID = "top.iwesley.lyn.music"
                 iconFile.set(project.file("src/jvmMain/resources/desktop-icon.icns"))
