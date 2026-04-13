@@ -294,6 +294,33 @@ class PlaybackRepositoriesTest {
     }
 
     @Test
+    fun `repeated gateway error still surfaces after switching tracks`() = runTest {
+        val database = createTestDatabase()
+        val gateway = RepeatingErrorPlaybackGateway("未检测到 VLC，请安装或手动选择 VLC 路径。")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(database, gateway, scope)
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 0)
+            advanceUntilIdle()
+
+            assertEquals("track-1", repository.snapshot.value.currentTrack?.id)
+            assertEquals("未检测到 VLC，请安装或手动选择 VLC 路径。", repository.snapshot.value.errorMessage)
+
+            repository.playTracks(sampleTracks(), startIndex = 1)
+            advanceUntilIdle()
+
+            assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
+            assertEquals("未检测到 VLC，请安装或手动选择 VLC 路径。", repository.snapshot.value.errorMessage)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
     fun `restore queue surfaces gateway load failure without throwing`() = runTest {
         val database = createTestDatabase()
         database.trackDao().upsertAll(
@@ -386,6 +413,51 @@ class PlaybackRepositoriesTest {
             database.close()
         }
     }
+}
+
+private class RepeatingErrorPlaybackGateway(
+    private val message: String,
+) : PlaybackGateway {
+    private val mutableState = MutableStateFlow(PlaybackGatewayState())
+
+    override val state: StateFlow<PlaybackGatewayState> = mutableState.asStateFlow()
+
+    override suspend fun load(
+        track: Track,
+        playWhenReady: Boolean,
+        startPositionMs: Long,
+        loadToken: PlaybackLoadToken,
+    ) {
+        mutableState.value = mutableState.value.copy(
+            isPlaying = false,
+            positionMs = startPositionMs.coerceAtLeast(0L),
+            durationMs = 0L,
+            errorMessage = message,
+            errorRevision = mutableState.value.errorRevision + 1L,
+        )
+    }
+
+    override suspend fun play() {
+        mutableState.value = mutableState.value.copy(
+            isPlaying = false,
+            errorMessage = message,
+            errorRevision = mutableState.value.errorRevision + 1L,
+        )
+    }
+
+    override suspend fun pause() {
+        mutableState.value = mutableState.value.copy(isPlaying = false)
+    }
+
+    override suspend fun seekTo(positionMs: Long) {
+        mutableState.value = mutableState.value.copy(positionMs = positionMs.coerceAtLeast(0L))
+    }
+
+    override suspend fun setVolume(volume: Float) {
+        mutableState.value = mutableState.value.copy(volume = volume)
+    }
+
+    override suspend fun release() = Unit
 }
 
 private fun createTestDatabase(): LynMusicDatabase {

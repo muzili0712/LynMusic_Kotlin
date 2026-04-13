@@ -1138,7 +1138,10 @@ private class JvmPlaybackGateway(
                     "playback-error target=${currentPlaybackTarget.orEmpty()} source=${currentSourceReference.orEmpty()} recentLogs=${recentVlcLogSummary()}"
                 }
                 mutableState.update {
-                    it.copy(errorMessage = "桌面播放器无法播放当前媒体。")
+                    it.copy(
+                        errorMessage = "桌面播放器无法播放当前媒体。",
+                        errorRevision = it.errorRevision + 1L,
+                    )
                 }
             }
         })
@@ -1279,6 +1282,7 @@ private class JvmPlaybackGateway(
                     positionMs = startPositionMs.coerceAtLeast(0L),
                     durationMs = 0L,
                     errorMessage = buildJvmPlaybackLoadFailureMessage(throwable),
+                    errorRevision = it.errorRevision + 1L,
                 )
             }
         }
@@ -1445,6 +1449,7 @@ private class JvmPlaybackGateway(
                 metadataArtistName = if (clearMetadata) null else state.metadataArtistName,
                 metadataAlbumTitle = if (clearMetadata) null else state.metadataAlbumTitle,
                 errorMessage = errorMessage,
+                errorRevision = if (errorMessage != null) state.errorRevision + 1L else state.errorRevision,
             )
         }
     }
@@ -1615,7 +1620,7 @@ private val jvmRemoteArtworkDirectory = File(File(System.getProperty("user.home"
 
 internal const val SAMBA_LOG_TAG = "Samba"
 private const val VLC_LOG_TAG = "VLC"
-private const val DESKTOP_VLC_UNAVAILABLE_MESSAGE = "未检测到 VLC，请安装或手动选择 VLC 路径。"
+private const val DESKTOP_VLC_UNAVAILABLE_MESSAGE = "未检测到 VLC，请安装或在设置手动选择 VLC 路径。"
 
 private fun buildJvmPlaybackLoadFailureMessage(throwable: Throwable): String {
     val detail = throwable.message?.takeIf { it.isNotBlank() }

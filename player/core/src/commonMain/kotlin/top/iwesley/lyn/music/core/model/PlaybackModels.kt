@@ -71,6 +71,7 @@ data class PlaybackGatewayState(
     val metadataAlbumTitle: String? = null,
     val completionCount: Long = 0L,
     val errorMessage: String? = null,
+    val errorRevision: Long = 0L,
 )
 
 class PlaybackLoadToken(
