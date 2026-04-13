@@ -28,6 +28,10 @@ val appVersionName = sharedVersionConfig.getValue("APP_VERSION_NAME")
 val desktopPackageVersion = sharedVersionConfig
     .getValue("APP_DESKTOP_PACKAGE_VERSION")
 val androidArtifactBaseName = "LynMusic-$appVersionName"
+val desktopConsoleEnabled: Boolean? = providers.gradleProperty("desktopConsole")
+    .map(String::toBoolean)
+    .orElse(false)
+    .get()
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -196,6 +200,7 @@ compose.desktop {
                 menu = true
                 menuGroup = "LynMusic"
                 upgradeUuid = "f70eff91-c266-4763-920a-64ec7eb7958d"
+                console = desktopConsoleEnabled == true
             }
             linux {
                 iconFile.set(project.file("src/jvmMain/resources/desktop-icon.png"))
