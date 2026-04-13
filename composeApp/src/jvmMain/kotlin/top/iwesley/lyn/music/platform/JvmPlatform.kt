@@ -941,26 +941,21 @@ private class JvmPlaybackGateway(
 ) : PlaybackGateway {
     private val mutableState = MutableStateFlow(PlaybackGatewayState())
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val autoDiscovery = NativeDiscovery().apply { discover() }
-    private val autoDetectedVlcPath = autoDiscovery.discoveredPath()?.trim()?.takeIf { it.isNotBlank() }
+    private val autoDiscovery = createDesktopAutoVlcDiscovery(logger)
+    private val autoDetectedVlcPath = autoDiscovery?.discoveredPath()?.trim()?.takeIf { it.isNotBlank() }
     private val preferredVlcPath = resolveDesktopVlcEffectivePath(
         manualPath = desktopVlcPreferencesStore.desktopVlcManualPath.value,
         autoDetectedPath = autoDetectedVlcPath,
     )
     private val discovery = if (desktopVlcPreferencesStore.desktopVlcManualPath.value.isNullOrBlank()) {
-        autoDiscovery
+        autoDiscovery ?: NativeDiscovery()
     } else {
         createDesktopVlcDiscovery(preferredVlcPath)
     }
-    private val factory = MediaPlayerFactory(discovery)
-    private val nativeLog: NativeLog? = runCatching { factory.application().newLog() }
-        .onFailure { throwable ->
-            logger.warn(VLC_LOG_TAG) {
-                "native-log-init-failed message=${throwable.message.orEmpty()}"
-            }
-        }
-        .getOrNull()
-    private val mediaPlayer = factory.mediaPlayers().newMediaPlayer()
+    private val vlcRuntime = createJvmVlcRuntime(discovery, logger)
+    private val factory = vlcRuntime?.factory
+    private val nativeLog = vlcRuntime?.nativeLog
+    private val mediaPlayer = vlcRuntime?.mediaPlayer
     private val sambaCacheDir = File(File(System.getProperty("user.home")), ".lynmusic/cache").apply {
         mkdirs()
     }
@@ -1017,11 +1012,16 @@ private class JvmPlaybackGateway(
         logger.info(VLC_LOG_TAG) {
             "native-discovery autoDetectedPath=${autoDetectedVlcPath.orEmpty()} manualPath=${desktopVlcPreferencesStore.desktopVlcManualPath.value.orEmpty()} effectivePath=${preferredVlcPath.orEmpty()}"
         }
+        if (mediaPlayer == null) {
+            logger.warn(VLC_LOG_TAG) {
+                "playback-disabled reason=vlc-native-unavailable"
+            }
+        }
         nativeLog?.apply {
             setLevel(LogLevel.NOTICE)
             addLogListener(nativeLogListener)
         }
-        mediaPlayer.events().addMediaEventListener(object  : MediaEventAdapter() {
+        mediaPlayer?.events()?.addMediaEventListener(object  : MediaEventAdapter() {
             override fun mediaDurationChanged(media: Media?, newDuration: Long) {
                 super.mediaDurationChanged(media, newDuration)
                 logger.info(VLC_LOG_TAG) {
@@ -1037,7 +1037,7 @@ private class JvmPlaybackGateway(
             }
 
         })
-        mediaPlayer.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
+        mediaPlayer?.events()?.addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
             override fun mediaPlayerReady(mediaPlayer: MediaPlayer?) {
                 val activePlayer = mediaPlayer ?: return
                 val track = currentTrackForMetadata
@@ -1150,8 +1150,22 @@ private class JvmPlaybackGateway(
         startPositionMs: Long,
         loadToken: PlaybackLoadToken,
     ) {
+        val activeMediaPlayer = mediaPlayer
+        if (activeMediaPlayer == null) {
+            handleVlcUnavailable(
+                action = "load",
+                positionMs = startPositionMs,
+                errorMessage = if (playWhenReady) DESKTOP_VLC_UNAVAILABLE_MESSAGE else null,
+                clearMetadata = true,
+            )
+            currentCallbackMedia = null
+            currentPlaybackTarget = null
+            currentSourceReference = track.mediaLocator
+            currentTrackForMetadata = track
+            return
+        }
         try {
-            runCatching { mediaPlayer.controls().stop() }
+            runCatching { activeMediaPlayer.controls().stop() }
             currentCallbackMedia = null
             currentPlaybackTarget = null
             currentSourceReference = null
@@ -1208,19 +1222,19 @@ private class JvmPlaybackGateway(
             }
             val started = if (playWhenReady) {
                 if (webDavTarget != null) {
-                    mediaPlayer.media().start(webDavTarget.media)
+                    activeMediaPlayer.media().start(webDavTarget.media)
                 } else if (sambaTarget != null) {
-                    mediaPlayer.media().start(sambaTarget.media)
+                    activeMediaPlayer.media().start(sambaTarget.media)
                 } else {
-                    mediaPlayer.media().start(actualPlaybackSource)
+                    activeMediaPlayer.media().start(actualPlaybackSource)
                 }
             } else {
                 if (webDavTarget != null) {
-                    mediaPlayer.media().startPaused(webDavTarget.media)
+                    activeMediaPlayer.media().startPaused(webDavTarget.media)
                 } else if (sambaTarget != null) {
-                    mediaPlayer.media().startPaused(sambaTarget.media)
+                    activeMediaPlayer.media().startPaused(sambaTarget.media)
                 } else {
-                    mediaPlayer.media().startPaused(actualPlaybackSource)
+                    activeMediaPlayer.media().startPaused(actualPlaybackSource)
                 }
             }
             if (!started) {
@@ -1251,7 +1265,7 @@ private class JvmPlaybackGateway(
                 }
             }
             if (startPositionMs > 0) {
-                mediaPlayer.controls().setTime(startPositionMs)
+                activeMediaPlayer.controls().setTime(startPositionMs)
             }
         } catch (throwable: Throwable) {
             if (throwable is CancellationException) throw throwable
@@ -1271,20 +1285,38 @@ private class JvmPlaybackGateway(
     }
 
     override suspend fun play() {
-        mediaPlayer.controls().play()
+        val activeMediaPlayer = mediaPlayer
+        if (activeMediaPlayer == null) {
+            handleVlcUnavailable(action = "play")
+            return
+        }
+        activeMediaPlayer.controls().play()
     }
 
     override suspend fun pause() {
-        mediaPlayer.controls().pause()
+        val activeMediaPlayer = mediaPlayer
+        if (activeMediaPlayer == null) {
+            mutableState.update { it.copy(isPlaying = false) }
+            return
+        }
+        activeMediaPlayer.controls().pause()
     }
 
     override suspend fun seekTo(positionMs: Long) {
-        mediaPlayer.controls().setTime(positionMs)
+        val activeMediaPlayer = mediaPlayer
+        if (activeMediaPlayer == null) {
+            handleVlcUnavailable(
+                action = "seek",
+                positionMs = positionMs,
+            )
+            return
+        }
+        activeMediaPlayer.controls().setTime(positionMs)
     }
 
     override suspend fun setVolume(volume: Float) {
         val normalized = volume.coerceIn(0f, 1f)
-        mediaPlayer.audio().setVolume((normalized * 100).roundToInt())
+        mediaPlayer?.audio()?.setVolume((normalized * 100).roundToInt())
         mutableState.update { it.copy(volume = normalized) }
     }
 
@@ -1293,10 +1325,10 @@ private class JvmPlaybackGateway(
         currentCallbackMedia = null
         currentPlaybackTarget = null
         currentSourceReference = null
-        mediaPlayer.release()
+        mediaPlayer?.release()
         nativeLog?.removeLogListener(nativeLogListener)
         nativeLog?.release()
-        factory.release()
+        factory?.release()
         scope.cancel()
     }
 
@@ -1394,6 +1426,76 @@ private class JvmPlaybackGateway(
             }
         }
     }
+
+    private fun handleVlcUnavailable(
+        action: String,
+        positionMs: Long? = null,
+        errorMessage: String? = DESKTOP_VLC_UNAVAILABLE_MESSAGE,
+        clearMetadata: Boolean = false,
+    ) {
+        logger.warn(VLC_LOG_TAG) {
+            "$action-unavailable reason=vlc-native-unavailable"
+        }
+        mutableState.update { state ->
+            state.copy(
+                isPlaying = false,
+                positionMs = positionMs?.coerceAtLeast(0L) ?: state.positionMs,
+                durationMs = 0L,
+                metadataTitle = if (clearMetadata) null else state.metadataTitle,
+                metadataArtistName = if (clearMetadata) null else state.metadataArtistName,
+                metadataAlbumTitle = if (clearMetadata) null else state.metadataAlbumTitle,
+                errorMessage = errorMessage,
+            )
+        }
+    }
+}
+
+private data class JvmVlcRuntime(
+    val factory: MediaPlayerFactory,
+    val mediaPlayer: MediaPlayer,
+    val nativeLog: NativeLog?,
+)
+
+private fun createDesktopAutoVlcDiscovery(logger: DiagnosticLogger): NativeDiscovery? {
+    return runCatching {
+        NativeDiscovery().apply { discover() }
+    }.onFailure { throwable ->
+        logger.warn(VLC_LOG_TAG) {
+            "native-discovery-failed message=${throwable.message.orEmpty()}"
+        }
+    }.getOrNull()
+}
+
+private fun createJvmVlcRuntime(
+    discovery: NativeDiscovery,
+    logger: DiagnosticLogger,
+): JvmVlcRuntime? {
+    var createdFactory: MediaPlayerFactory? = null
+    var createdNativeLog: NativeLog? = null
+    return runCatching {
+        val factory = MediaPlayerFactory(discovery)
+        createdFactory = factory
+        val nativeLog = runCatching { factory.application().newLog() }
+            .onFailure { throwable ->
+                logger.warn(VLC_LOG_TAG) {
+                    "native-log-init-failed message=${throwable.message.orEmpty()}"
+                }
+            }
+            .getOrNull()
+        createdNativeLog = nativeLog
+        val mediaPlayer = factory.mediaPlayers().newMediaPlayer()
+        JvmVlcRuntime(
+            factory = factory,
+            mediaPlayer = mediaPlayer,
+            nativeLog = nativeLog,
+        )
+    }.onFailure { throwable ->
+        logger.error(VLC_LOG_TAG, throwable) {
+            "native-init-failed message=${throwable.message.orEmpty()}"
+        }
+        createdNativeLog?.release()
+        createdFactory?.release()
+    }.getOrNull()
 }
 
 private object ImportedCandidateFactory {
@@ -1513,6 +1615,7 @@ private val jvmRemoteArtworkDirectory = File(File(System.getProperty("user.home"
 
 internal const val SAMBA_LOG_TAG = "Samba"
 private const val VLC_LOG_TAG = "VLC"
+private const val DESKTOP_VLC_UNAVAILABLE_MESSAGE = "未检测到 VLC，请安装或手动选择 VLC 路径。"
 
 private fun buildJvmPlaybackLoadFailureMessage(throwable: Throwable): String {
     val detail = throwable.message?.takeIf { it.isNotBlank() }
