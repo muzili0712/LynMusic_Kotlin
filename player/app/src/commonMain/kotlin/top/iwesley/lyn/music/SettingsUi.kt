@@ -75,6 +75,7 @@ import top.iwesley.lyn.music.core.model.AppStorageCategory
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.BuildMetadata
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.deriveAppThemePalette
@@ -1212,6 +1213,18 @@ private fun AboutAppSettingsPane(
 //                    style = MaterialTheme.typography.bodySmall,
 //                )
             }
+        }
+        AboutDeviceInfoCard(title = "版本信息") {
+            AboutAppFieldRow(
+                label = "版本号",
+                value = BuildMetadata.versionDisplay,
+                monospace = true,
+            )
+            AboutAppFieldRow(
+                label = "编译时间",
+                value = BuildMetadata.buildTimeUtc,
+                monospace = true,
+            )
         }
         AboutDeviceInfoCard(title = "开发者") {
             AboutAppFieldRow(
