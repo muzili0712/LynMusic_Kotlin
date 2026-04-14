@@ -1109,7 +1109,7 @@ private fun PlayerBottomControls(
                         } else {
                             Modifier
                         },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
+                        color = Color.White.copy(alpha = 0.88f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
