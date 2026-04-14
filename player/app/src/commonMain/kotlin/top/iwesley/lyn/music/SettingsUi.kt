@@ -63,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -1233,10 +1234,10 @@ private fun AboutAppSettingsPane(
             )
         }
         AboutDeviceInfoCard(title = "项目地址") {
-            AboutAppFieldRow(
+            AboutAppLinkFieldRow(
                 label = "地址",
                 value = ABOUT_APP_PROJECT_URL,
-                monospace = true,
+                url = ABOUT_APP_PROJECT_URL,
             )
         }
         AboutDeviceInfoCard(title = "微信公众号") {
@@ -1506,6 +1507,33 @@ private fun AboutAppFieldRow(
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
             fontFamily = if (monospace) FontFamily.Monospace else null,
+        )
+    }
+}
+
+@Composable
+private fun AboutAppLinkFieldRow(
+    label: String,
+    value: String,
+    url: String,
+    modifier: Modifier = Modifier,
+) {
+    val uriHandler = LocalUriHandler.current
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.primary,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.clickable { uriHandler.openUri(url) },
         )
     }
 }
