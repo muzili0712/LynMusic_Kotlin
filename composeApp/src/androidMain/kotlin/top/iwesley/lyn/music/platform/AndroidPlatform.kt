@@ -375,6 +375,7 @@ private class AndroidAudioTagGateway(
     }
 
     override suspend fun canWrite(track: Track): Boolean {
+        if (!hasDirectLocalFileAccess(context)) return false
         val localFile = resolveAndroidLocalTrackFile(track.mediaLocator) ?: return false
         return localFile.isFile && localFile.canWrite()
     }
@@ -425,10 +426,14 @@ private class AndroidAudioTagGateway(
 
     override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> {
         return runCatching {
+            val permissionLabel = directLocalFileAccessPermissionLabel()
+            if (!hasDirectLocalFileAccess(context)) {
+                error("当前文件没有写入权限，请重新导入本地文件夹并授予$permissionLabel。")
+            }
             val localFile = resolveAndroidLocalTrackFile(track.mediaLocator)
-                ?: error("当前歌曲通过 SAF 导入，未获得可写文件访问权限。请在来源页重新扫描并授予“管理所有文件”权限。")
+                ?: error("当前歌曲通过 SAF 导入，未获得可写文件访问权限。请在来源页重新扫描并授予$permissionLabel。")
             if (!localFile.isFile || !localFile.canWrite()) {
-                error("当前文件没有写入权限，请确认已授予“管理所有文件”权限。")
+                error("当前文件没有写入权限，请确认已授予$permissionLabel。")
             }
             val artworkDirectory = File(context.cacheDir, "artwork")
             AndroidAudioTagFileSupport.write(
@@ -474,6 +479,7 @@ private class AndroidImportSourceGateway(
     private val navidromeHttpClient: LyricsHttpClient,
 ) : ImportSourceGateway {
     private var folderContinuation: ((LocalFolderSelection?) -> Unit)? = null
+    private var legacyPermissionContinuation: ((Boolean) -> Unit)? = null
 
     private val picker = activity.registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -494,6 +500,18 @@ private class AndroidImportSourceGateway(
         )
     }
 
+    private val legacyPermissionLauncher = activity.registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        val granted = hasDirectLocalFileAccess(activity)
+        logger.info(LOCAL_IMPORT_LOG_TAG) {
+            "legacy-storage-permission-result granted=$granted ${legacyDirectLocalFileAccessGrantSummary(grants)}"
+        }
+        val continuation = legacyPermissionContinuation
+        legacyPermissionContinuation = null
+        continuation?.invoke(granted)
+    }
+
     private val manageAllFilesPermissionLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) {
@@ -512,11 +530,12 @@ private class AndroidImportSourceGateway(
                 }
                 continuation.invokeOnCancellation {
                     folderContinuation = null
+                    legacyPermissionContinuation = null
                 }
                 if (shouldRequestManageAllFilesAccess()) {
                     showManageAllFilesAccessPrompt()
                 } else {
-                    picker.launch(null)
+                    launchPickerAfterLegacyPermissionCheck()
                 }
             }
         }
@@ -524,14 +543,15 @@ private class AndroidImportSourceGateway(
 
     override suspend fun scanLocalFolder(selection: LocalFolderSelection, sourceId: String): ImportScanReport {
         resolveAndroidLocalTrackFile(selection.persistentReference)
-            ?.takeIf { it.isDirectory }
+            ?.takeIf { hasDirectLocalFileAccess(activity) && it.isDirectory }
             ?.let { root ->
                 return scanLocalDirectory(root)
             }
         val treeUri = Uri.parse(selection.persistentReference)
         val resolvedDirectory = resolveTreeUriToDirectory(activity, treeUri)
         logger.info(LOCAL_IMPORT_LOG_TAG) {
-            "resolve-tree-uri source=$sourceId treeUri=$treeUri resolvedDirectory=${resolvedDirectory?.absolutePath ?: "null"}"
+            "resolve-tree-uri source=$sourceId treeUri=$treeUri directLocalFileAccess=${hasDirectLocalFileAccess(activity)} " +
+                "resolvedDirectory=${resolvedDirectory?.absolutePath ?: "null"}"
         }
         resolvedDirectory
             ?.takeIf { it.isDirectory }
@@ -541,6 +561,15 @@ private class AndroidImportSourceGateway(
                 }.onFailure { throwable ->
                     logger.warn(LOCAL_IMPORT_LOG_TAG) {
                         "direct-scan-fallback root=${root.absolutePath} reason=${throwable.message.orEmpty()}"
+                    }
+                }.mapCatching { report ->
+                    if (report.tracks.isEmpty()) {
+                        logger.warn(LOCAL_IMPORT_LOG_TAG) {
+                            "direct-scan-empty-fallback root=${root.absolutePath} treeUri=$treeUri"
+                        }
+                        scanLocalTree(treeUri)
+                    } else {
+                        report
                     }
                 }.getOrElse {
                     scanLocalTree(treeUri)
@@ -657,9 +686,33 @@ private class AndroidImportSourceGateway(
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !hasManageAllFilesAccess(activity)
     }
 
+    private fun launchPickerAfterLegacyPermissionCheck() {
+        if (!shouldRequestLegacyDirectLocalFileAccess(activity)) {
+            picker.launch(null)
+            return
+        }
+        legacyPermissionContinuation = {
+            if (folderContinuation != null) {
+                picker.launch(null)
+            }
+        }
+        runCatching {
+            legacyPermissionLauncher.launch(legacyDirectLocalFileAccessPermissions())
+        }.onFailure { throwable ->
+            logger.warn(LOCAL_IMPORT_LOG_TAG) {
+                "legacy-storage-permission-launch-failed reason=${throwable.message.orEmpty()}"
+            }
+            legacyPermissionContinuation = null
+            if (folderContinuation != null) {
+                picker.launch(null)
+            }
+        }
+    }
+
     private fun resumeFolderSelection(selection: LocalFolderSelection?) {
         val continuation = folderContinuation
         folderContinuation = null
+        legacyPermissionContinuation = null
         continuation?.invoke(selection)
     }
 

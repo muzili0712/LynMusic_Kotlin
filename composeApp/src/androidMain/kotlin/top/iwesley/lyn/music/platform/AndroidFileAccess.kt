@@ -1,7 +1,9 @@
 package top.iwesley.lyn.music.platform
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -12,6 +14,38 @@ import java.net.URI
 
 internal fun hasManageAllFilesAccess(context: Context): Boolean {
     return Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+}
+
+internal fun hasDirectLocalFileAccess(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        hasManageAllFilesAccess(context)
+    } else {
+        hasLegacyExternalStorageReadWriteAccess(context)
+    }
+}
+
+internal fun shouldRequestLegacyDirectLocalFileAccess(context: Context): Boolean {
+    return Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q && !hasLegacyExternalStorageReadWriteAccess(context)
+}
+
+internal fun legacyDirectLocalFileAccessPermissions(): Array<String> {
+    return arrayOf(
+        Manifest.permission.READ_EXTERNAL_STORAGE,
+        Manifest.permission.WRITE_EXTERNAL_STORAGE,
+    )
+}
+
+internal fun legacyDirectLocalFileAccessGrantSummary(grants: Map<String, Boolean>): String {
+    return "read=${grants[Manifest.permission.READ_EXTERNAL_STORAGE] == true} " +
+        "write=${grants[Manifest.permission.WRITE_EXTERNAL_STORAGE] == true}"
+}
+
+internal fun directLocalFileAccessPermissionLabel(): String {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        "“管理所有文件”权限"
+    } else {
+        "存储读写权限"
+    }
 }
 
 internal fun buildManageAllFilesAccessIntent(context: Context): Intent {
@@ -42,7 +76,7 @@ internal fun resolveAndroidLocalTrackFile(locator: String): File? {
 }
 
 internal fun resolveTreeUriToDirectory(context: Context, treeUri: Uri): File? {
-    if (!hasManageAllFilesAccess(context)) return null
+    if (!hasDirectLocalFileAccess(context)) return null
     if (treeUri.authority != EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY) return null
     val documentId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull() ?: return null
     val volumeId = documentId.substringBefore(':').trim()
@@ -73,6 +107,12 @@ private fun File.findStorageVolumeRoot(): File? {
         current = current.parentFile
     }
     return null
+}
+
+private fun hasLegacyExternalStorageReadWriteAccess(context: Context): Boolean {
+    return legacyDirectLocalFileAccessPermissions().all { permission ->
+        context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    }
 }
 
 private const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY = "com.android.externalstorage.documents"
