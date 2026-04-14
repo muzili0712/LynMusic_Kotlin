@@ -1234,13 +1234,7 @@ private fun PlayerBottomControls(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        text = buildString {
-                            append(snapshot.currentDisplayTitle)
-                            append("  ")
-                            append(snapshot.currentDisplayArtistName ?: "未知艺人")
-                            append("  ")
-                            append(track.sourceId.substringBefore('-').uppercase())
-                        },
+                        text = track.sourceId.substringBefore('-').uppercase(),
                         modifier = Modifier.weight(0.30f),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold,
