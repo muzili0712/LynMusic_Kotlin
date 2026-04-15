@@ -541,6 +541,9 @@ private fun GeneralSettingsPane(
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
+    val isMobilePlatform = currentPlatformDescriptor.isMobilePlatform()
+    val showCompactPlayerLyricsSetting = isMobilePlatform
+    val showDesktopVlcSettings = !isMobilePlatform
     val manualPath = state.desktopVlcManualPath?.takeIf { it.isNotBlank() }
     val autoDetectedPath = state.desktopVlcAutoDetectedPath?.takeIf { it.isNotBlank() }
     val effectivePath = state.desktopVlcEffectivePath?.takeIf { it.isNotBlank() }
@@ -556,63 +559,99 @@ private fun GeneralSettingsPane(
         if (showHeading) {
             SectionTitle(
                 title = "通用",
-                subtitle = "管理桌面播放器路径和通用行为配置。",
+                subtitle = "管理播放页歌词显示和平台相关通用配置。",
             )
         }
-        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = "VLC 播放器路径",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = "当前生效路径会在下次启动时用于初始化桌面播放器。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = shellColors.secondaryText,
-                )
-                AboutAppFieldRow(
-                    label = "当前路径",
-                    value = currentPath,
-                    monospace = true,
-                )
-                AboutDeviceFieldRow(
-                    label = "来源",
-                    value = currentSource,
-                )
-                if (manualPath != null && autoDetectedPath != null) {
+        if (showDesktopVlcSettings) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "VLC 播放器路径",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "当前生效路径会在下次启动时用于初始化桌面播放器。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = shellColors.secondaryText,
+                    )
                     AboutAppFieldRow(
-                        label = "自动识别路径",
-                        value = autoDetectedPath,
+                        label = "当前路径",
+                        value = currentPath,
                         monospace = true,
                     )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(
-                        onClick = { onSettingsIntent(SettingsIntent.PickDesktopVlcPath) },
-                    ) {
-                        Text("选择 VLC 路径")
+                    AboutDeviceFieldRow(
+                        label = "来源",
+                        value = currentSource,
+                    )
+                    if (manualPath != null && autoDetectedPath != null) {
+                        AboutAppFieldRow(
+                            label = "自动识别路径",
+                            value = autoDetectedPath,
+                            monospace = true,
+                        )
                     }
-                    if (manualPath != null) {
-                        OutlinedButton(
-                            onClick = { onSettingsIntent(SettingsIntent.ClearDesktopVlcManualPath) },
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Button(
+                            onClick = { onSettingsIntent(SettingsIntent.PickDesktopVlcPath) },
                         ) {
-                            Text("恢复自动识别")
+                            Text("选择 VLC 路径")
+                        }
+                        if (manualPath != null) {
+                            OutlinedButton(
+                                onClick = { onSettingsIntent(SettingsIntent.ClearDesktopVlcManualPath) },
+                            ) {
+                                Text("恢复自动识别")
+                            }
                         }
                     }
+                    Text(
+                        text = "保存后将在下次启动时生效",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = shellColors.secondaryText,
+                    )
                 }
-                Text(
-                    text = "保存后将在下次启动时生效",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = shellColors.secondaryText,
-                )
+            }
+        }
+        if (showCompactPlayerLyricsSetting) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "显示播放页歌词",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "仅在移动端非分栏播放页显示黑胶下方歌词。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = shellColors.secondaryText,
+                        )
+                    }
+                    Switch(
+                        checked = state.showCompactPlayerLyrics,
+                        onCheckedChange = { enabled ->
+                            onSettingsIntent(SettingsIntent.ShowCompactPlayerLyricsChanged(enabled))
+                        },
+                        colors = SwitchDefaults.colors(),
+                    )
+                }
             }
         }
     }
@@ -1054,7 +1093,7 @@ private fun settingsSectionTitle(section: SettingsSection): String {
 
 private fun settingsSectionSubtitle(section: SettingsSection): String {
     return when (section) {
-        SettingsSection.General -> "管理桌面播放器路径和通用配置。"
+        SettingsSection.General -> "管理播放页歌词显示和平台通用配置。"
         SettingsSection.Theme -> "切换预置主题、自定义颜色和文字颜色。"
         SettingsSection.Lyrics -> "配置歌词 API、搜索源和播放缓存。"
         SettingsSection.Storage -> "查看并清理缓存占用。"

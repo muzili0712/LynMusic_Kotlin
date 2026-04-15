@@ -18,11 +18,7 @@ internal sealed interface SettingsMobileNavigation {
 }
 
 internal fun settingsSectionsForPlatform(platform: PlatformDescriptor): List<SettingsSection> {
-    return if (platform.name == "Desktop") {
-        SettingsSection.entries
-    } else {
-        SettingsSection.entries.filterNot { it == SettingsSection.General }
-    }
+    return SettingsSection.entries
 }
 
 internal fun defaultSettingsSection(platform: PlatformDescriptor): SettingsSection {

@@ -14,6 +14,7 @@ import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
@@ -68,6 +69,39 @@ class SettingsRepositoryTest {
         assertEquals(AppThemeId.Ocean, repository.selectedTheme.value)
         assertEquals(customTokens, repository.customThemeTokens.value)
         assertEquals(AppThemeTextPalette.Black, repository.textPalettePreferences.value.ocean)
+    }
+
+    @Test
+    fun `compact player lyrics preference defaults to false`() = runTest {
+        val database = createSettingsTestDatabase()
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(
+            database = database,
+            sambaCachePreferencesStore = preferences,
+            themePreferencesStore = preferences,
+            desktopVlcPreferencesStore = preferences,
+            compactPlayerLyricsPreferencesStore = preferences,
+        )
+
+        assertEquals(false, repository.showCompactPlayerLyrics.value)
+    }
+
+    @Test
+    fun `setting compact player lyrics preference writes through to preference store`() = runTest {
+        val database = createSettingsTestDatabase()
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(
+            database = database,
+            sambaCachePreferencesStore = preferences,
+            themePreferencesStore = preferences,
+            desktopVlcPreferencesStore = preferences,
+            compactPlayerLyricsPreferencesStore = preferences,
+        )
+
+        repository.setShowCompactPlayerLyrics(true)
+
+        assertEquals(true, preferences.showCompactPlayerLyrics.value)
+        assertEquals(true, repository.showCompactPlayerLyrics.value)
     }
 
     @Test
@@ -316,8 +350,10 @@ private fun createSettingsTestDatabase(): LynMusicDatabase {
     )
 }
 
-private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreferencesStore, DesktopVlcPreferencesStore {
+private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreferencesStore, DesktopVlcPreferencesStore,
+    CompactPlayerLyricsPreferencesStore {
     override val useSambaCache = MutableStateFlow(true)
+    override val showCompactPlayerLyrics = MutableStateFlow(false)
     override val selectedTheme = MutableStateFlow(AppThemeId.Ocean)
     override val customThemeTokens = MutableStateFlow(defaultCustomThemeTokens())
     override val textPalettePreferences = MutableStateFlow(defaultThemeTextPalettePreferences())
@@ -327,6 +363,10 @@ private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreference
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         useSambaCache.value = enabled
+    }
+
+    override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
+        showCompactPlayerLyrics.value = enabled
     }
 
     override suspend fun setSelectedTheme(themeId: AppThemeId) {

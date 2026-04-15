@@ -1,6 +1,5 @@
 package top.iwesley.lyn.music
 
-import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -81,6 +80,72 @@ class MiniPlayerBarLogicTest {
         assertFalse(hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = "正在准备歌词"))
         assertFalse(hasMiniPlayerLyricsContent(showPortraitLyrics = false, lyricsText = "第一句"))
         assertTrue(hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = "第一句"))
+    }
+
+    @Test
+    fun `compact player lyrics prefers highlighted line`() {
+        val lyrics = lyricsDocument(
+            LyricsLine(timestampMs = 1_000L, text = "第一句"),
+            LyricsLine(timestampMs = 2_000L, text = "第二句"),
+        )
+
+        assertEquals(
+            "第二句",
+            resolveCompactPlayerLyricsText(
+                lyrics = lyrics,
+                highlightedLineIndex = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun `compact player lyrics falls back to first non blank line`() {
+        val lyrics = lyricsDocument(
+            LyricsLine(timestampMs = 1_000L, text = "   "),
+            LyricsLine(timestampMs = 2_000L, text = "第一句"),
+            LyricsLine(timestampMs = 3_000L, text = "第二句"),
+        )
+
+        assertEquals(
+            "第一句",
+            resolveCompactPlayerLyricsText(
+                lyrics = lyrics,
+                highlightedLineIndex = -1,
+            ),
+        )
+    }
+
+    @Test
+    fun `compact player lyrics returns null when there is no actual lyric text`() {
+        val lyrics = lyricsDocument(
+            LyricsLine(timestampMs = 1_000L, text = "   "),
+            LyricsLine(timestampMs = 2_000L, text = ""),
+        )
+
+        assertNull(
+            resolveCompactPlayerLyricsText(
+                lyrics = lyrics,
+                highlightedLineIndex = -1,
+            ),
+        )
+    }
+
+    @Test
+    fun `compact player lyrics does not surface loading placeholder without lyrics`() {
+        assertNull(
+            resolveCompactPlayerLyricsText(
+                lyrics = null,
+                highlightedLineIndex = -1,
+            ),
+        )
+    }
+
+    @Test
+    fun `compact player lyrics visibility requires enabled setting and actual lyric text`() {
+        assertFalse(shouldShowCompactPlayerLyrics(enabled = false, compactLyricsText = "第一句"))
+        assertFalse(shouldShowCompactPlayerLyrics(enabled = true, compactLyricsText = null))
+        assertFalse(shouldShowCompactPlayerLyrics(enabled = true, compactLyricsText = ""))
+        assertTrue(shouldShowCompactPlayerLyrics(enabled = true, compactLyricsText = "第一句"))
     }
 
     private fun lyricsDocument(vararg lines: LyricsLine): LyricsDocument {

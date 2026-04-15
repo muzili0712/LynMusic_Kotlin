@@ -260,6 +260,7 @@ fun App(component: LynMusicAppComponent) {
                             platform = component.platform,
                             logger = component.logger,
                             state = playerState,
+                            showCompactPlayerLyrics = settingsState.showCompactPlayerLyrics,
                             lyricsShareThemeTokens = shellThemeTokens,
                             lyricsShareTextPalette = shellTextPalette,
                             onPlayerIntent = component.playerStore::dispatch,

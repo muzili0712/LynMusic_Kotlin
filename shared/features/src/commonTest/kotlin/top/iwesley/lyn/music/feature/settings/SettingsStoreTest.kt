@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.AppStorageCategory
 import top.iwesley.lyn.music.core.model.AppStorageCategoryUsage
@@ -91,6 +92,39 @@ class SettingsStoreTest {
         assertEquals("/Applications/VLC.app/Contents/MacOS/lib", state.desktopVlcAutoDetectedPath)
         assertEquals("/opt/homebrew/Cellar/vlc/lib", state.desktopVlcManualPath)
         assertEquals("/opt/homebrew/Cellar/vlc/lib", state.desktopVlcEffectivePath)
+        scope.cancel()
+    }
+
+    @Test
+    fun `store loads persisted compact player lyrics preference`() = runTest {
+        val repository = FakeSettingsRepository(showCompactPlayerLyrics = true)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+
+        assertTrue(store.state.value.showCompactPlayerLyrics)
+        scope.cancel()
+    }
+
+    @Test
+    fun `updating compact player lyrics preference writes through immediately`() = runTest {
+        val repository = FakeSettingsRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        assertFalse(store.state.value.showCompactPlayerLyrics)
+
+        store.dispatch(SettingsIntent.ShowCompactPlayerLyricsChanged(true))
+        advanceUntilIdle()
+        assertTrue(store.state.value.showCompactPlayerLyrics)
+        assertTrue(repository.currentShowCompactPlayerLyrics())
+
+        store.dispatch(SettingsIntent.ShowCompactPlayerLyricsChanged(false))
+        advanceUntilIdle()
+        assertFalse(store.state.value.showCompactPlayerLyrics)
+        assertFalse(repository.currentShowCompactPlayerLyrics())
         scope.cancel()
     }
 
@@ -867,6 +901,7 @@ class SettingsStoreTest {
 
 private class FakeSettingsRepository(
     sources: List<LyricsSourceDefinition> = emptyList(),
+    showCompactPlayerLyrics: Boolean = false,
     selectedTheme: AppThemeId = AppThemeId.Ocean,
     customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
     textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
@@ -875,6 +910,7 @@ private class FakeSettingsRepository(
 ) : SettingsRepository {
     private val mutableSources = MutableStateFlow(sources)
     private val mutableUseSambaCache = MutableStateFlow(false)
+    private val mutableShowCompactPlayerLyrics = MutableStateFlow(showCompactPlayerLyrics)
     private val mutableSelectedTheme = MutableStateFlow(selectedTheme)
     private val mutableCustomThemeTokens = MutableStateFlow(customThemeTokens)
     private val mutableTextPalettePreferences = MutableStateFlow(textPalettePreferences)
@@ -886,6 +922,7 @@ private class FakeSettingsRepository(
 
     override val lyricsSources: Flow<List<LyricsSourceDefinition>> = mutableSources.asStateFlow()
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
+    override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
@@ -897,6 +934,7 @@ private class FakeSettingsRepository(
         private set
 
     fun currentSources(): List<LyricsSourceDefinition> = mutableSources.value
+    fun currentShowCompactPlayerLyrics(): Boolean = mutableShowCompactPlayerLyrics.value
     fun currentSelectedTheme(): AppThemeId = mutableSelectedTheme.value
     fun currentCustomThemeTokens(): AppThemeTokens = mutableCustomThemeTokens.value
     fun currentTextPalettePreferences(): AppThemeTextPalettePreferences = mutableTextPalettePreferences.value
@@ -906,6 +944,10 @@ private class FakeSettingsRepository(
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         mutableUseSambaCache.value = enabled
+    }
+
+    override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
+        mutableShowCompactPlayerLyrics.value = enabled
     }
 
     override suspend fun setSelectedTheme(themeId: AppThemeId) {

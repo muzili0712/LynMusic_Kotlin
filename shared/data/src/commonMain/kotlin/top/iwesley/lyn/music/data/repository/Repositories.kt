@@ -10,6 +10,7 @@ import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.Artist
+import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportIndexState
@@ -41,6 +42,7 @@ import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
+import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
@@ -188,6 +190,7 @@ data class AppliedLyricsResult(
 interface SettingsRepository {
     val lyricsSources: Flow<List<LyricsSourceDefinition>>
     val useSambaCache: StateFlow<Boolean>
+    val showCompactPlayerLyrics: StateFlow<Boolean>
     val selectedTheme: StateFlow<AppThemeId>
     val customThemeTokens: StateFlow<AppThemeTokens>
     val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences>
@@ -197,6 +200,7 @@ interface SettingsRepository {
 
     suspend fun ensureDefaults()
     suspend fun setUseSambaCache(enabled: Boolean)
+    suspend fun setShowCompactPlayerLyrics(enabled: Boolean)
     suspend fun setSelectedTheme(themeId: AppThemeId)
     suspend fun setCustomThemeTokens(tokens: AppThemeTokens)
     suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette)
@@ -900,6 +904,8 @@ class DefaultSettingsRepository(
     private val sambaCachePreferencesStore: SambaCachePreferencesStore,
     private val themePreferencesStore: ThemePreferencesStore,
     private val desktopVlcPreferencesStore: DesktopVlcPreferencesStore,
+    private val compactPlayerLyricsPreferencesStore: CompactPlayerLyricsPreferencesStore =
+        UnsupportedCompactPlayerLyricsPreferencesStore,
 ) : SettingsRepository {
     override val lyricsSources: Flow<List<LyricsSourceDefinition>> = combine(
         database.lyricsSourceConfigDao().observeAll(),
@@ -909,6 +915,8 @@ class DefaultSettingsRepository(
             .sortedWith(compareByDescending<LyricsSourceDefinition> { it.priority }.thenBy { it.name.lowercase() })
     }
     override val useSambaCache: StateFlow<Boolean> = sambaCachePreferencesStore.useSambaCache
+    override val showCompactPlayerLyrics: StateFlow<Boolean> =
+        compactPlayerLyricsPreferencesStore.showCompactPlayerLyrics
     override val selectedTheme: StateFlow<AppThemeId> = themePreferencesStore.selectedTheme
     override val customThemeTokens: StateFlow<AppThemeTokens> = themePreferencesStore.customThemeTokens
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = themePreferencesStore.textPalettePreferences
@@ -939,6 +947,10 @@ class DefaultSettingsRepository(
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         sambaCachePreferencesStore.setUseSambaCache(enabled)
+    }
+
+    override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
+        compactPlayerLyricsPreferencesStore.setShowCompactPlayerLyrics(enabled)
     }
 
     override suspend fun setSelectedTheme(themeId: AppThemeId) {

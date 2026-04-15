@@ -87,6 +87,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -119,6 +120,7 @@ internal fun PlayerDrawerHost(
     platform: PlatformDescriptor,
     logger: DiagnosticLogger,
     state: PlayerState,
+    showCompactPlayerLyrics: Boolean,
     lyricsShareThemeTokens: AppThemeTokens,
     lyricsShareTextPalette: AppThemeTextPalette,
     onPlayerIntent: (PlayerIntent) -> Unit,
@@ -165,6 +167,7 @@ internal fun PlayerDrawerHost(
                 platform = platform,
                 logger = logger,
                 state = state,
+                showCompactPlayerLyrics = showCompactPlayerLyrics,
                 lyricsShareThemeTokens = lyricsShareThemeTokens,
                 lyricsShareTextPalette = lyricsShareTextPalette,
                 onPlayerIntent = onPlayerIntent,
@@ -648,10 +651,22 @@ private fun rememberMiniPlayerLyricsText(state: PlayerState): String? {
     }
 }
 
-internal fun resolveMiniPlayerLyricsText(
+@Composable
+private fun rememberCompactPlayerLyricsText(state: PlayerState): String? {
+    return remember(
+        state.lyrics,
+        state.highlightedLineIndex,
+    ) {
+        resolveCompactPlayerLyricsText(
+            lyrics = state.lyrics,
+            highlightedLineIndex = state.highlightedLineIndex,
+        )
+    }
+}
+
+private fun resolveHighlightedOrFirstLyricsText(
     lyrics: LyricsDocument?,
     highlightedLineIndex: Int,
-    isLyricsLoading: Boolean,
 ): String? {
     val highlighted = lyrics
         ?.lines
@@ -662,13 +677,40 @@ internal fun resolveMiniPlayerLyricsText(
     if (highlighted != null) {
         return highlighted
     }
-    val fallback = lyrics
+    return lyrics
         ?.lines
         ?.firstOrNull { line -> line.text.trim().isNotEmpty() }
         ?.text
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
-    return fallback ?: if (isLyricsLoading) MINI_PLAYER_LYRICS_LOADING_TEXT else null
+}
+
+internal fun resolveMiniPlayerLyricsText(
+    lyrics: LyricsDocument?,
+    highlightedLineIndex: Int,
+    isLyricsLoading: Boolean,
+): String? {
+    return resolveHighlightedOrFirstLyricsText(
+        lyrics = lyrics,
+        highlightedLineIndex = highlightedLineIndex,
+    ) ?: if (isLyricsLoading) MINI_PLAYER_LYRICS_LOADING_TEXT else null
+}
+
+internal fun resolveCompactPlayerLyricsText(
+    lyrics: LyricsDocument?,
+    highlightedLineIndex: Int,
+): String? {
+    return resolveHighlightedOrFirstLyricsText(
+        lyrics = lyrics,
+        highlightedLineIndex = highlightedLineIndex,
+    )
+}
+
+internal fun shouldShowCompactPlayerLyrics(
+    enabled: Boolean,
+    compactLyricsText: String?,
+): Boolean {
+    return enabled && !compactLyricsText.isNullOrBlank()
 }
 
 internal fun hasMiniPlayerLyricsContent(
@@ -729,6 +771,7 @@ private fun PlayerOverlay(
     platform: PlatformDescriptor,
     logger: DiagnosticLogger,
     state: PlayerState,
+    showCompactPlayerLyrics: Boolean,
     lyricsShareThemeTokens: AppThemeTokens,
     lyricsShareTextPalette: AppThemeTextPalette,
     onPlayerIntent: (PlayerIntent) -> Unit,
@@ -877,6 +920,7 @@ private fun PlayerOverlay(
                     MobilePlayerPrimaryPane(
                         state = state,
                         track = track,
+                        showCompactPlayerLyrics = showCompactPlayerLyrics,
                         onPlayerIntent = onPlayerIntent,
                         modifier = Modifier
                             .weight(1f)
@@ -965,9 +1009,17 @@ private fun PlayerOverlay(
 private fun MobilePlayerPrimaryPane(
     state: PlayerState,
     track: Track,
+    showCompactPlayerLyrics: Boolean,
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val compactLyricsText = rememberCompactPlayerLyricsText(state)
+    val displayCompactLyricsText = compactLyricsText.takeIf {
+        shouldShowCompactPlayerLyrics(
+            enabled = showCompactPlayerLyrics,
+            compactLyricsText = compactLyricsText,
+        )
+    }
     var lyricsVisible by rememberSaveable(track.id) { mutableStateOf(false) }
 
     if (lyricsVisible) {
@@ -1004,16 +1056,19 @@ private fun MobilePlayerPrimaryPane(
             track = track,
             modifier = Modifier.fillMaxSize(),
             compact = true,
+            compactLyricsText = displayCompactLyricsText,
         )
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PlayerInfoPane(
     snapshot: PlaybackSnapshot,
     track: Track,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    compactLyricsText: String? = null,
 ) {
     Box(
         modifier = modifier.fillMaxSize(),
@@ -1024,15 +1079,44 @@ private fun PlayerInfoPane(
                 .fillMaxWidth()
                 .fillMaxHeight(),
         )
-        VinylPlaceholder(
-            vinylSize = if (compact) 300.dp else 420.dp,
-            artworkLocator = snapshot.currentDisplayArtworkLocator,
-            spinning = snapshot.isPlaying,
-            artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
-            innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
-            modifier = Modifier.align(Alignment.Center),
-        //    enableArtworkTint = true
-        )
+        if (compact && !compactLyricsText.isNullOrBlank()) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(50.dp),
+            ) {
+                VinylPlaceholder(
+                    vinylSize = 300.dp,
+                    artworkLocator = snapshot.currentDisplayArtworkLocator,
+                    spinning = snapshot.isPlaying,
+                    artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
+                    innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
+                )
+                Text(
+                    text = compactLyricsText,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 28.dp)
+                        .basicMarquee(),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White.copy(alpha = 0.78f),
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                )
+            }
+        } else {
+            VinylPlaceholder(
+                vinylSize = if (compact) 300.dp else 420.dp,
+                artworkLocator = snapshot.currentDisplayArtworkLocator,
+                spinning = snapshot.isPlaying,
+                artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
+                innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
     }
 }
 

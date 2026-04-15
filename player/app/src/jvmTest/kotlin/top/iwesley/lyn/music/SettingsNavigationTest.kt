@@ -5,11 +5,22 @@ import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class SettingsNavigationTest {
     @Test
     fun `desktop settings defaults to general section`() {
         assertEquals(SettingsSection.General, defaultSettingsSection(desktopPlatform()))
+    }
+
+    @Test
+    fun `desktop settings sections include general`() {
+        assertTrue(settingsSectionsForPlatform(desktopPlatform()).contains(SettingsSection.General))
+    }
+
+    @Test
+    fun `mobile settings sections include general`() {
+        assertTrue(settingsSectionsForPlatform(mobilePlatform()).contains(SettingsSection.General))
     }
 
     @Test
@@ -65,6 +76,17 @@ class SettingsNavigationTest {
 
 private fun desktopPlatform(): PlatformDescriptor = PlatformDescriptor(
     name = "Desktop",
+    capabilities = PlatformCapabilities(
+        supportsLocalFolderImport = true,
+        supportsSambaImport = true,
+        supportsWebDavImport = true,
+        supportsNavidromeImport = true,
+        supportsSystemMediaControls = true,
+    ),
+)
+
+private fun mobilePlatform(): PlatformDescriptor = PlatformDescriptor(
+    name = "Android",
     capabilities = PlatformCapabilities(
         supportsLocalFolderImport = true,
         supportsSambaImport = true,

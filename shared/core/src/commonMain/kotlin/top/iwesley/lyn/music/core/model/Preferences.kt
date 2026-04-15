@@ -19,6 +19,22 @@ interface ThemePreferencesStore {
     suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette)
 }
 
+interface CompactPlayerLyricsPreferencesStore {
+    val showCompactPlayerLyrics: StateFlow<Boolean>
+
+    suspend fun setShowCompactPlayerLyrics(enabled: Boolean)
+}
+
+object UnsupportedCompactPlayerLyricsPreferencesStore : CompactPlayerLyricsPreferencesStore {
+    private val mutableShowCompactPlayerLyrics = MutableStateFlow(false)
+
+    override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics
+
+    override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
+        mutableShowCompactPlayerLyrics.value = enabled
+    }
+}
+
 interface DesktopVlcPreferencesStore {
     val desktopVlcManualPath: StateFlow<String?>
     val desktopVlcAutoDetectedPath: StateFlow<String?>

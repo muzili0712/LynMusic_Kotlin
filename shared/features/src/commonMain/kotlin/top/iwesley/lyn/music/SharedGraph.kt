@@ -8,6 +8,7 @@ import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.AppStorageGateway
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
+import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DeviceInfoGateway
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -21,6 +22,7 @@ import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedAppStorageGateway
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
+import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
 import top.iwesley.lyn.music.core.model.UnsupportedVlcPathPickerPlatformService
@@ -50,6 +52,8 @@ data class SharedRuntimeServices(
     val secureCredentialStore: SecureCredentialStore,
     val sambaCachePreferencesStore: SambaCachePreferencesStore,
     val themePreferencesStore: ThemePreferencesStore,
+    val compactPlayerLyricsPreferencesStore: CompactPlayerLyricsPreferencesStore =
+        UnsupportedCompactPlayerLyricsPreferencesStore,
     val desktopVlcPreferencesStore: DesktopVlcPreferencesStore = UnsupportedDesktopVlcPreferencesStore,
     val librarySourceFilterPreferencesStore: LibrarySourceFilterPreferencesStore,
     val lyricsHttpClient: LyricsHttpClient,
@@ -96,6 +100,7 @@ fun buildSharedGraph(
         sambaCachePreferencesStore = runtimeServices.sambaCachePreferencesStore,
         themePreferencesStore = runtimeServices.themePreferencesStore,
         desktopVlcPreferencesStore = runtimeServices.desktopVlcPreferencesStore,
+        compactPlayerLyricsPreferencesStore = runtimeServices.compactPlayerLyricsPreferencesStore,
     )
     NavidromeLocatorRuntime.install(
         object : top.iwesley.lyn.music.core.model.NavidromeLocatorResolver {
