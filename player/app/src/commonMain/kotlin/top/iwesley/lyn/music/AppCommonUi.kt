@@ -816,8 +816,13 @@ internal fun VinylPlaceholder(
     artworkLocator: String? = null,
     spinning: Boolean = false,
     enableArtworkTint: Boolean = false,
+    artworkDiameterFraction: Float = DEFAULT_VINYL_ARTWORK_DIAMETER_FRACTION,
+    innerGlowDiameterFraction: Float = DEFAULT_VINYL_INNER_GLOW_DIAMETER_FRACTION,
     modifier: Modifier = Modifier,
 ) {
+    val normalizedArtworkDiameterFraction = artworkDiameterFraction.coerceIn(0.2f, 1f)
+    val normalizedInnerGlowDiameterFraction = innerGlowDiameterFraction
+        .coerceIn(normalizedArtworkDiameterFraction, 1f)
     val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
     val palette = rememberVinylArtworkPalette(
         artworkBitmap = artworkBitmap,
@@ -887,18 +892,20 @@ internal fun VinylPlaceholder(
                     ),
                     radius = radius,
                 )
-                val ringStart = radius * 0.58f
                 val ringEnd = radius * 0.94f
-                repeat(14) { index ->
-                    val fraction = index / 13f
-                    val ringRadius = ringStart + (ringEnd - ringStart) * fraction
-                    val ringAlpha = 0.055f - fraction * 0.03f
-                    if (ringAlpha > 0f) {
-                        drawCircle(
-                            color = Color.White.copy(alpha = ringAlpha),
-                            radius = ringRadius,
-                            style = Stroke(width = if (index % 4 == 0) 1.6f else 1.0f),
-                        )
+                val ringStart = (radius * normalizedArtworkDiameterFraction).coerceAtMost(ringEnd)
+                if (ringStart < ringEnd) {
+                    repeat(14) { index ->
+                        val fraction = index / 13f
+                        val ringRadius = ringStart + (ringEnd - ringStart) * fraction
+                        val ringAlpha = 0.055f - fraction * 0.03f
+                        if (ringAlpha > 0f) {
+                            drawCircle(
+                                color = Color.White.copy(alpha = ringAlpha),
+                                radius = ringRadius,
+                                style = Stroke(width = if (index % 4 == 0) 1.6f else 1.0f),
+                            )
+                        }
                     }
                 }
                 drawCircle(
@@ -909,7 +916,7 @@ internal fun VinylPlaceholder(
             }
             Box(
                 modifier = Modifier
-                    .size(vinylSize * 0.62f)
+                    .size(vinylSize * normalizedInnerGlowDiameterFraction)
                     .background(
                         Brush.radialGradient(
                             colorStops = arrayOf(
@@ -922,7 +929,7 @@ internal fun VinylPlaceholder(
             )
             Box(
                 modifier = Modifier
-                    .size(vinylSize * 0.58f)
+                    .size(vinylSize * normalizedArtworkDiameterFraction)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.background.copy(alpha = 0.88f))
                     .border(1.dp, Color.White.copy(alpha = 0.16f), CircleShape),
@@ -949,6 +956,9 @@ internal fun VinylPlaceholder(
         }
     }
 }
+
+private const val DEFAULT_VINYL_ARTWORK_DIAMETER_FRACTION = 0.70f
+private const val DEFAULT_VINYL_INNER_GLOW_DIAMETER_FRACTION = 0.62f
 
 internal data class VinylArtworkPalette(
     val rimColor: Color,

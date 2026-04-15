@@ -1028,7 +1028,10 @@ private fun PlayerInfoPane(
             vinylSize = if (compact) 300.dp else 420.dp,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             spinning = snapshot.isPlaying,
+            artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
+            innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
             modifier = Modifier.align(Alignment.Center),
+        //    enableArtworkTint = true
         )
     }
 }
@@ -1637,6 +1640,8 @@ private val FLOWER_PARTICLE_COLORS = listOf(
 
 private const val FLOWER_PARTICLE_LIFETIME_NANOS = 900_000_000L
 private const val PLAYER_UI_LOG_TAG = "PlayerUi"
+private const val PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION = 0.7f
+private const val PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION = 0.8f
 
 @Composable
 private fun QueueTrackRow(
