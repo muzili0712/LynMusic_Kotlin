@@ -713,6 +713,28 @@ internal fun shouldShowCompactPlayerLyrics(
     return enabled && !compactLyricsText.isNullOrBlank()
 }
 
+internal fun resolvePlayerInfoVinylSize(
+    maxWidth: Dp,
+    maxHeight: Dp,
+    compact: Boolean,
+    hasCompactLyrics: Boolean,
+): Dp {
+    return if (compact) {
+        val widthBound = maxWidth * if (hasCompactLyrics) 0.84f else 0.84f
+        val heightReserve = if (hasCompactLyrics) 32.dp else 32.dp
+        val heightBound = (maxHeight - heightReserve).coerceAtLeast(180.dp)
+        minOf(widthBound, heightBound).coerceIn(
+            minimumValue = 220.dp,
+            maximumValue = if (hasCompactLyrics) 400.dp else 400.dp,
+        )
+    } else {
+        minOf(maxWidth * 0.88f, maxHeight * 0.74f).coerceIn(
+            minimumValue = 220.dp,
+            maximumValue = 400.dp,
+        )
+    }
+}
+
 internal fun hasMiniPlayerLyricsContent(
     showPortraitLyrics: Boolean,
     lyricsText: String?,
@@ -1070,16 +1092,25 @@ private fun PlayerInfoPane(
     compact: Boolean = false,
     compactLyricsText: String? = null,
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
+        val hasCompactLyrics = compact && !compactLyricsText.isNullOrBlank()
+        val vinylSize = remember(maxWidth, maxHeight, compact, hasCompactLyrics) {
+            resolvePlayerInfoVinylSize(
+                maxWidth = maxWidth,
+                maxHeight = maxHeight,
+                compact = compact,
+                hasCompactLyrics = hasCompactLyrics,
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(),
         )
-        if (compact && !compactLyricsText.isNullOrBlank()) {
+        if (hasCompactLyrics) {
             Column(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -1088,7 +1119,7 @@ private fun PlayerInfoPane(
                 verticalArrangement = Arrangement.spacedBy(50.dp),
             ) {
                 VinylPlaceholder(
-                    vinylSize = 300.dp,
+                    vinylSize = vinylSize,
                     artworkLocator = snapshot.currentDisplayArtworkLocator,
                     spinning = snapshot.isPlaying,
                     artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
@@ -1109,7 +1140,7 @@ private fun PlayerInfoPane(
             }
         } else {
             VinylPlaceholder(
-                vinylSize = if (compact) 300.dp else 420.dp,
+                vinylSize = vinylSize,
                 artworkLocator = snapshot.currentDisplayArtworkLocator,
                 spinning = snapshot.isPlaying,
                 artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,

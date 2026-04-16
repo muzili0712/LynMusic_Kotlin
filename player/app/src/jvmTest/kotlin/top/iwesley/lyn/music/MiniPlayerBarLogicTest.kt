@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 
@@ -146,6 +147,55 @@ class MiniPlayerBarLogicTest {
         assertFalse(shouldShowCompactPlayerLyrics(enabled = true, compactLyricsText = null))
         assertFalse(shouldShowCompactPlayerLyrics(enabled = true, compactLyricsText = ""))
         assertTrue(shouldShowCompactPlayerLyrics(enabled = true, compactLyricsText = "第一句"))
+    }
+
+    @Test
+    fun `player info vinyl size grows with larger compact space`() {
+        val small = resolvePlayerInfoVinylSize(
+            maxWidth = 320.dp,
+            maxHeight = 360.dp,
+            compact = true,
+            hasCompactLyrics = false,
+        )
+        val large = resolvePlayerInfoVinylSize(
+            maxWidth = 420.dp,
+            maxHeight = 520.dp,
+            compact = true,
+            hasCompactLyrics = false,
+        )
+
+        assertTrue(large > small)
+    }
+
+    @Test
+    fun `player info vinyl size reserves more room when compact lyrics are visible`() {
+        val withoutLyrics = resolvePlayerInfoVinylSize(
+            maxWidth = 390.dp,
+            maxHeight = 520.dp,
+            compact = true,
+            hasCompactLyrics = false,
+        )
+        val withLyrics = resolvePlayerInfoVinylSize(
+            maxWidth = 390.dp,
+            maxHeight = 520.dp,
+            compact = true,
+            hasCompactLyrics = true,
+        )
+
+        assertTrue(withoutLyrics > withLyrics)
+    }
+
+    @Test
+    fun `player info vinyl size is capped on large wide layouts`() {
+        assertEquals(
+            520.dp,
+            resolvePlayerInfoVinylSize(
+                maxWidth = 900.dp,
+                maxHeight = 900.dp,
+                compact = false,
+                hasCompactLyrics = false,
+            ),
+        )
     }
 
     private fun lyricsDocument(vararg lines: LyricsLine): LyricsDocument {
