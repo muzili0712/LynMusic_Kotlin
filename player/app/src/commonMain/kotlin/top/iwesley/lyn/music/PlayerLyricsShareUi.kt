@@ -1199,6 +1199,7 @@ internal fun LyricsShareOverlay(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(0.48f),
+                                isCompactLayout = true
                             )
                             LyricsShareSelectionPane(
                                 lyricsLines = lyrics.lines.map { it.text },
@@ -1213,6 +1214,7 @@ internal fun LyricsShareOverlay(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(0.52f),
+                                isCompactLayout = true
                             )
                         }
                     }
@@ -1334,6 +1336,7 @@ private fun LyricsShareSelectionPane(
     selectedIndices: Set<Int>,
     onToggle: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    isCompactLayout: Boolean = false,
 ) {
     val shellColors = mainShellColors
     Column(
@@ -1341,7 +1344,7 @@ private fun LyricsShareSelectionPane(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SectionTitle(
-            title = "选句",
+            title = if (isCompactLayout) "" else "选句",
             subtitle = "",
         )
         Card(
@@ -1467,6 +1470,7 @@ private fun LyricsSharePreviewPane(
     fullscreenEnabled: Boolean,
     onOpenFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
+    isCompactLayout: Boolean = false,
 ) {
     val shellColors = mainShellColors
     val shareCardModel = state.shareCardModel
@@ -1476,8 +1480,8 @@ private fun LyricsSharePreviewPane(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SectionTitle(
-            title = "预览",
-            subtitle = if (fullscreenEnabled) "点击预览图全屏查看" else "",
+            title = if (isCompactLayout) "" else "预览",
+            subtitle = "" //if (fullscreenEnabled) "点击预览图全屏查看" else "",
         )
         Card(
             modifier = Modifier
