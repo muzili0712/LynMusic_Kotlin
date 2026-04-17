@@ -145,10 +145,14 @@ fun MusicTagsTab(
                 )
             }
             if (state.showDiscardChangesDialog) {
+                val shellColors = mainShellColors
                 AlertDialog(
                     onDismissRequest = { onMusicTagsIntent(MusicTagsIntent.DismissDiscardSelection) },
                     title = { Text("放弃未保存修改？") },
                     text = { Text("当前歌曲的标签还没有保存，切换后这些改动会丢失。") },
+                    containerColor = shellColors.cardContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     confirmButton = {
                         Button(onClick = { onMusicTagsIntent(MusicTagsIntent.ConfirmDiscardSelection) }) {
                             Text("放弃并切换")
