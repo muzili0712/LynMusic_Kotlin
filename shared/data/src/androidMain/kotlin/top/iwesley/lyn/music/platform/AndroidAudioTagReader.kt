@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import java.io.File
+import java.io.FileInputStream
+import java.nio.ByteBuffer
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
@@ -74,11 +76,12 @@ object AndroidAudioTagReader {
         uri: Uri,
         displayName: String?,
         artworkDirectory: File,
+        relativePath: String = displayName?.takeIf { it.isNotBlank() } ?: uri.toString(),
     ): Result<AudioTagSnapshot> {
         val retriever = MediaMetadataRetriever()
         return runCatching {
             retriever.setDataSource(context, uri)
-            AudioTagSnapshot(
+            val snapshot = AudioTagSnapshot(
                 title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
                     ?: displayName?.substringBeforeLast('.').orEmpty(),
                 artistName = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST),
@@ -96,9 +99,83 @@ object AndroidAudioTagReader {
                     ?.takeIf { it.isNotEmpty() }
                     ?.let { bytes -> storeArtwork(uri.toString(), artworkDirectory, bytes) },
             )
+            if (uri.scheme.equals("content", ignoreCase = true)) {
+                snapshot.mergeEmbeddedLyrics(
+                    probeContentUriMetadata(
+                        context = context,
+                        uri = uri,
+                        relativePath = relativePath,
+                    ),
+                )
+            } else {
+                snapshot
+            }
         }.also {
             runCatching { retriever.release() }
         }
+    }
+
+    private fun probeContentUriMetadata(
+        context: Context,
+        uri: Uri,
+        relativePath: String,
+    ): RemoteAudioMetadata? {
+        return runCatching {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+                readDescriptorMetadata(
+                    relativePath = relativePath,
+                    descriptorLength = descriptor.length.takeIf { it >= 0L },
+                    baseOffset = descriptor.startOffset,
+                    fileDescriptorProvider = { descriptor.fileDescriptor },
+                )
+            }
+        }.getOrNull() ?: runCatching {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                readDescriptorMetadata(
+                    relativePath = relativePath,
+                    descriptorLength = descriptor.statSize.takeIf { it >= 0L },
+                    baseOffset = 0L,
+                    fileDescriptorProvider = { descriptor.fileDescriptor },
+                )
+            }
+        }.getOrNull()
+    }
+
+    private fun readDescriptorMetadata(
+        relativePath: String,
+        descriptorLength: Long?,
+        baseOffset: Long,
+        fileDescriptorProvider: () -> java.io.FileDescriptor,
+    ): RemoteAudioMetadata? {
+        return FileInputStream(fileDescriptorProvider()).channel.use { channel ->
+            probeSeekableAudioMetadata(
+                relativePath = relativePath,
+                sizeBytes = descriptorLength,
+            ) { offset, length ->
+                readChannelBytes(
+                    channel = channel,
+                    startOffset = baseOffset + offset,
+                    length = length,
+                )
+            }
+        }
+    }
+
+    private fun readChannelBytes(
+        channel: java.nio.channels.FileChannel,
+        startOffset: Long,
+        length: Int,
+    ): ByteArray {
+        if (length <= 0) return ByteArray(0)
+        val buffer = ByteArray(length)
+        var totalRead = 0
+        channel.position(startOffset.coerceAtLeast(0L))
+        while (totalRead < length) {
+            val read = channel.read(ByteBuffer.wrap(buffer, totalRead, length - totalRead))
+            if (read <= 0) break
+            totalRead += read
+        }
+        return if (totalRead == buffer.size) buffer else buffer.copyOf(totalRead)
     }
 
     private fun storeArtwork(relativePath: String, artworkDirectory: File, bytes: ByteArray): String {

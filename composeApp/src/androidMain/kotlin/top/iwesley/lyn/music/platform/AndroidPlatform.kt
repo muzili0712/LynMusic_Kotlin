@@ -409,6 +409,7 @@ private class AndroidAudioTagGateway(
                         uri = Uri.fromFile(localFile),
                         displayName = localFile.name,
                         artworkDirectory = File(context.cacheDir, "artwork"),
+                        relativePath = track.relativePath,
                     ).getOrThrow()
                 }
 
@@ -417,6 +418,7 @@ private class AndroidAudioTagGateway(
                     uri = uri,
                     displayName = track.relativePath.substringAfterLast('/'),
                     artworkDirectory = File(context.cacheDir, "artwork"),
+                    relativePath = track.relativePath,
                 )
 
                 parseSambaLocator(track.mediaLocator) != null -> Result.success(
@@ -465,6 +467,7 @@ private class AndroidAudioTagGateway(
                     uri = Uri.fromFile(localFile),
                     displayName = localFile.name,
                     artworkDirectory = artworkDirectory,
+                    relativePath = track.relativePath,
                 ).getOrThrow()
             }.getOrThrow()
         }
