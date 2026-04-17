@@ -395,7 +395,7 @@ class MusicTagsStoreTest {
                 LyricsLine(timestampMs = 2_000L, text = "第二句"),
             ),
             sourceId = "direct-lrc",
-            rawPayload = "ignored",
+            rawPayload = "",
         )
         val candidate = LyricsSearchCandidate(
             sourceId = "direct-lrc",
@@ -426,6 +426,41 @@ class MusicTagsStoreTest {
     }
 
     @Test
+    fun `apply direct online lyrics candidate preserves raw payload when available`() = runTest {
+        val track = sampleTrack()
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(track),
+            snapshots = mapOf(track.id to sampleSnapshot()),
+        )
+        val enhancedRawPayload = "[offset:+250]\n[00:01.00]<00:01.00>你<00:01.40>好"
+        val lyricsDocument = LyricsDocument(
+            lines = listOf(
+                LyricsLine(timestampMs = 1_000L, text = "你好"),
+            ),
+            offsetMs = 250L,
+            sourceId = "direct-enhanced",
+            rawPayload = enhancedRawPayload,
+        )
+        val candidate = LyricsSearchCandidate(
+            sourceId = "direct-enhanced",
+            sourceName = "Direct",
+            document = lyricsDocument,
+        )
+        val store = createStore(repository, testScheduler)
+
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.OpenOnlineLyricsSearch)
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.ApplyOnlineLyricsCandidate(candidate))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(enhancedRawPayload, state.draft.embeddedLyrics)
+        assertEquals("已写入编辑器，点击保存可写回文件。", state.message)
+        assertTrue(state.isDirty)
+    }
+
+    @Test
     fun `apply workflow online lyrics candidate imports artwork bytes into draft`() = runTest {
         val track = sampleTrack()
         val repository = FakeMusicTagsRepository(
@@ -442,7 +477,13 @@ class MusicTagsStoreTest {
             durationSeconds = 180,
             imageUrl = "https://cover.test/workflow.jpg",
         )
-        val resolvedDocument = plainLyricsDocument("workflow-1", "工作流歌词")
+        val resolvedDocument = LyricsDocument(
+            lines = listOf(
+                LyricsLine(timestampMs = 1_500L, text = "工作流歌词"),
+            ),
+            sourceId = "workflow-1",
+            rawPayload = "",
+        )
         val lyricsRepository = FakeMusicTagsLyricsRepository(
             workflowResults = listOf(workflowCandidate),
             resolvedWorkflowResult = Result.success(
@@ -480,6 +521,52 @@ class MusicTagsStoreTest {
         assertTrue(state.isDirty)
         assertEquals("已写入编辑器，点击保存可写回文件。", state.message)
         assertEquals(0, repository.saveCalls)
+    }
+
+    @Test
+    fun `apply workflow online lyrics candidate preserves raw payload when available`() = runTest {
+        val track = sampleTrack()
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(track),
+            snapshots = mapOf(track.id to sampleSnapshot()),
+        )
+        val workflowCandidate = WorkflowSongCandidate(
+            sourceId = "workflow-enhanced",
+            sourceName = "Workflow",
+            id = "song-enhanced",
+            title = "候选标题",
+            artists = listOf("甲"),
+            album = "候选专辑",
+        )
+        val enhancedRawPayload = "[offset:+100]\n[00:02.00]<00:02.00>逐<00:02.20>字"
+        val resolvedDocument = LyricsDocument(
+            lines = listOf(LyricsLine(timestampMs = 2_000L, text = "逐字")),
+            offsetMs = 100L,
+            sourceId = "workflow-enhanced",
+            rawPayload = enhancedRawPayload,
+        )
+        val lyricsRepository = FakeMusicTagsLyricsRepository(
+            workflowResults = listOf(workflowCandidate),
+            resolvedWorkflowResult = Result.success(
+                ResolvedLyricsResult(
+                    document = resolvedDocument,
+                    artworkLocator = null,
+                ),
+            ),
+        )
+        val store = createStore(repository, testScheduler, lyricsRepository = lyricsRepository)
+
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.OpenOnlineLyricsSearch)
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.ApplyOnlineWorkflowSongCandidate(workflowCandidate))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(enhancedRawPayload, state.draft.embeddedLyrics)
+        assertEquals(workflowCandidate, lyricsRepository.lastResolvedWorkflowCandidate)
+        assertEquals("已写入编辑器，点击保存可写回文件。", state.message)
+        assertTrue(state.isDirty)
     }
 
     @Test

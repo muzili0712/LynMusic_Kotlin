@@ -5,6 +5,7 @@ import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
+import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.Track
@@ -510,7 +511,7 @@ class MusicTagsStore(
     ) {
         applySearchImport(
             mode = mode,
-            documentText = serializeLyricsDocument(candidate.document),
+            documentText = preferredEmbeddedLyricsText(candidate.document),
             title = candidate.title,
             artistName = candidate.artistName,
             albumTitle = candidate.albumTitle,
@@ -542,7 +543,7 @@ class MusicTagsStore(
         }
         applySearchImport(
             mode = mode,
-            documentText = serializeLyricsDocument(resolved.document),
+            documentText = preferredEmbeddedLyricsText(resolved.document),
             title = candidate.title,
             artistName = candidate.artists.joinToString(" / ").ifBlank { null },
             albumTitle = candidate.album,
@@ -629,6 +630,11 @@ class MusicTagsStore(
             artistName = searchState.artistName.trim().ifBlank { selectedTrack.artistName },
             albumTitle = searchState.albumTitle.trim().ifBlank { selectedTrack.albumTitle },
         )
+    }
+
+    private fun preferredEmbeddedLyricsText(document: LyricsDocument): String {
+        return document.rawPayload.takeIf { it.isNotBlank() }
+            ?: serializeLyricsDocument(document)
     }
 
     private suspend fun loadArtworkForDraft(locator: String?): ImportedArtworkResult {
