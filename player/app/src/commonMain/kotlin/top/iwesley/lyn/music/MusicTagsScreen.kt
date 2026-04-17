@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
@@ -63,10 +64,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
@@ -619,7 +626,7 @@ private fun MusicTagsEditorPane(
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.ComposerChanged(it)) },
                         resetKey = fieldResetKey,
                     )
-                    MusicTagsField(
+                    MusicTagsLyricsField(
                         label = "嵌入歌词",
                         value = state.draft.embeddedLyrics,
                         readOnly = readOnly,
@@ -934,6 +941,153 @@ private fun MusicTagsField(
             disabledBorderColor = shellColors.cardBorder,
         ),
         resetKey = resetKey,
+    )
+}
+
+@Composable
+private fun MusicTagsLyricsField(
+    label: String,
+    value: String,
+    readOnly: Boolean,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    minLines: Int = 8,
+    resetKey: Any? = null,
+) {
+    val shellColors = mainShellColors
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer(cacheSize = 32)
+    val horizontalScroll = rememberScrollState()
+    var textFieldValueState by remember(resetKey) {
+        mutableStateOf(musicTagsLyricsTextFieldValueFor(value))
+    }
+    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var viewportWidthPx by remember { mutableStateOf(0) }
+
+    LaunchedEffect(value, resetKey) {
+        if (value != textFieldValueState.text) {
+            textFieldValueState = musicTagsLyricsTextFieldValueFor(value)
+        }
+    }
+
+    val textColor = if (readOnly) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val textStyle = MaterialTheme.typography.bodyLarge.copy(color = textColor)
+    val contentHorizontalPadding = 16.dp
+    val contentVerticalPadding = 10.dp
+    val extraLineWidth = 12.dp
+    val measuredTextWidthPx = remember(textFieldValueState.text, textStyle, textMeasurer) {
+        textMeasurer.measure(
+            text = textFieldValueState.text.ifEmpty { " " },
+            style = textStyle,
+            softWrap = false,
+        ).size.width
+    }
+    val measuredTextWidth = with(density) { measuredTextWidthPx.toDp() }
+    val cursorPaddingPx = with(density) { contentHorizontalPadding.toPx() }
+    val cursorMarginPx = with(density) { 24.dp.toPx() }
+
+    LaunchedEffect(
+        textFieldValueState.selection,
+        textLayoutResult,
+        viewportWidthPx,
+        horizontalScroll.maxValue,
+    ) {
+        val layoutResult = textLayoutResult ?: return@LaunchedEffect
+        if (viewportWidthPx <= 0 || horizontalScroll.maxValue <= 0) return@LaunchedEffect
+        val cursorOffset = textFieldValueState.selection.end.coerceIn(0, textFieldValueState.text.length)
+        val cursorRect = layoutResult.getCursorRect(cursorOffset)
+        val cursorLeft = cursorRect.left + cursorPaddingPx
+        val cursorRight = cursorRect.right + cursorPaddingPx
+        val viewportStart = horizontalScroll.value.toFloat()
+        val viewportEnd = viewportStart + viewportWidthPx
+        val target = when {
+            cursorRight + cursorMarginPx > viewportEnd -> {
+                (cursorRight + cursorMarginPx - viewportWidthPx).roundToInt()
+            }
+
+            cursorLeft - cursorMarginPx < viewportStart -> {
+                (cursorLeft - cursorMarginPx).roundToInt()
+            }
+
+            else -> null
+        } ?: return@LaunchedEffect
+        horizontalScroll.scrollTo(target.coerceIn(0, horizontalScroll.maxValue))
+    }
+
+    BoxWithConstraints(modifier = modifier) {
+        val scrollContentWidth = maxWidth.coerceAtLeast(
+            measuredTextWidth + contentHorizontalPadding * 2 + extraLineWidth,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    width = 1.dp,
+                    color = shellColors.cardBorder,
+                    shape = RoundedCornerShape(18.dp),
+                )
+                .clip(RoundedCornerShape(18.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+                .padding(top = 8.dp, bottom = 8.dp),
+        ) {
+            Column {
+                Text(
+                    text = label,
+                    modifier = Modifier.padding(horizontal = contentHorizontalPadding),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged { viewportWidthPx = it.width }
+                        .horizontalScroll(horizontalScroll),
+                ) {
+                    BasicTextField(
+                        value = textFieldValueState,
+                        onValueChange = { updatedValue ->
+                            textFieldValueState = updatedValue
+                            if (updatedValue.composition == null && updatedValue.text != value) {
+                                onValueChange(updatedValue.text)
+                            }
+                        },
+                        modifier = Modifier
+                            .width(scrollContentWidth)
+                            .padding(
+                                horizontal = contentHorizontalPadding,
+                                vertical = contentVerticalPadding,
+                            ),
+                        readOnly = readOnly,
+                        textStyle = textStyle,
+                        minLines = minLines,
+                        maxLines = Int.MAX_VALUE,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        onTextLayout = { textLayoutResult = it },
+                    )
+                }
+                if (horizontalScroll.maxValue > 0) {
+                    MusicTagsHorizontalScrollBar(
+                        scrollState = horizontalScroll,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 12.dp, top = 2.dp, end = 12.dp, bottom = 0.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun musicTagsLyricsTextFieldValueFor(value: String): TextFieldValue {
+    return TextFieldValue(
+        text = value,
+        selection = TextRange(value.length),
     )
 }
 
