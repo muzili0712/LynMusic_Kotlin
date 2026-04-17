@@ -40,6 +40,7 @@ import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.domain.NAVIDROME_LYRICS_SOURCE_ID
+import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
 
 class LyricsRepositoryManualOverrideTest {
 
@@ -147,6 +148,64 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals("workflow-manual", resolved.document.sourceId)
         assertEquals("workflow line", resolved.document.lines.single().text)
         assertNull(directRow)
+    }
+
+    @Test
+    fun `auto direct lyrics preserves enhanced lrc payload in cache`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-enhanced",
+                urlTemplate = "https://lyrics.example/direct-enhanced",
+                priority = 100,
+            ),
+        )
+        val rawLyrics = "[offset:+250]\n[00:01.00]<00:01.00>你<00:01.40>好"
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(
+                responses = mapOf(
+                    "https://lyrics.example/direct-enhanced" to Result.success(
+                        LyricsHttpResponse(
+                            statusCode = 200,
+                            body = """
+                                {"data":[
+                                  {"id":"enhanced","title":"Blue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"${rawLyrics.replace("\n", "\\n")}"}
+                                ]}
+                            """.trimIndent(),
+                        ),
+                    ),
+                ),
+            ),
+            secureCredentialStore = MapCredentialStore(),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+        val cachedRow = database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, "direct-enhanced")
+        val repositoryFromCache = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            logger = NoopDiagnosticLogger,
+        )
+        val resolvedFromCache = repositoryFromCache.getLyrics(track)
+        val presentation = parseEnhancedLyricsPresentation(
+            rawPayload = requireNotNull(resolvedFromCache).document.rawPayload,
+            fallbackDocument = resolvedFromCache.document,
+        )
+
+        assertNotNull(resolved)
+        assertEquals("你好", resolved.document.lines.single().text)
+        assertEquals(250L, resolved.document.offsetMs)
+        assertNotNull(cachedRow)
+        assertEquals(rawLyrics, cachedRow.rawPayload)
+        assertNotNull(resolvedFromCache)
+        assertEquals(rawLyrics, resolvedFromCache.document.rawPayload)
+        assertNotNull(presentation)
+        assertEquals(listOf("你", "好"), presentation.lines.single().segments.map { it.text })
     }
 
     @Test

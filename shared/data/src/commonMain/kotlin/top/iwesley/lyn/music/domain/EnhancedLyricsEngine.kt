@@ -1,0 +1,220 @@
+package top.iwesley.lyn.music.domain
+
+import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.core.model.LyricsLine
+
+data class EnhancedLyricsSegment(
+    val text: String,
+    val startTimeMs: Long,
+    val endTimeMs: Long? = null,
+)
+
+data class EnhancedLyricsDisplayLine(
+    val text: String,
+    val lineStartTimeMs: Long?,
+    val lineEndTimeMs: Long? = null,
+    val segments: List<EnhancedLyricsSegment> = emptyList(),
+)
+
+data class EnhancedLyricsPresentation(
+    val lines: List<EnhancedLyricsDisplayLine>,
+    val offsetMs: Long = 0L,
+)
+
+internal data class ParsedStructuredLyricsPayload(
+    val lines: List<LyricsLine>,
+    val offsetMs: Long,
+    val displayLines: List<EnhancedLyricsDisplayLine>,
+    val hasEnhancedSegments: Boolean,
+)
+
+fun parseEnhancedLyricsPresentation(
+    rawPayload: String,
+    fallbackDocument: LyricsDocument,
+): EnhancedLyricsPresentation? {
+    val parsed = parseStructuredLyricsPayload(rawPayload) ?: return null
+    if (!parsed.hasEnhancedSegments) return null
+    if (parsed.lines.size != fallbackDocument.lines.size) return null
+    val matchesFallback = parsed.lines.zip(fallbackDocument.lines).all { (parsedLine, fallbackLine) ->
+        parsedLine.timestampMs == fallbackLine.timestampMs &&
+            parsedLine.text == fallbackLine.text
+    }
+    if (!matchesFallback) return null
+    return EnhancedLyricsPresentation(
+        lines = parsed.displayLines,
+        offsetMs = fallbackDocument.offsetMs,
+    )
+}
+
+internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredLyricsPayload? {
+    if (rawPayload.isBlank()) return null
+    val hasStructuredSyntax = rawPayload.lineSequence()
+        .map { it.trim() }
+        .any { line ->
+            line.isNotEmpty() && (
+                ENHANCED_LYRICS_OFFSET_REGEX.matches(line) ||
+                    ENHANCED_LYRICS_METADATA_REGEX.matches(line) ||
+                    ENHANCED_LYRICS_LINE_TIMESTAMP_REGEX.containsMatchIn(line) ||
+                    ENHANCED_LYRICS_INLINE_TIMESTAMP_REGEX.containsMatchIn(line)
+                )
+        }
+    if (!hasStructuredSyntax) return null
+
+    var offsetMs = 0L
+    val documentLines = mutableListOf<LyricsLine>()
+    val displayLineDrafts = mutableListOf<ParsedDisplayLineDraft>()
+
+    rawPayload.lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .forEach { rawLine ->
+            val offsetMatch = ENHANCED_LYRICS_OFFSET_REGEX.matchEntire(rawLine)
+            if (offsetMatch != null) {
+                offsetMs = offsetMatch.groupValues[1].toLongOrNull() ?: offsetMs
+                return@forEach
+            }
+            if (ENHANCED_LYRICS_METADATA_REGEX.matches(rawLine)) {
+                return@forEach
+            }
+
+            val lineTimestampMatches = ENHANCED_LYRICS_LINE_TIMESTAMP_REGEX.findAll(rawLine).toList()
+            val lineTimestamps = lineTimestampMatches.mapNotNull(::parseStructuredTimestampMatch)
+            val content = rawLine.replace(ENHANCED_LYRICS_LINE_TIMESTAMP_REGEX, "")
+            val segmentDrafts = parseEnhancedSegmentDrafts(content)
+
+            if (segmentDrafts != null) {
+                val visibleText = segmentDrafts.joinToString(separator = "") { it.text }.ifBlank { "..." }
+                val lineStartTimeMs = lineTimestamps.firstOrNull() ?: segmentDrafts.firstOrNull()?.startTimeMs
+                documentLines += LyricsLine(
+                    timestampMs = lineStartTimeMs,
+                    text = visibleText,
+                )
+                displayLineDrafts += ParsedDisplayLineDraft(
+                    text = visibleText,
+                    lineStartTimeMs = lineStartTimeMs,
+                    segments = segmentDrafts,
+                )
+                return@forEach
+            }
+
+            if (lineTimestamps.isNotEmpty()) {
+                val lyricText = content.trim().ifBlank { "..." }
+                lineTimestamps.forEach { timestampMs ->
+                    documentLines += LyricsLine(
+                        timestampMs = timestampMs,
+                        text = lyricText,
+                    )
+                    displayLineDrafts += ParsedDisplayLineDraft(
+                        text = lyricText,
+                        lineStartTimeMs = timestampMs,
+                    )
+                }
+                return@forEach
+            }
+
+            val lyricText = content.trim().takeIf { it.isNotEmpty() } ?: return@forEach
+            documentLines += LyricsLine(
+                timestampMs = null,
+                text = lyricText,
+            )
+            displayLineDrafts += ParsedDisplayLineDraft(
+                text = lyricText,
+                lineStartTimeMs = null,
+            )
+        }
+
+    if (documentLines.isEmpty()) return null
+    val displayLines = finalizeDisplayLines(displayLineDrafts)
+    return ParsedStructuredLyricsPayload(
+        lines = documentLines,
+        offsetMs = offsetMs,
+        displayLines = displayLines,
+        hasEnhancedSegments = displayLines.any { it.segments.isNotEmpty() },
+    )
+}
+
+private data class ParsedDisplayLineDraft(
+    val text: String,
+    val lineStartTimeMs: Long?,
+    val segments: List<ParsedSegmentDraft> = emptyList(),
+)
+
+private data class ParsedSegmentDraft(
+    val text: String,
+    val startTimeMs: Long,
+)
+
+private fun finalizeDisplayLines(drafts: List<ParsedDisplayLineDraft>): List<EnhancedLyricsDisplayLine> {
+    return drafts.mapIndexed { index, draft ->
+        val nextLineStartTimeMs = drafts.asSequence()
+            .drop(index + 1)
+            .mapNotNull { it.lineStartTimeMs }
+            .firstOrNull()
+            ?.takeIf { nextStart -> draft.lineStartTimeMs == null || nextStart > draft.lineStartTimeMs }
+        EnhancedLyricsDisplayLine(
+            text = draft.text,
+            lineStartTimeMs = draft.lineStartTimeMs,
+            lineEndTimeMs = nextLineStartTimeMs,
+            segments = draft.segments.mapIndexed { segmentIndex, segment ->
+                val nextSegmentStartTimeMs = draft.segments
+                    .getOrNull(segmentIndex + 1)
+                    ?.startTimeMs
+                    ?.takeIf { nextStart -> nextStart > segment.startTimeMs }
+                EnhancedLyricsSegment(
+                    text = segment.text,
+                    startTimeMs = segment.startTimeMs,
+                    endTimeMs = nextSegmentStartTimeMs ?: nextLineStartTimeMs,
+                )
+            },
+        )
+    }
+}
+
+private fun parseEnhancedSegmentDrafts(content: String): List<ParsedSegmentDraft>? {
+    val matches = ENHANCED_LYRICS_INLINE_TIMESTAMP_REGEX.findAll(content).toList()
+    if (matches.isEmpty()) return null
+    val leadingText = content.substring(0, matches.first().range.first)
+    val segments = buildList {
+        matches.forEachIndexed { index, match ->
+            val segmentStartTimeMs = parseStructuredTimestampMatch(match) ?: return@forEachIndexed
+            val segmentTextStart = match.range.last + 1
+            val segmentTextEnd = matches.getOrNull(index + 1)?.range?.first ?: content.length
+            val segmentText = buildString {
+                if (index == 0) {
+                    append(leadingText)
+                }
+                append(content.substring(segmentTextStart, segmentTextEnd))
+            }
+            if (segmentText.isNotEmpty()) {
+                add(
+                    ParsedSegmentDraft(
+                        text = segmentText,
+                        startTimeMs = segmentStartTimeMs,
+                    ),
+                )
+            }
+        }
+    }
+    return segments
+}
+
+private fun parseStructuredTimestampMatch(match: MatchResult): Long? {
+    val minute = match.groupValues.getOrNull(1)?.toLongOrNull() ?: return null
+    val second = match.groupValues.getOrNull(2)?.toLongOrNull() ?: return null
+    val fraction = match.groupValues.getOrElse(3) { "" }
+    val millis = when (fraction.length) {
+        0 -> 0L
+        1 -> fraction.toLong() * 100L
+        2 -> fraction.toLong() * 10L
+        else -> fraction.take(3).toLong()
+    }
+    return minute * 60_000L + second * 1_000L + millis
+}
+
+private val ENHANCED_LYRICS_LINE_TIMESTAMP_REGEX = Regex("""\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?]""")
+private val ENHANCED_LYRICS_INLINE_TIMESTAMP_REGEX = Regex("""<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>""")
+private val ENHANCED_LYRICS_OFFSET_REGEX = Regex("""^\[offset:\s*([+-]?\d+)\s*]$""", RegexOption.IGNORE_CASE)
+private val ENHANCED_LYRICS_METADATA_REGEX = Regex(
+    """^\[(ti|ar|al|by|re|ve|length|lang|language):.*]$""",
+    RegexOption.IGNORE_CASE,
+)

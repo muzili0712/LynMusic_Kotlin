@@ -33,6 +33,8 @@ data class ParsedLyricsPayload(
 
 internal data class ExtractedLyricsPayload(
     val lines: List<LyricsLine>,
+    val offsetMs: Long = 0L,
+    val rawLyricsPayload: String? = null,
     val itemId: String? = null,
     val title: String? = null,
     val artistName: String? = null,
@@ -83,12 +85,17 @@ fun parseLyricsPayloadResults(
     )
     return extracted.mapNotNull { candidate ->
         candidate.lines.takeIf { it.isNotEmpty() }?.let { lines ->
+            val parsedDocument = LyricsDocument(
+                lines = lines,
+                offsetMs = candidate.offsetMs,
+                sourceId = config.id,
+                rawPayload = "",
+            )
             ParsedLyricsPayload(
-                document = LyricsDocument(
-                    lines = lines,
-                    offsetMs = 0L,
-                    sourceId = config.id,
-                    rawPayload = payload,
+                document = parsedDocument.copy(
+                    rawPayload = candidate.rawLyricsPayload
+                        ?.takeIf { it.isNotBlank() }
+                        ?: serializeLyricsDocument(parsedDocument),
                 ),
                 itemId = candidate.itemId,
                 title = candidate.title,
@@ -107,10 +114,20 @@ internal fun extractLyricsPayloadCandidates(
     payload: String,
 ): List<ExtractedLyricsPayload> {
     return when (responseFormat) {
-        LyricsResponseFormat.LRC -> listOf(ExtractedLyricsPayload(lines = parseLrc(payload)))
-        LyricsResponseFormat.TEXT -> listOf(ExtractedLyricsPayload(lines = parsePlainText(payload)))
+        LyricsResponseFormat.LRC -> listOf(
+            parseExtractedTextLyricsPayload(
+                payload = payload,
+                allowPlainTextFallback = false,
+            ),
+        )
+        LyricsResponseFormat.TEXT -> listOf(
+            parseExtractedTextLyricsPayload(
+                payload = payload,
+                allowPlainTextFallback = true,
+            ),
+        )
         LyricsResponseFormat.JSON -> parseJsonPayloads(extractor, payload)
-        LyricsResponseFormat.XML -> listOf(ExtractedLyricsPayload(lines = parseXmlPayload(extractor, payload)))
+        LyricsResponseFormat.XML -> listOf(parseXmlPayload(extractor, payload))
     }
 }
 
@@ -126,6 +143,16 @@ fun serializeLyricsDocument(document: LyricsDocument): String {
 }
 
 fun parseCachedLyrics(sourceId: String, rawPayload: String): LyricsDocument? {
+    parseStructuredLyricsPayload(rawPayload)?.let { parsed ->
+        if (parsed.lines.isNotEmpty()) {
+            return LyricsDocument(
+                lines = parsed.lines,
+                offsetMs = parsed.offsetMs,
+                sourceId = sourceId,
+                rawPayload = rawPayload,
+            )
+        }
+    }
     val lrcLines = parseLrc(rawPayload)
     val lines = if (lrcLines.isNotEmpty()) lrcLines else parsePlainText(rawPayload)
     if (lines.isEmpty()) return null
@@ -175,7 +202,12 @@ private fun parseJsonPayloads(extractor: String, payload: String): List<Extracte
                 normalized.isBlank() || normalized == "text" -> root.jsonPrimitiveContent()
                 else -> extractJsonValue(root, normalized)?.jsonPrimitiveContent()
             }.orEmpty()
-            listOf(ExtractedLyricsPayload(lines = parseLrc(extracted).ifEmpty { parsePlainText(extracted) }))
+            listOf(
+                parseExtractedTextLyricsPayload(
+                    payload = extracted,
+                    allowPlainTextFallback = true,
+                ),
+            )
         }
     }
 }
@@ -217,8 +249,14 @@ private fun parseJsonMappedCandidate(
     val lyricsPayload = mappings["lyrics"]
         ?.let { path -> extractFirstMappedContent(target, path) }
         .orEmpty()
+    val parsedPayload = parseExtractedTextLyricsPayload(
+        payload = lyricsPayload,
+        allowPlainTextFallback = true,
+    )
     return ExtractedLyricsPayload(
-        lines = parseLrc(lyricsPayload).ifEmpty { parsePlainText(lyricsPayload) },
+        lines = parsedPayload.lines,
+        offsetMs = parsedPayload.offsetMs,
+        rawLyricsPayload = parsedPayload.rawLyricsPayload,
         itemId = mappings["id"]?.let { path -> extractFirstMappedText(target, path) },
         title = mappings["title"]?.let { path -> extractFirstMappedText(target, path) },
         artistName = mappings["artist"]?.let { path -> extractFirstMappedText(target, path) },
@@ -276,7 +314,7 @@ private fun String.toDurationSecondsOrNull(): Int? {
         ?: toDoubleOrNull()?.takeIf { it.isFinite() }?.roundToInt()
 }
 
-private fun parseXmlPayload(extractor: String, payload: String): List<LyricsLine> {
+private fun parseXmlPayload(extractor: String, payload: String): ExtractedLyricsPayload {
     val normalized = extractor.removePrefix("xml:").removePrefix("xml-lines:")
     return if (extractor.startsWith("xml-lines:")) {
         val (itemTag, mapping) = normalized.split('|', limit = 2).let {
@@ -285,20 +323,53 @@ private fun parseXmlPayload(extractor: String, payload: String): List<LyricsLine
         val fields = mapping.split(',').map { it.trim() }
         val timeTag = fields.getOrNull(0).orEmpty()
         val textTag = fields.getOrNull(1).orEmpty()
-        extractXmlTagItems(payload, itemTag).mapNotNull { node ->
-            val text = extractXmlTagValue(node, textTag) ?: return@mapNotNull null
-            LyricsLine(
-                timestampMs = parseFlexibleTimestamp(extractXmlTagValue(node, timeTag)),
-                text = text.trim(),
-            )
-        }
+        ExtractedLyricsPayload(
+            lines = extractXmlTagItems(payload, itemTag).mapNotNull { node ->
+                val text = extractXmlTagValue(node, textTag) ?: return@mapNotNull null
+                LyricsLine(
+                    timestampMs = parseFlexibleTimestamp(extractXmlTagValue(node, timeTag)),
+                    text = text.trim(),
+                )
+            },
+        )
     } else {
         val extracted = when {
             normalized.isBlank() || normalized == "text" -> payload
             else -> extractXmlPath(payload, normalized.split('.')).orEmpty()
         }
-        parseLrc(extracted).ifEmpty { parsePlainText(extracted) }
+        parseExtractedTextLyricsPayload(
+            payload = extracted,
+            allowPlainTextFallback = true,
+        )
     }
+}
+
+private fun parseExtractedTextLyricsPayload(
+    payload: String,
+    allowPlainTextFallback: Boolean,
+): ExtractedLyricsPayload {
+    parseStructuredLyricsPayload(payload)?.let { parsed ->
+        return ExtractedLyricsPayload(
+            lines = parsed.lines,
+            offsetMs = parsed.offsetMs,
+            rawLyricsPayload = payload.takeIf { parsed.lines.isNotEmpty() },
+        )
+    }
+    val lrcLines = parseLrc(payload)
+    if (lrcLines.isNotEmpty()) {
+        return ExtractedLyricsPayload(
+            lines = lrcLines,
+            rawLyricsPayload = payload,
+        )
+    }
+    if (!allowPlainTextFallback) {
+        return ExtractedLyricsPayload(lines = emptyList())
+    }
+    val textLines = parsePlainText(payload)
+    return ExtractedLyricsPayload(
+        lines = textLines,
+        rawLyricsPayload = payload.takeIf { textLines.isNotEmpty() },
+    )
 }
 
 fun parseLrc(text: String): List<LyricsLine> {

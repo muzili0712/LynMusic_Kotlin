@@ -84,6 +84,7 @@ import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
+import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
 import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
@@ -225,6 +226,14 @@ internal fun PlayerLyricsPane(
                 }
             }
             val lyrics = state.lyrics
+            val enhancedLyricsPresentation = remember(lyrics) {
+                lyrics?.let { document ->
+                    parseEnhancedLyricsPresentation(
+                        rawPayload = document.rawPayload,
+                        fallbackDocument = document,
+                    )
+                }
+            }
             if (lyrics == null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     EmptyStateCard(
@@ -245,6 +254,8 @@ internal fun PlayerLyricsPane(
                         verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 16.dp),
                     ) {
                         itemsIndexed(lyrics.lines) { index, line ->
+                            val enhancedLine = enhancedLyricsPresentation?.lines?.getOrNull(index)
+                            val currentLyricsPositionMs = state.snapshot.positionMs + lyrics.offsetMs
                             val distance = if (state.highlightedLineIndex >= 0) {
                                 abs(index - state.highlightedLineIndex)
                             } else {
@@ -272,20 +283,34 @@ internal fun PlayerLyricsPane(
                                     lyricsPrimaryTextColor
                                 },
                             )
-                            Text(
-                                text = line.text,
-                                style = if (index == state.highlightedLineIndex) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
-                                color = animatedColor,
-                                textAlign = TextAlign.Start,
-                                fontWeight = if (index == state.highlightedLineIndex) FontWeight.Bold else FontWeight.Normal,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .graphicsLayer(
-                                        alpha = animatedAlpha,
-                                        scaleX = animatedScale,
-                                        scaleY = animatedScale,
-                                    ),
-                            )
+                            val lineModifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer(
+                                    alpha = animatedAlpha,
+                                    scaleX = animatedScale,
+                                    scaleY = animatedScale,
+                                )
+                            if (index == state.highlightedLineIndex && enhancedLine?.segments?.isNotEmpty() == true) {
+                                EnhancedLyricsLineText(
+                                    line = enhancedLine,
+                                    currentPositionMs = currentLyricsPositionMs,
+                                    activeColor = animatedColor,
+                                    inactiveColor = lyricsSecondaryTextColor.copy(alpha = 0.78f),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    textAlign = TextAlign.Start,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = lineModifier,
+                                )
+                            } else {
+                                Text(
+                                    text = line.text,
+                                    style = if (index == state.highlightedLineIndex) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+                                    color = animatedColor,
+                                    textAlign = TextAlign.Start,
+                                    fontWeight = if (index == state.highlightedLineIndex) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = lineModifier,
+                                )
+                            }
                         }
                     }
                 }

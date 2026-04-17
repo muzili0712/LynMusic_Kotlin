@@ -1546,10 +1546,10 @@ class DefaultLyricsRepository(
     }
 
     private fun buildAppliedLyricsDocument(candidate: LyricsSearchCandidate): LyricsDocument {
-        val serialized = serializeLyricsDocument(candidate.document)
-        return parseCachedLyrics(candidate.sourceId, serialized) ?: candidate.document.copy(
+        val rawPayload = preferredStoredLyricsPayload(candidate.document)
+        return parseCachedLyrics(candidate.sourceId, rawPayload) ?: candidate.document.copy(
             sourceId = candidate.sourceId,
-            rawPayload = serialized,
+            rawPayload = rawPayload,
         )
     }
 
@@ -1575,7 +1575,7 @@ class DefaultLyricsRepository(
             candidate = candidate,
             requestType = "manual",
         ) ?: error("Workflow lyrics source ${candidate.sourceName} 没有返回可解析歌词。")
-        return document.copy(rawPayload = serializeLyricsDocument(document))
+        return document.copy(rawPayload = preferredStoredLyricsPayload(document))
     }
 
     private suspend fun manualOverrideRow(trackId: String): LyricsCacheEntity? {
@@ -1701,7 +1701,7 @@ class DefaultLyricsRepository(
             requestType = "tag-import",
         ) ?: error("Workflow lyrics source ${candidate.sourceName} 没有返回可解析歌词。")
         return ResolvedLyricsResult(
-            document = document.copy(rawPayload = serializeLyricsDocument(document)),
+            document = document.copy(rawPayload = preferredStoredLyricsPayload(document)),
             artworkLocator = normalizeArtworkLocator(candidate.imageUrl),
         )
     }
@@ -2024,12 +2024,17 @@ class DefaultLyricsRepository(
             LyricsCacheEntity(
                 trackId = trackId,
                 sourceId = cacheSourceId,
-                rawPayload = serializeLyricsDocument(document),
+                rawPayload = preferredStoredLyricsPayload(document),
                 updatedAt = now(),
                 artworkLocator = normalizeArtworkLocator(artworkLocator),
             ),
         )
     }
+}
+
+private fun preferredStoredLyricsPayload(document: LyricsDocument): String {
+    return document.rawPayload.takeIf { it.isNotBlank() }
+        ?: serializeLyricsDocument(document)
 }
 
 private data class ScoredManualDirectLyricsCandidate(
