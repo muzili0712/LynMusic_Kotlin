@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music
 
+import androidx.compose.ui.graphics.Color
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -52,5 +53,27 @@ class EnhancedLyricsRenderingTest {
         assertTrue(beforeStart.first() > 0f && beforeStart.first() < 1f)
         assertEquals(0f, beforeStart.last())
         assertEquals(1f, afterStart.last())
+    }
+
+    @Test
+    fun `annotated string preserves eslrc segment spacing`() {
+        val line = EnhancedLyricsDisplayLine(
+            text = "Test Word",
+            lineStartTimeMs = 1_000L,
+            lineEndTimeMs = 1_800L,
+            segments = listOf(
+                EnhancedLyricsSegment(text = "Test", startTimeMs = 1_000L, endTimeMs = 1_200L),
+                EnhancedLyricsSegment(text = " Word", startTimeMs = 1_200L, endTimeMs = 1_800L),
+            ),
+        )
+
+        val annotated = buildEnhancedLyricsAnnotatedString(
+            line = line,
+            currentPositionMs = 1_300L,
+            activeColor = Color.White,
+            inactiveColor = Color.Black,
+        )
+
+        assertEquals("Test Word", annotated.text)
     }
 }

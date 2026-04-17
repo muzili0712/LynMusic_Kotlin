@@ -49,6 +49,51 @@ class EnhancedLyricsEngineTest {
     }
 
     @Test
+    fun `eslrc parses line timestamps into enhanced segments`() {
+        val rawLyrics = "[00:01.00]你[00:01.30]好[00:01.70]"
+
+        val document = parseCachedLyrics(sourceId = "test-source", rawPayload = rawLyrics)
+        val presentation = parseEnhancedLyricsPresentation(
+            rawPayload = rawLyrics,
+            fallbackDocument = requireNotNull(document),
+        )
+
+        assertNotNull(document)
+        assertEquals(listOf("你好"), document.lines.map { it.text })
+        assertEquals(listOf(1_000L), document.lines.map { it.timestampMs })
+        assertNotNull(presentation)
+        assertEquals("你好", presentation.lines.single().text)
+        assertEquals(1_700L, presentation.lines.single().lineEndTimeMs)
+        assertEquals(listOf("你", "好"), presentation.lines.single().segments.map { it.text })
+        assertEquals(listOf(1_000L, 1_300L), presentation.lines.single().segments.map { it.startTimeMs })
+        assertEquals(listOf(1_300L, 1_700L), presentation.lines.single().segments.map { it.endTimeMs })
+    }
+
+    @Test
+    fun `eslrc preserves offset spacing and sorts multiple lines`() {
+        val rawLyrics = """
+            [offset:+250]
+            [00:03.00]世[00:03.40]界[00:03.90]
+            [00:01.00]Test[00:01.20] Word[00:01.80]
+        """.trimIndent()
+
+        val document = parseCachedLyrics(sourceId = "test-source", rawPayload = rawLyrics)
+        val presentation = parseEnhancedLyricsPresentation(
+            rawPayload = rawLyrics,
+            fallbackDocument = requireNotNull(document),
+        )
+
+        assertNotNull(document)
+        assertEquals(250L, document.offsetMs)
+        assertEquals(listOf("Test Word", "世界"), document.lines.map { it.text })
+        assertEquals(listOf(1_000L, 3_000L), document.lines.map { it.timestampMs })
+        assertNotNull(presentation)
+        assertEquals(listOf("Test", " Word"), presentation.lines.first().segments.map { it.text })
+        assertEquals(listOf(1_000L, 1_200L), presentation.lines.first().segments.map { it.startTimeMs })
+        assertEquals(listOf(1_200L, 1_800L), presentation.lines.first().segments.map { it.endTimeMs })
+    }
+
+    @Test
     fun `metadata tags are ignored and do not leak into displayed lyric lines`() {
         val rawLyrics = """
             [ar:Artist A]
@@ -77,6 +122,18 @@ class EnhancedLyricsEngineTest {
         assertEquals(0L, document.offsetMs)
         assertEquals(listOf(1_000L, 2_500L), document.lines.map { it.timestampMs })
         assertEquals(listOf("第一句", "第二句"), document.lines.map { it.text })
+    }
+
+    @Test
+    fun `multiple lrc timestamps still parse as repeated plain lines`() {
+        val rawLyrics = "[00:01.00][00:02.50]同一句"
+
+        val document = parseCachedLyrics(sourceId = "test-source", rawPayload = rawLyrics)
+
+        assertNotNull(document)
+        assertEquals(listOf(1_000L, 2_500L), document.lines.map { it.timestampMs })
+        assertEquals(listOf("同一句", "同一句"), document.lines.map { it.text })
+        assertNull(parseEnhancedLyricsPresentation(rawPayload = rawLyrics, fallbackDocument = document))
     }
 
     @Test

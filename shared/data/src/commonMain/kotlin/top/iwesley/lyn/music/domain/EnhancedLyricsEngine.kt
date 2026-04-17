@@ -84,6 +84,15 @@ internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredL
                 return@forEach
             }
 
+            parseEslrcDisplayLineDraft(rawLine)?.let { eslrcLine ->
+                documentLines += LyricsLine(
+                    timestampMs = eslrcLine.lineStartTimeMs,
+                    text = eslrcLine.text,
+                )
+                displayLineDrafts += eslrcLine
+                return@forEach
+            }
+
             val lineTimestampMatches = ENHANCED_LYRICS_LINE_TIMESTAMP_REGEX.findAll(rawLine).toList()
             val lineTimestamps = lineTimestampMatches.mapNotNull(::parseStructuredTimestampMatch)
             val content = rawLine.replace(ENHANCED_LYRICS_LINE_TIMESTAMP_REGEX, "")
@@ -131,9 +140,26 @@ internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredL
         }
 
     if (documentLines.isEmpty()) return null
-    val displayLines = finalizeDisplayLines(displayLineDrafts)
+    val orderedEntries = documentLines
+        .zip(displayLineDrafts)
+        .withIndex()
+        .let { indexedEntries ->
+            if (documentLines.all { it.timestampMs != null }) {
+                indexedEntries.sortedWith(
+                    compareBy<IndexedValue<Pair<LyricsLine, ParsedDisplayLineDraft>>> {
+                        it.value.first.timestampMs ?: Long.MAX_VALUE
+                    }.thenBy { it.index },
+                )
+            } else {
+                indexedEntries
+            }
+        }
+        .map { it.value }
+    val orderedDocumentLines = orderedEntries.map { it.first }
+    val orderedDisplayLineDrafts = orderedEntries.map { it.second }
+    val displayLines = finalizeDisplayLines(orderedDisplayLineDrafts)
     return ParsedStructuredLyricsPayload(
-        lines = documentLines,
+        lines = orderedDocumentLines,
         offsetMs = offsetMs,
         displayLines = displayLines,
         hasEnhancedSegments = displayLines.any { it.segments.isNotEmpty() },
@@ -212,6 +238,44 @@ private fun parseEnhancedSegmentDrafts(content: String): List<ParsedSegmentDraft
         }
     }
     return segments
+}
+
+private fun parseEslrcDisplayLineDraft(rawLine: String): ParsedDisplayLineDraft? {
+    var content = rawLine
+    val lineStart = parseStructuredTimestampPrefix(content) ?: return null
+    content = content.substring(lineStart.length)
+    if (content.trim().isEmpty()) return null
+
+    val segments = buildList {
+        var currentStartTimeMs = lineStart.timeMs
+        var remaining = content
+        while (remaining.trim().isNotEmpty()) {
+            val nextTimestampIndex = remaining.indexOf('[')
+            if (nextTimestampIndex <= 0) {
+                return null
+            }
+            val nextTimestamp = parseStructuredTimestampPrefix(
+                remaining.substring(nextTimestampIndex),
+            ) ?: return null
+            add(
+                ParsedSegmentDraft(
+                    text = remaining.substring(0, nextTimestampIndex),
+                    startTimeMs = currentStartTimeMs,
+                    endTimeMs = nextTimestamp.timeMs,
+                ),
+            )
+            remaining = remaining.substring(nextTimestampIndex + nextTimestamp.length)
+            currentStartTimeMs = nextTimestamp.timeMs
+        }
+    }
+    if (segments.isEmpty()) return null
+    val visibleText = segments.joinToString(separator = "") { it.text }.ifBlank { "..." }
+    return ParsedDisplayLineDraft(
+        text = visibleText,
+        lineStartTimeMs = lineStart.timeMs,
+        lineEndTimeMs = segments.last().endTimeMs,
+        segments = segments,
+    )
 }
 
 internal fun parseNavidromeStructuredLyricsPayload(rawPayload: String): ParsedStructuredLyricsPayload? {
@@ -404,6 +468,21 @@ private fun parseStructuredTimestampMatch(match: MatchResult): Long? {
     }
     return minute * 60_000L + second * 1_000L + millis
 }
+
+private fun parseStructuredTimestampPrefix(src: String): ParsedTimestampPrefix? {
+    val match = ENHANCED_LYRICS_LINE_TIMESTAMP_REGEX.find(src)
+        ?.takeIf { it.range.first == 0 }
+        ?: return null
+    return ParsedTimestampPrefix(
+        timeMs = parseStructuredTimestampMatch(match) ?: return null,
+        length = match.value.length,
+    )
+}
+
+private data class ParsedTimestampPrefix(
+    val timeMs: Long,
+    val length: Int,
+)
 
 private val ENHANCED_LYRICS_LINE_TIMESTAMP_REGEX = Regex("""\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?]""")
 private val ENHANCED_LYRICS_INLINE_TIMESTAMP_REGEX = Regex("""<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>""")

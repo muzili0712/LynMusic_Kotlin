@@ -210,6 +210,64 @@ class LyricsRepositoryManualOverrideTest {
     }
 
     @Test
+    fun `auto direct lyrics preserves eslrc payload in cache`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-eslrc",
+                urlTemplate = "https://lyrics.example/direct-eslrc",
+                priority = 100,
+            ),
+        )
+        val rawLyrics = "[offset:+250]\n[00:01.00]Test[00:01.20] Word[00:01.80]"
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(
+                responses = mapOf(
+                    "https://lyrics.example/direct-eslrc" to Result.success(
+                        LyricsHttpResponse(
+                            statusCode = 200,
+                            body = """
+                                {"data":[
+                                  {"id":"eslrc","title":"Blue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"${rawLyrics.replace("\n", "\\n")}"}
+                                ]}
+                            """.trimIndent(),
+                        ),
+                    ),
+                ),
+            ),
+            secureCredentialStore = MapCredentialStore(),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+        val cachedRow = database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, "direct-eslrc")
+        val repositoryFromCache = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            logger = NoopDiagnosticLogger,
+        )
+        val resolvedFromCache = repositoryFromCache.getLyrics(track)
+        val presentation = parseEnhancedLyricsPresentation(
+            rawPayload = requireNotNull(resolvedFromCache).document.rawPayload,
+            fallbackDocument = resolvedFromCache.document,
+        )
+
+        assertNotNull(resolved)
+        assertEquals("Test Word", resolved.document.lines.single().text)
+        assertEquals(250L, resolved.document.offsetMs)
+        assertNotNull(cachedRow)
+        assertEquals(rawLyrics, cachedRow.rawPayload)
+        assertNotNull(resolvedFromCache)
+        assertEquals(rawLyrics, resolvedFromCache.document.rawPayload)
+        assertNotNull(presentation)
+        assertEquals(listOf("Test", " Word"), presentation.lines.single().segments.map { it.text })
+    }
+
+    @Test
     fun `manual direct lyrics search sorts candidates by score descending`() = runTest {
         val database = createTestDatabase()
         val track = localTrack()
