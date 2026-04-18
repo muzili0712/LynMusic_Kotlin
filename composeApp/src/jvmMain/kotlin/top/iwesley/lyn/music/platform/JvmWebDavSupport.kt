@@ -39,9 +39,11 @@ import top.iwesley.lyn.music.core.model.describeWebDavHttpFailure
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
+import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
@@ -344,33 +346,43 @@ private fun collectJvmWebDavTracks(
                 sink = sink,
                 failures = failures,
             )
-        } else if (isSupportedJvmWebDavAudio(resolved.fileName)) {
-            discoveredAudioFileCount += 1
-            val requestUrl = buildWebDavTrackUrl(rootUrl, resolved.relativePath)
-            runCatching {
-                resolveJvmWebDavScanCandidate(
-                    sourceId = sourceId,
-                    resource = resolved,
-                    requestUrl = requestUrl,
-                    username = username,
-                    password = password,
-                    allowInsecureTls = allowInsecureTls,
-                    authEnabled = authEnabled,
-                    logger = logger,
-                )
-            }.onFailure { throwable ->
-                logger.warn(WEBDAV_LOG_TAG) {
-                    "metadata-failed source=$sourceId url=$requestUrl reason=${throwable.message.orEmpty()}"
+        } else {
+            when (classifyJvmScannedAudioFile(resolved.fileName)) {
+                NonNavidromeAudioScanResult.NOT_AUDIO -> Unit
+                NonNavidromeAudioScanResult.IMPORT_UNSUPPORTED -> {
+                    discoveredAudioFileCount += 1
+                    failures += unsupportedAudioImportFailure(resolved.relativePath)
                 }
-            }.recoverCatching {
-                buildWebDavImportedTrackCandidate(sourceId, resolved)
-            }.onSuccess { candidate ->
-                sink += candidate
-            }.onFailure { throwable ->
-                failures += ImportScanFailure(
-                    relativePath = resolved.relativePath,
-                    reason = scanFailureReason(throwable),
-                )
+
+                NonNavidromeAudioScanResult.IMPORT_SUPPORTED -> {
+                    discoveredAudioFileCount += 1
+                    val requestUrl = buildWebDavTrackUrl(rootUrl, resolved.relativePath)
+                    runCatching {
+                        resolveJvmWebDavScanCandidate(
+                            sourceId = sourceId,
+                            resource = resolved,
+                            requestUrl = requestUrl,
+                            username = username,
+                            password = password,
+                            allowInsecureTls = allowInsecureTls,
+                            authEnabled = authEnabled,
+                            logger = logger,
+                        )
+                    }.onFailure { throwable ->
+                        logger.warn(WEBDAV_LOG_TAG) {
+                            "metadata-failed source=$sourceId url=$requestUrl reason=${throwable.message.orEmpty()}"
+                        }
+                    }.recoverCatching {
+                        buildWebDavImportedTrackCandidate(sourceId, resolved)
+                    }.onSuccess { candidate ->
+                        sink += candidate
+                    }.onFailure { throwable ->
+                        failures += ImportScanFailure(
+                            relativePath = resolved.relativePath,
+                            reason = scanFailureReason(throwable),
+                        )
+                    }
+                }
             }
         }
     }
@@ -870,10 +882,6 @@ private val insecureSslContext: SSLContext by lazy {
 private val insecureHostnameVerifier: HostnameVerifier = HostnameVerifier { _, _ -> true }
 
 private fun String.ensureTrailingSlash(): String = if (endsWith("/")) this else "$this/"
-
-private fun isSupportedJvmWebDavAudio(fileName: String): Boolean {
-    return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac", "ape")
-}
 
 private fun scanFailureReason(throwable: Throwable): String {
     return throwable.message?.takeIf { it.isNotBlank() }

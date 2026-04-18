@@ -43,9 +43,11 @@ import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
+import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
@@ -235,31 +237,41 @@ private fun collectAndroidWebDavTracks(
                 sink = sink,
                 failures = failures,
             )
-        } else if (isSupportedWebDavAudio(resolved.fileName)) {
-            discoveredAudioFileCount += 1
-            val requestUrl = buildWebDavTrackUrl(session.rootUrl, resolved.relativePath)
-            runCatching {
-                resolveAndroidWebDavScanCandidate(
-                    session = session,
-                    sourceId = sourceId,
-                    resource = resolved,
-                    requestUrl = requestUrl,
-                    artworkDirectory = artworkDirectory,
-                    logger = logger,
-                )
-            }.onFailure { throwable ->
-                logger.warn(WEBDAV_LOG_TAG) {
-                    "metadata-failed source=$sourceId url=$requestUrl reason=${throwable.message.orEmpty()}"
+        } else {
+            when (classifyAndroidScannedAudioFile(resolved.fileName)) {
+                NonNavidromeAudioScanResult.NOT_AUDIO -> Unit
+                NonNavidromeAudioScanResult.IMPORT_UNSUPPORTED -> {
+                    discoveredAudioFileCount += 1
+                    failures += unsupportedAudioImportFailure(resolved.relativePath)
                 }
-            }.recoverCatching {
-                buildWebDavImportedTrackCandidate(sourceId, resolved)
-            }.onSuccess { candidate ->
-                sink += candidate
-            }.onFailure { throwable ->
-                failures += ImportScanFailure(
-                    relativePath = resolved.relativePath,
-                    reason = scanFailureReason(throwable),
-                )
+
+                NonNavidromeAudioScanResult.IMPORT_SUPPORTED -> {
+                    discoveredAudioFileCount += 1
+                    val requestUrl = buildWebDavTrackUrl(session.rootUrl, resolved.relativePath)
+                    runCatching {
+                        resolveAndroidWebDavScanCandidate(
+                            session = session,
+                            sourceId = sourceId,
+                            resource = resolved,
+                            requestUrl = requestUrl,
+                            artworkDirectory = artworkDirectory,
+                            logger = logger,
+                        )
+                    }.onFailure { throwable ->
+                        logger.warn(WEBDAV_LOG_TAG) {
+                            "metadata-failed source=$sourceId url=$requestUrl reason=${throwable.message.orEmpty()}"
+                        }
+                    }.recoverCatching {
+                        buildWebDavImportedTrackCandidate(sourceId, resolved)
+                    }.onSuccess { candidate ->
+                        sink += candidate
+                    }.onFailure { throwable ->
+                        failures += ImportScanFailure(
+                            relativePath = resolved.relativePath,
+                            reason = scanFailureReason(throwable),
+                        )
+                    }
+                }
             }
         }
     }
@@ -621,10 +633,6 @@ private fun Throwable.reflectResponsePhrase(): String? {
 }
 
 private fun String.ensureTrailingSlash(): String = if (endsWith("/")) this else "$this/"
-
-private fun isSupportedWebDavAudio(fileName: String): Boolean {
-    return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac")
-}
 
 private fun scanFailureReason(throwable: Throwable): String {
     return throwable.message?.takeIf { it.isNotBlank() }

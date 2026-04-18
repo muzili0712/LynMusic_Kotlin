@@ -52,6 +52,7 @@ import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
+import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackGateway
@@ -86,6 +87,7 @@ import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.parseSambaPath
 import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
+import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
@@ -644,7 +646,7 @@ private class AndroidImportSourceGateway(
                         "direct-scan-fallback root=${root.absolutePath} reason=${throwable.message.orEmpty()}"
                     }
                 }.mapCatching { report ->
-                    if (report.tracks.isEmpty()) {
+                    if (report.discoveredAudioFileCount == 0) {
                         logger.warn(LOCAL_IMPORT_LOG_TAG) {
                             "direct-scan-empty-fallback root=${root.absolutePath} treeUri=$treeUri"
                         }
@@ -846,19 +848,29 @@ private class AndroidImportSourceGateway(
                 val nextRelative = listOf(relativeDirectory, fileName).filter { it.isNotBlank() }.joinToString("/")
                 when {
                     file.isDirectory -> discoveredAudioFileCount += walkDocumentTree(file, nextRelative, sink, failures)
-                    file.isFile && isSupportedAudio(fileName) -> {
-                        discoveredAudioFileCount += 1
-                        runCatching {
-                            readAndroidCandidate(file, nextRelative)
-                        }.onSuccess { candidate ->
-                            sink += candidate
-                        }.onFailure { throwable ->
-                            failures += ImportScanFailure(
-                                relativePath = nextRelative,
-                                reason = scanFailureReason(throwable),
-                            )
-                            logger.warn(LOCAL_IMPORT_LOG_TAG) {
-                                "candidate-failed path=$nextRelative reason=${throwable.message.orEmpty()}"
+                    file.isFile -> {
+                        when (classifyAndroidScannedAudioFile(fileName)) {
+                            NonNavidromeAudioScanResult.NOT_AUDIO -> Unit
+                            NonNavidromeAudioScanResult.IMPORT_UNSUPPORTED -> {
+                                discoveredAudioFileCount += 1
+                                failures += unsupportedAudioImportFailure(nextRelative)
+                            }
+
+                            NonNavidromeAudioScanResult.IMPORT_SUPPORTED -> {
+                                discoveredAudioFileCount += 1
+                                runCatching {
+                                    readAndroidCandidate(file, nextRelative)
+                                }.onSuccess { candidate ->
+                                    sink += candidate
+                                }.onFailure { throwable ->
+                                    failures += ImportScanFailure(
+                                        relativePath = nextRelative,
+                                        reason = scanFailureReason(throwable),
+                                    )
+                                    logger.warn(LOCAL_IMPORT_LOG_TAG) {
+                                        "candidate-failed path=$nextRelative reason=${throwable.message.orEmpty()}"
+                                    }
+                                }
                             }
                         }
                     }
@@ -897,19 +909,29 @@ private class AndroidImportSourceGateway(
                 val nextRelative = listOf(relativeDirectory, file.name).filter { it.isNotBlank() }.joinToString("/")
                 when {
                     file.isDirectory -> discoveredAudioFileCount += walkLocalDirectory(file, nextRelative, sink, failures)
-                    file.isFile && isSupportedAudio(file.name) -> {
-                        discoveredAudioFileCount += 1
-                        runCatching {
-                            readAndroidCandidate(file, nextRelative)
-                        }.onSuccess { candidate ->
-                            sink += candidate
-                        }.onFailure { throwable ->
-                            failures += ImportScanFailure(
-                                relativePath = nextRelative,
-                                reason = scanFailureReason(throwable),
-                            )
-                            logger.warn(LOCAL_IMPORT_LOG_TAG) {
-                                "candidate-failed path=$nextRelative reason=${throwable.message.orEmpty()}"
+                    file.isFile -> {
+                        when (classifyAndroidScannedAudioFile(file.name)) {
+                            NonNavidromeAudioScanResult.NOT_AUDIO -> Unit
+                            NonNavidromeAudioScanResult.IMPORT_UNSUPPORTED -> {
+                                discoveredAudioFileCount += 1
+                                failures += unsupportedAudioImportFailure(nextRelative)
+                            }
+
+                            NonNavidromeAudioScanResult.IMPORT_SUPPORTED -> {
+                                discoveredAudioFileCount += 1
+                                runCatching {
+                                    readAndroidCandidate(file, nextRelative)
+                                }.onSuccess { candidate ->
+                                    sink += candidate
+                                }.onFailure { throwable ->
+                                    failures += ImportScanFailure(
+                                        relativePath = nextRelative,
+                                        reason = scanFailureReason(throwable),
+                                    )
+                                    logger.warn(LOCAL_IMPORT_LOG_TAG) {
+                                        "candidate-failed path=$nextRelative reason=${throwable.message.orEmpty()}"
+                                    }
+                                }
                             }
                         }
                     }
@@ -974,34 +996,44 @@ private class AndroidImportSourceGateway(
                     sink = sink,
                     failures = failures,
                 )
-            } else if (isSupportedAudio(name)) {
-                discoveredAudioFileCount += 1
-                val sizeBytes = runCatching { info.endOfFile }.getOrDefault(0L)
-                runCatching {
-                    resolveAndroidSambaScanCandidate(
-                        share = share,
-                        sourceId = sourceId,
-                        relativePath = childRelative,
-                        remotePath = childPath,
-                        sizeBytes = sizeBytes,
-                    )
-                }.onFailure { throwable ->
-                    logger.warn(SAMBA_LOG_TAG) {
-                        "metadata-failed source=$sourceId remotePath=$childPath reason=${throwable.message.orEmpty()}"
+            } else {
+                when (classifyAndroidScannedAudioFile(name)) {
+                    NonNavidromeAudioScanResult.NOT_AUDIO -> Unit
+                    NonNavidromeAudioScanResult.IMPORT_UNSUPPORTED -> {
+                        discoveredAudioFileCount += 1
+                        failures += unsupportedAudioImportFailure(childRelative)
                     }
-                }.recoverCatching {
-                    buildAndroidRemoteFallbackCandidate(
-                        sourceId = sourceId,
-                        relativePath = childRelative,
-                        sizeBytes = sizeBytes,
-                    )
-                }.onSuccess { candidate ->
-                    sink += candidate
-                }.onFailure { throwable ->
-                    failures += ImportScanFailure(
-                        relativePath = childRelative,
-                        reason = scanFailureReason(throwable),
-                    )
+
+                    NonNavidromeAudioScanResult.IMPORT_SUPPORTED -> {
+                        discoveredAudioFileCount += 1
+                        val sizeBytes = runCatching { info.endOfFile }.getOrDefault(0L)
+                        runCatching {
+                            resolveAndroidSambaScanCandidate(
+                                share = share,
+                                sourceId = sourceId,
+                                relativePath = childRelative,
+                                remotePath = childPath,
+                                sizeBytes = sizeBytes,
+                            )
+                        }.onFailure { throwable ->
+                            logger.warn(SAMBA_LOG_TAG) {
+                                "metadata-failed source=$sourceId remotePath=$childPath reason=${throwable.message.orEmpty()}"
+                            }
+                        }.recoverCatching {
+                            buildAndroidRemoteFallbackCandidate(
+                                sourceId = sourceId,
+                                relativePath = childRelative,
+                                sizeBytes = sizeBytes,
+                            )
+                        }.onSuccess { candidate ->
+                            sink += candidate
+                        }.onFailure { throwable ->
+                            failures += ImportScanFailure(
+                                relativePath = childRelative,
+                                reason = scanFailureReason(throwable),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1708,10 +1740,6 @@ private const val AES_TRANSFORMATION = "AES/GCM/NoPadding"
 private const val ENCRYPTED_VALUE_PREFIX = "enc:v1:"
 private const val GCM_IV_LENGTH_BYTES = 12
 private const val GCM_TAG_LENGTH_BITS = 128
-
-private fun isSupportedAudio(fileName: String): Boolean {
-    return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac")
-}
 
 private fun scanFailureReason(throwable: Throwable): String {
     return throwable.message?.takeIf { it.isNotBlank() }

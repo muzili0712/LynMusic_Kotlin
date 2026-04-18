@@ -51,6 +51,7 @@ import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
+import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackGateway
@@ -88,6 +89,7 @@ import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
+import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
@@ -729,21 +731,31 @@ private class JvmImportSourceGateway(
         val failures = mutableListOf<ImportScanFailure>()
         var discoveredAudioFileCount = 0
         Files.walk(root).use { stream ->
-            stream.filter { path -> path.isRegularFile() && isSupportedAudio(path.name) }
+            stream.filter { path -> path.isRegularFile() }
                 .forEach { path ->
-                    discoveredAudioFileCount += 1
                     val relativePath = root.relativize(path).invariantSeparatorsPathString
-                    runCatching {
-                        ImportedCandidateFactory.fromPath(path, relativePath, logger)
-                    }.onSuccess { candidate ->
-                        tracks += candidate
-                    }.onFailure { throwable ->
-                        failures += ImportScanFailure(
-                            relativePath = relativePath,
-                            reason = scanFailureReason(throwable),
-                        )
-                        logger.warn(LOCAL_IMPORT_LOG_TAG) {
-                            "candidate-failed source=$sourceId path=$relativePath reason=${throwable.message.orEmpty()}"
+                    when (classifyJvmScannedAudioFile(path.name)) {
+                        NonNavidromeAudioScanResult.NOT_AUDIO -> Unit
+                        NonNavidromeAudioScanResult.IMPORT_UNSUPPORTED -> {
+                            discoveredAudioFileCount += 1
+                            failures += unsupportedAudioImportFailure(relativePath)
+                        }
+
+                        NonNavidromeAudioScanResult.IMPORT_SUPPORTED -> {
+                            discoveredAudioFileCount += 1
+                            runCatching {
+                                ImportedCandidateFactory.fromPath(path, relativePath, logger)
+                            }.onSuccess { candidate ->
+                                tracks += candidate
+                            }.onFailure { throwable ->
+                                failures += ImportScanFailure(
+                                    relativePath = relativePath,
+                                    reason = scanFailureReason(throwable),
+                                )
+                                logger.warn(LOCAL_IMPORT_LOG_TAG) {
+                                    "candidate-failed source=$sourceId path=$relativePath reason=${throwable.message.orEmpty()}"
+                                }
+                            }
                         }
                     }
                 }
@@ -870,34 +882,44 @@ private class JvmImportSourceGateway(
                     sink = sink,
                     failures = failures,
                 )
-            } else if (isSupportedAudio(name)) {
-                discoveredAudioFileCount += 1
-                val sizeBytes = runCatching { fileInfo.endOfFile }.getOrDefault(0L)
-                runCatching {
-                    resolveJvmSambaScanCandidate(
-                        share = share,
-                        sourceId = sourceId,
-                        relativePath = childRelative,
-                        remotePath = childPath,
-                        sizeBytes = sizeBytes,
-                    )
-                }.onFailure { throwable ->
-                    logger.warn(SAMBA_LOG_TAG) {
-                        "metadata-failed source=$sourceId remotePath=$childPath reason=${throwable.message.orEmpty()}"
+            } else {
+                when (classifyJvmScannedAudioFile(name)) {
+                    NonNavidromeAudioScanResult.NOT_AUDIO -> Unit
+                    NonNavidromeAudioScanResult.IMPORT_UNSUPPORTED -> {
+                        discoveredAudioFileCount += 1
+                        failures += unsupportedAudioImportFailure(childRelative)
                     }
-                }.recoverCatching {
-                    ImportedCandidateFactory.fromRemotePath(
-                        sourceId = sourceId,
-                        relativePath = childRelative,
-                        sizeBytes = sizeBytes,
-                    )
-                }.onSuccess { candidate ->
-                    sink += candidate
-                }.onFailure { throwable ->
-                    failures += ImportScanFailure(
-                        relativePath = childRelative,
-                        reason = scanFailureReason(throwable),
-                    )
+
+                    NonNavidromeAudioScanResult.IMPORT_SUPPORTED -> {
+                        discoveredAudioFileCount += 1
+                        val sizeBytes = runCatching { fileInfo.endOfFile }.getOrDefault(0L)
+                        runCatching {
+                            resolveJvmSambaScanCandidate(
+                                share = share,
+                                sourceId = sourceId,
+                                relativePath = childRelative,
+                                remotePath = childPath,
+                                sizeBytes = sizeBytes,
+                            )
+                        }.onFailure { throwable ->
+                            logger.warn(SAMBA_LOG_TAG) {
+                                "metadata-failed source=$sourceId remotePath=$childPath reason=${throwable.message.orEmpty()}"
+                            }
+                        }.recoverCatching {
+                            ImportedCandidateFactory.fromRemotePath(
+                                sourceId = sourceId,
+                                relativePath = childRelative,
+                                sizeBytes = sizeBytes,
+                            )
+                        }.onSuccess { candidate ->
+                            sink += candidate
+                        }.onFailure { throwable ->
+                            failures += ImportScanFailure(
+                                relativePath = childRelative,
+                                reason = scanFailureReason(throwable),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1720,10 +1742,6 @@ private fun buildJvmPlaybackLoadFailureMessage(throwable: Throwable): String {
         ?: throwable::class.simpleName
         ?: "未知错误"
     return "访问歌曲失败：$detail"
-}
-
-private fun isSupportedAudio(fileName: String): Boolean {
-    return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac", "ape")
 }
 
 private fun buildVlcMetadataLogMessage(
