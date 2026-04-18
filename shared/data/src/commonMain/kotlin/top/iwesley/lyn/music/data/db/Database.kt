@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.ConstructedBy
 import androidx.room.Dao
 import androidx.room.Database
@@ -92,6 +93,7 @@ data class FavoriteTrackEntity(
     val sourceId: String,
     val remoteSongId: String?,
     val favoritedAt: Long,
+    @ColumnInfo(name = "origin", defaultValue = "LOCAL") val origin: String = "LOCAL",
 )
 
 @Entity(
@@ -124,6 +126,7 @@ data class PlaylistTrackEntity(
     val addedAt: Long,
     val localOrdinal: Int?,
     val remoteOrdinal: Int?,
+    @ColumnInfo(name = "origin", defaultValue = "LOCAL") val origin: String = "LOCAL",
 )
 
 @Entity(
@@ -499,8 +502,9 @@ interface LyricsCacheDao {
         LyricsSourceConfigEntity::class,
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
+        OnlineSongEntity::class,
     ],
-    version = 8,
+    version = 9,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -517,6 +521,7 @@ abstract class LynMusicDatabase : RoomDatabase() {
     abstract fun lyricsSourceConfigDao(): LyricsSourceConfigDao
     abstract fun workflowLyricsSourceConfigDao(): WorkflowLyricsSourceConfigDao
     abstract fun lyricsCacheDao(): LyricsCacheDao
+    abstract fun onlineSongDao(): OnlineSongDao
 }
 
 @Suppress("KotlinNoActualForExpect")
@@ -535,6 +540,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_5_6)
         .addMigrations(MIGRATION_6_7)
         .addMigrations(MIGRATION_7_8)
+        .addMigrations(MIGRATION_8_9)
         .fallbackToDestructiveMigration(true)
         .build()
 }
@@ -675,6 +681,39 @@ val MIGRATION_7_8: Migration = object : Migration(7, 8) {
             """
             ALTER TABLE import_source
             ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            CREATE TABLE IF NOT EXISTS online_song (
+                source TEXT NOT NULL,
+                songmid TEXT NOT NULL,
+                name TEXT NOT NULL,
+                singer TEXT NOT NULL,
+                album TEXT,
+                interval_seconds INTEGER NOT NULL DEFAULT 0,
+                cover_url TEXT,
+                default_quality TEXT NOT NULL DEFAULT '320k',
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY(source, songmid)
+            )
+            """.trimIndent(),
+        )
+        connection.execSql(
+            """
+            ALTER TABLE favorite_track
+            ADD COLUMN origin TEXT NOT NULL DEFAULT 'LOCAL'
+            """.trimIndent(),
+        )
+        connection.execSql(
+            """
+            ALTER TABLE playlist_track
+            ADD COLUMN origin TEXT NOT NULL DEFAULT 'LOCAL'
             """.trimIndent(),
         )
     }

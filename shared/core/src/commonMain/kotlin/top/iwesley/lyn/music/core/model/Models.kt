@@ -25,6 +25,19 @@ enum class ImportSourceType {
     NAVIDROME,
 }
 
+enum class MusicOrigin {
+    LOCAL,
+    SAMBA,
+    WEBDAV,
+    NAVIDROME,
+    ONLINE;
+
+    companion object {
+        fun fromStringOrLocal(s: String?): MusicOrigin =
+            entries.firstOrNull { it.name == s } ?: LOCAL
+    }
+}
+
 enum class LyricsResponseFormat {
     JSON,
     XML,
