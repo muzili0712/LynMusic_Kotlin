@@ -13,8 +13,8 @@ data class OnlineSongEntity(
     val name: String,
     val singer: String,
     @ColumnInfo(name = "album") val album: String? = null,
-    @ColumnInfo(name = "interval_seconds") val intervalSeconds: Int = 0,
+    @ColumnInfo(name = "interval_seconds", defaultValue = "0") val intervalSeconds: Int = 0,
     @ColumnInfo(name = "cover_url") val coverUrl: String? = null,
-    @ColumnInfo(name = "default_quality") val defaultQuality: String = "320k",
+    @ColumnInfo(name = "default_quality", defaultValue = "'320k'") val defaultQuality: String = "320k",
     @ColumnInfo(name = "created_at") val createdAt: Long,
 )

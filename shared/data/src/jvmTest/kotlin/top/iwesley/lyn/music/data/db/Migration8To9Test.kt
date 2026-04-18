@@ -1,6 +1,5 @@
 package top.iwesley.lyn.music.data.db
 
-import kotlinx.coroutines.test.runTest
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -16,7 +15,7 @@ import kotlin.test.assertTrue
 class Migration8To9Test {
 
     @Test
-    fun `v9 schema exports online_song table and origin columns`() = runTest {
+    fun `v9 schema exports online_song table and origin columns`() {
         val candidatePaths = listOf(
             "schemas/top.iwesley.lyn.music.data.db.LynMusicDatabase/9.json",
             "../schemas/top.iwesley.lyn.music.data.db.LynMusicDatabase/9.json",
