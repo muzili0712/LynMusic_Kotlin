@@ -24,8 +24,6 @@ kotlin {
         }
     }
 
-    applyDefaultHierarchyTemplate()
-
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
@@ -61,7 +59,7 @@ kotlin {
 }
 
 android {
-    namespace = "top.iwesley.lyn.music.scripting"
+    namespace = "top.iwesley.lyn.music.shared.scripting"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
