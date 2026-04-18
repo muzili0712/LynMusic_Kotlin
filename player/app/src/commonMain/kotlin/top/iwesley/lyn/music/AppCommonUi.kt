@@ -448,6 +448,10 @@ internal fun SourceCard(
 ) {
     val shellColors = mainShellColors
     val sourceEnabled = state.source.enabled
+    val scanSummaryPresentation = buildSourceScanSummaryPresentation(
+        summary = scanSummary,
+        canShowFailures = onShowScanFailures != null,
+    )
     ElevatedCard(
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = shellColors.cardContainer),
@@ -543,19 +547,19 @@ internal fun SourceCard(
                     },
                     leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
             }
-            scanSummary?.let { summary ->
+            scanSummaryPresentation?.let { presentation ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        text = formatImportScanSummary(summary),
+                        text = presentation.summaryText,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    if (summary.failedAudioFileCount > 0 && onShowScanFailures != null) {
-                        TextButton(onClick = { onShowScanFailures(summary) }) {
+                    if (presentation.showFailuresButton) {
+                        TextButton(onClick = { onShowScanFailures?.invoke(presentation.summary) }) {
                             Text("查看失败")
                         }
                     }
@@ -569,6 +573,24 @@ internal fun SourceCard(
             }
         }
     }
+}
+
+internal data class SourceScanSummaryPresentation(
+    val summary: ImportScanSummary,
+    val summaryText: String,
+    val showFailuresButton: Boolean,
+)
+
+internal fun buildSourceScanSummaryPresentation(
+    summary: ImportScanSummary?,
+    canShowFailures: Boolean,
+): SourceScanSummaryPresentation? {
+    summary ?: return null
+    return SourceScanSummaryPresentation(
+        summary = summary,
+        summaryText = formatImportScanSummary(summary),
+        showFailuresButton = summary.failedAudioFileCount > 0 && canShowFailures,
+    )
 }
 
 @Composable

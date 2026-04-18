@@ -144,12 +144,12 @@ interface ImportSourceRepository {
         draft: NavidromeSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean = true,
     ): Result<Unit>
-    suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit>
+    suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<ImportScanSummary>
     suspend fun updateNavidromeSource(
         sourceId: String,
         draft: NavidromeSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean = true,
-    ): Result<Unit>
+    ): Result<ImportScanSummary>
     suspend fun rescanSource(sourceId: String): Result<ImportScanSummary?>
     suspend fun setSourceEnabled(sourceId: String, enabled: Boolean): Result<Unit>
     suspend fun deleteSource(sourceId: String): Result<Unit>
@@ -466,7 +466,7 @@ class RoomImportSourceRepository(
         }
     }
 
-    override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
+    override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<ImportScanSummary> {
         return runCatching {
             val sourceId = newId("navidrome")
             val preparedDraft = prepareNavidromeDraft(draft)
@@ -477,7 +477,6 @@ class RoomImportSourceRepository(
             runScan(source) {
                 gateway.scanNavidrome(preparedDraft, sourceId)
             }
-            Unit
         }
     }
 
@@ -485,7 +484,7 @@ class RoomImportSourceRepository(
         sourceId: String,
         draft: NavidromeSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> {
+    ): Result<ImportScanSummary> {
         return runCatching {
             val existing = requireRemoteSource(sourceId, ImportSourceType.NAVIDROME)
             val preparedDraft = prepareNavidromeDraft(draft)
@@ -513,7 +512,6 @@ class RoomImportSourceRepository(
             )
             persistUpdatedCredential(existing.credentialKey, credentialKey, password)
             persistScan(updatedSource.copy(credentialKey = credentialKey), report)
-            Unit
         }
     }
 
@@ -578,7 +576,7 @@ class RoomImportSourceRepository(
                     }
                 }
             }
-            summary.takeUnless { source.type == ImportSourceType.NAVIDROME }
+            summary
         }
     }
 

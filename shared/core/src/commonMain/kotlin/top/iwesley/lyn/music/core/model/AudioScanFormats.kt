@@ -23,14 +23,14 @@ enum class NonNavidromeAudioScanResult {
 }
 
 fun isNonNavidromeScannableAudioFile(fileName: String): Boolean {
-    return audioFileExtension(fileName) in NON_NAVIDROME_SCANNABLE_AUDIO_EXTENSIONS
+    return fileNameExtension(fileName) in NON_NAVIDROME_SCANNABLE_AUDIO_EXTENSIONS
 }
 
 fun classifyNonNavidromeAudioFile(
     fileName: String,
     supportedImportExtensions: Set<String>,
 ): NonNavidromeAudioScanResult {
-    val extension = audioFileExtension(fileName) ?: return NonNavidromeAudioScanResult.NOT_AUDIO
+    val extension = fileNameExtension(fileName) ?: return NonNavidromeAudioScanResult.NOT_AUDIO
     if (extension !in NON_NAVIDROME_SCANNABLE_AUDIO_EXTENSIONS) {
         return NonNavidromeAudioScanResult.NOT_AUDIO
     }
@@ -48,7 +48,28 @@ fun unsupportedAudioImportFailure(relativePath: String): ImportScanFailure {
     )
 }
 
-private fun audioFileExtension(fileName: String): String? {
-    val extension = fileName.substringAfterLast('.', "").trim().lowercase()
-    return extension.takeIf { it.isNotBlank() }
+fun classifyAudioExtensionForImport(
+    extension: String?,
+    supportedImportExtensions: Set<String>,
+): NonNavidromeAudioScanResult {
+    val normalizedExtension = normalizeAudioExtension(extension)
+        ?: return NonNavidromeAudioScanResult.IMPORT_UNSUPPORTED
+    return if (normalizedExtension in supportedImportExtensions) {
+        NonNavidromeAudioScanResult.IMPORT_SUPPORTED
+    } else {
+        NonNavidromeAudioScanResult.IMPORT_UNSUPPORTED
+    }
+}
+
+fun normalizeAudioExtension(extension: String?): String? {
+    val normalized = extension.orEmpty()
+        .trim()
+        .removePrefix(".")
+        .lowercase()
+    return normalized.takeIf { it.isNotBlank() }
+}
+
+private fun fileNameExtension(fileName: String): String? {
+    val extension = fileName.substringAfterLast('.', "")
+    return normalizeAudioExtension(extension)
 }

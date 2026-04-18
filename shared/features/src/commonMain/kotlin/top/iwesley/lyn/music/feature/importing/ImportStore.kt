@@ -230,7 +230,7 @@ class ImportStore(
                 ) ?: return
                 runImport(ImportScanOperation.CreateRemote(ImportSourceType.NAVIDROME)) {
                     repository.addNavidromeSource(draft)
-                        .onSuccess {
+                        .onSuccess { summary ->
                             updateState {
                                 it.copy(
                                     navidromeLabel = "",
@@ -239,7 +239,8 @@ class ImportStore(
                                     navidromePassword = "",
                                 )
                             }
-                            setMessage("Navidrome 音乐源已导入。")
+                            recordScanSummary(summary)
+                            setMessage(scanSuccessMessage("Navidrome 音乐源已导入。", summary))
                         }
                         .onFailure { setMessage("Navidrome 导入失败: ${it.message}") }
                 }
@@ -370,9 +371,10 @@ class ImportStore(
                                 sourceId = editor.sourceId,
                                 draft = draft,
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
-                            ).onSuccess {
+                            ).onSuccess { summary ->
                                 updateState { it.copy(editingSource = null) }
-                                setMessage("来源已更新并重新扫描。")
+                                recordScanSummary(summary)
+                                setMessage(scanSuccessMessage("来源已更新并重新扫描。", summary))
                             }.onFailure {
                                 setMessage("更新来源失败: ${it.message}")
                             }

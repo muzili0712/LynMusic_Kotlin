@@ -12,6 +12,7 @@ import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UNSUPPORTED_AUDIO_IMPORT_REASON
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.domain.NAVIDROME_LYRICS_SOURCE_ID
 import top.iwesley.lyn.music.domain.NavidromeResolvedSource
@@ -48,9 +49,13 @@ class NavidromeEngineTest {
             ),
             sourceId = "nav-source",
             httpClient = client,
+            supportedImportExtensions = setOf("flac"),
         )
 
         val candidate = report.tracks.single()
+        assertEquals(1, report.discoveredAudioFileCount)
+        assertTrue(report.failures.isEmpty())
+        assertTrue(report.warnings.isEmpty())
         assertEquals("Blue", candidate.title)
         assertEquals("Artist A", candidate.artistName)
         assertEquals("Album A", candidate.albumTitle)
@@ -61,6 +66,98 @@ class NavidromeEngineTest {
         assertEquals("Artist A/Album A/Blue.flac", candidate.relativePath)
         assertEquals("lynmusic-navidrome://nav-source/song-1", candidate.mediaLocator)
         assertEquals("lynmusic-navidrome-cover://nav-source/cover-1", candidate.artworkLocator)
+    }
+
+    @Test
+    fun `scan library counts unsupported suffixes as failures without empty warning`() = runTest {
+        val client = RoutingNavidromeHttpClient(
+            responses = mapOf(
+                "getArtists" to GET_ARTISTS_JSON,
+                "getArtist" to GET_ARTIST_JSON,
+                "getAlbum" to GET_ALBUM_UNSUPPORTED_JSON,
+            ),
+        )
+
+        val report = scanNavidromeLibrary(
+            draft = NavidromeSourceDraft(
+                label = "Navidrome",
+                baseUrl = "https://demo.example.com/navidrome",
+                username = "demo",
+                password = "plain-pass",
+            ),
+            sourceId = "nav-source",
+            httpClient = client,
+            supportedImportExtensions = setOf("flac"),
+        )
+
+        assertEquals(1, report.discoveredAudioFileCount)
+        assertTrue(report.tracks.isEmpty())
+        assertEquals(listOf("Artist A/Album A/Bad Ogg.ogg"), report.failures.map { it.relativePath })
+        assertEquals(listOf(UNSUPPORTED_AUDIO_IMPORT_REASON), report.failures.map { it.reason })
+        assertTrue(report.warnings.isEmpty())
+    }
+
+    @Test
+    fun `scan library deduplicates song ids and treats blank or unknown suffix as failure`() = runTest {
+        val client = RoutingNavidromeHttpClient(
+            responses = mapOf(
+                "getArtists" to GET_ARTISTS_JSON,
+                "getArtist" to GET_ARTIST_JSON,
+                "getAlbum" to GET_ALBUM_WITH_DUPLICATES_JSON,
+            ),
+        )
+
+        val report = scanNavidromeLibrary(
+            draft = NavidromeSourceDraft(
+                label = "Navidrome",
+                baseUrl = "https://demo.example.com/navidrome",
+                username = "demo",
+                password = "plain-pass",
+            ),
+            sourceId = "nav-source",
+            httpClient = client,
+            supportedImportExtensions = setOf("flac"),
+        )
+
+        assertEquals(3, report.discoveredAudioFileCount)
+        assertEquals(listOf("song-1"), report.tracks.map { it.mediaLocator.substringAfterLast('/') })
+        assertEquals(
+            listOf("Artist A/Album A/No Suffix", "Artist A/Album A/Mystery.dsf"),
+            report.failures.map { it.relativePath },
+        )
+        assertEquals(
+            listOf(UNSUPPORTED_AUDIO_IMPORT_REASON, UNSUPPORTED_AUDIO_IMPORT_REASON),
+            report.failures.map { it.reason },
+        )
+        assertTrue(report.warnings.isEmpty())
+    }
+
+    @Test
+    fun `scan library warns only when navidrome returns no songs`() = runTest {
+        val client = RoutingNavidromeHttpClient(
+            responses = mapOf(
+                "getArtists" to GET_ARTISTS_JSON,
+                "getArtist" to GET_ARTIST_JSON,
+                "getAlbum" to GET_EMPTY_ALBUM_JSON,
+            ),
+        )
+
+        val report = scanNavidromeLibrary(
+            draft = NavidromeSourceDraft(
+                label = "Navidrome",
+                baseUrl = "https://demo.example.com/navidrome",
+                username = "demo",
+                password = "plain-pass",
+            ),
+            sourceId = "nav-source",
+            httpClient = client,
+            supportedImportExtensions = setOf("flac"),
+        )
+
+        assertEquals(0, report.discoveredAudioFileCount)
+        assertTrue(report.tracks.isEmpty())
+        assertTrue(report.failures.isEmpty())
+        assertEquals(listOf("当前 Navidrome 账号下没有可同步的歌曲。"), report.warnings)
     }
 
     @Test
@@ -219,6 +316,116 @@ private const val GET_ALBUM_JSON = """
           "coverArt": "cover-1"
         }
       ]
+    }
+  }
+}
+"""
+
+private const val GET_ALBUM_UNSUPPORTED_JSON = """
+{
+  "subsonic-response": {
+    "status": "ok",
+    "version": "1.16.1",
+    "album": {
+      "id": "album-1",
+      "name": "Album A",
+      "artist": "Artist A",
+      "coverArt": "cover-1",
+      "song": [
+        {
+          "id": "song-2",
+          "title": "Bad Ogg",
+          "artist": "Artist A",
+          "album": "Album A",
+          "duration": 180,
+          "track": 5,
+          "discNumber": 1,
+          "size": 54321,
+          "suffix": "ogg",
+          "coverArt": "cover-1"
+        }
+      ]
+    }
+  }
+}
+"""
+
+private const val GET_ALBUM_WITH_DUPLICATES_JSON = """
+{
+  "subsonic-response": {
+    "status": "ok",
+    "version": "1.16.1",
+    "album": {
+      "id": "album-1",
+      "name": "Album A",
+      "artist": "Artist A",
+      "coverArt": "cover-1",
+      "song": [
+        {
+          "id": "song-1",
+          "title": "Blue",
+          "artist": "Artist A",
+          "album": "Album A",
+          "duration": 215,
+          "track": 4,
+          "discNumber": 1,
+          "size": 12345,
+          "suffix": "flac",
+          "coverArt": "cover-1"
+        },
+        {
+          "id": "song-1",
+          "title": "Blue Duplicate",
+          "artist": "Artist A",
+          "album": "Album A",
+          "duration": 215,
+          "track": 4,
+          "discNumber": 1,
+          "size": 12345,
+          "suffix": "flac",
+          "coverArt": "cover-1"
+        },
+        {
+          "id": "song-2",
+          "title": "No Suffix",
+          "artist": "Artist A",
+          "album": "Album A",
+          "duration": 190,
+          "track": 5,
+          "discNumber": 1,
+          "size": 11111,
+          "suffix": "",
+          "coverArt": "cover-1"
+        },
+        {
+          "id": "song-3",
+          "title": "Mystery",
+          "artist": "Artist A",
+          "album": "Album A",
+          "duration": 200,
+          "track": 6,
+          "discNumber": 1,
+          "size": 22222,
+          "suffix": "dsf",
+          "coverArt": "cover-1"
+        }
+      ]
+    }
+  }
+}
+"""
+
+private const val GET_EMPTY_ALBUM_JSON = """
+{
+  "subsonic-response": {
+    "status": "ok",
+    "version": "1.16.1",
+    "album": {
+      "id": "album-1",
+      "name": "Album A",
+      "artist": "Artist A",
+      "coverArt": "cover-1",
+      "song": []
     }
   }
 }

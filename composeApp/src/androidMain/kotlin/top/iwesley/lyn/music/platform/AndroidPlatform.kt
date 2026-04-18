@@ -758,7 +758,13 @@ private class AndroidImportSourceGateway(
     }
 
     override suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport {
-        return scanNavidromeLibrary(draft, sourceId, navidromeHttpClient, logger)
+        return scanNavidromeLibrary(
+            draft = draft,
+            sourceId = sourceId,
+            httpClient = navidromeHttpClient,
+            supportedImportExtensions = ANDROID_SUPPORTED_IMPORT_AUDIO_EXTENSIONS,
+            logger = logger,
+        )
     }
 
     private fun showManageAllFilesAccessPrompt() {

@@ -23,14 +23,17 @@ import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
+import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.buildNavidromeCoverLocator
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
+import top.iwesley.lyn.music.core.model.classifyAudioExtensionForImport
 import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
+import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
 const val NAVIDROME_LYRICS_SOURCE_ID = "navidrome-lyrics"
@@ -131,6 +134,7 @@ suspend fun scanNavidromeLibrary(
     draft: NavidromeSourceDraft,
     sourceId: String,
     httpClient: LyricsHttpClient,
+    supportedImportExtensions: Set<String>,
     logger: DiagnosticLogger = NoopDiagnosticLogger,
 ): ImportScanReport {
     val baseUrl = normalizeNavidromeBaseUrl(draft.baseUrl)
@@ -143,15 +147,27 @@ suspend fun scanNavidromeLibrary(
     )
     val artistIds = requestNavidromeArtistIds(httpClient, resolved)
     val tracks = mutableListOf<ImportedTrackCandidate>()
+    val failures = mutableListOf<top.iwesley.lyn.music.core.model.ImportScanFailure>()
     val seenAlbumIds = linkedSetOf<String>()
     val seenSongIds = linkedSetOf<String>()
+    var discoveredAudioFileCount = 0
     artistIds.forEach { artistId ->
         requestNavidromeAlbumIds(httpClient, resolved, artistId).forEach { albumId ->
             if (!seenAlbumIds.add(albumId)) return@forEach
-            requestNavidromeAlbumSongs(httpClient, resolved, sourceId, albumId).forEach { candidate ->
-                val songId = parseNavidromeSongLocator(candidate.mediaLocator)?.second
-                if (songId == null || seenSongIds.add(songId)) {
-                    tracks += candidate
+            requestNavidromeAlbumSongs(httpClient, resolved, albumId).forEach { candidate ->
+                if (candidate.songId.isNotBlank() && !seenSongIds.add(candidate.songId)) {
+                    return@forEach
+                }
+                discoveredAudioFileCount += 1
+                when (classifyAudioExtensionForImport(candidate.suffix, supportedImportExtensions)) {
+                    NonNavidromeAudioScanResult.IMPORT_SUPPORTED -> {
+                        tracks += candidate.toImportedTrackCandidate(sourceId)
+                    }
+
+                    NonNavidromeAudioScanResult.IMPORT_UNSUPPORTED,
+                    NonNavidromeAudioScanResult.NOT_AUDIO -> {
+                        failures += unsupportedAudioImportFailure(candidate.relativePath())
+                    }
                 }
             }
         }
@@ -159,11 +175,13 @@ suspend fun scanNavidromeLibrary(
     logger.log(
         level = DiagnosticLogLevel.INFO,
         tag = "Navidrome",
-        message = "scan-complete source=$sourceId baseUrl=$baseUrl artists=${artistIds.size} tracks=${tracks.size}",
+        message = "scan-complete source=$sourceId baseUrl=$baseUrl artists=${artistIds.size} discovered=$discoveredAudioFileCount imported=${tracks.size} failures=${failures.size}",
     )
     return ImportScanReport(
         tracks = tracks,
-        warnings = if (tracks.isEmpty()) listOf("当前 Navidrome 账号下没有可同步的歌曲。") else emptyList(),
+        warnings = if (discoveredAudioFileCount == 0) listOf("当前 Navidrome 账号下没有可同步的歌曲。") else emptyList(),
+        discoveredAudioFileCount = discoveredAudioFileCount,
+        failures = failures,
     )
 }
 
@@ -376,9 +394,8 @@ private suspend fun requestNavidromeAlbumIds(
 private suspend fun requestNavidromeAlbumSongs(
     httpClient: LyricsHttpClient,
     source: NavidromeResolvedSource,
-    sourceId: String,
     albumId: String,
-): List<ImportedTrackCandidate> {
+): List<NavidromeSongCandidate> {
     val response = requestNavidromeJson(
         httpClient = httpClient,
         source = source,
@@ -396,24 +413,17 @@ private suspend fun requestNavidromeAlbumSongs(
             val title = song.string("title").orEmpty().ifBlank { "未知曲目" }
             val artistName = song.string("artist") ?: albumArtist
             val coverArtId = song.string("coverArt") ?: albumCoverArtId
-            ImportedTrackCandidate(
+            NavidromeSongCandidate(
+                songId = songId,
                 title = title,
                 artistName = artistName,
                 albumTitle = song.string("album") ?: albumTitle,
                 durationMs = (song.long("duration") ?: 0L) * 1_000L,
                 trackNumber = song.int("track"),
                 discNumber = song.int("discNumber"),
-                mediaLocator = buildNavidromeSongLocator(sourceId, songId),
-                relativePath = buildNavidromeRelativePath(
-                    artistName = artistName,
-                    albumTitle = song.string("album") ?: albumTitle,
-                    title = title,
-                    suffix = suffix,
-                ),
-                artworkLocator = coverArtId?.let { buildNavidromeCoverLocator(sourceId, it) },
-                embeddedLyrics = null,
                 sizeBytes = song.long("size") ?: 0L,
-                modifiedAt = 0L,
+                suffix = suffix,
+                coverArtId = coverArtId,
             )
         }
 }
@@ -594,6 +604,32 @@ private fun buildNavidromeRelativePath(
         normalizeNavidromePathSegment(albumTitle.orEmpty().ifBlank { "未知专辑" }),
         fileName,
     ).joinToString("/")
+}
+
+private fun NavidromeSongCandidate.relativePath(): String {
+    return buildNavidromeRelativePath(
+        artistName = artistName,
+        albumTitle = albumTitle,
+        title = title,
+        suffix = suffix,
+    )
+}
+
+private fun NavidromeSongCandidate.toImportedTrackCandidate(sourceId: String): ImportedTrackCandidate {
+    return ImportedTrackCandidate(
+        title = title,
+        artistName = artistName,
+        albumTitle = albumTitle,
+        durationMs = durationMs,
+        trackNumber = trackNumber,
+        discNumber = discNumber,
+        mediaLocator = buildNavidromeSongLocator(sourceId, songId),
+        relativePath = relativePath(),
+        artworkLocator = coverArtId?.let { buildNavidromeCoverLocator(sourceId, it) },
+        embeddedLyrics = null,
+        sizeBytes = sizeBytes,
+        modifiedAt = 0L,
+    )
 }
 
 private fun normalizeNavidromePathSegment(value: String): String {

@@ -279,13 +279,13 @@ private class FakeImportSourceRepository(
         keepExistingCredentialWhenBlankPassword: Boolean,
     ): Result<Unit> = Result.success(Unit)
 
-    override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> = Result.success(Unit)
+    override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<ImportScanSummary> = Result.success(testScanSummary())
 
     override suspend fun updateNavidromeSource(
         sourceId: String,
         draft: NavidromeSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> = Result.success(Unit)
+    ): Result<ImportScanSummary> = Result.success(testScanSummary(sourceId))
 
     override suspend fun rescanSource(sourceId: String): Result<ImportScanSummary?> = Result.success(testScanSummary(sourceId))
 

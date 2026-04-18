@@ -243,9 +243,65 @@ class ImportSourceRepositoryTest {
     }
 
     @Test
+    fun `adding navidrome source returns scan summary with failures`() = runTest {
+        val database = createImportTestDatabase()
+        val scanReport = ImportScanReport(
+            tracks = listOf(
+                ImportedTrackCandidate(
+                    title = "Blue",
+                    mediaLocator = "lynmusic-navidrome://navidrome-1/song-1",
+                    relativePath = "Artist A/Album A/Blue.flac",
+                ),
+            ),
+            discoveredAudioFileCount = 2,
+            failures = listOf(
+                ImportScanFailure(
+                    relativePath = "Artist A/Album A/Bad.ogg",
+                    reason = "当前平台暂不支持导入该音频格式。",
+                ),
+            ),
+        )
+        val gateway = RecordingImportSourceGateway(scanReport = scanReport)
+        val repository = createRepository(database = database, gateway = gateway)
+
+        val summary = repository.addNavidromeSource(
+            NavidromeSourceDraft(
+                label = "Navidrome",
+                baseUrl = "https://nav.example.com",
+                username = "demo",
+                password = "secret",
+            ),
+        ).getOrThrow()
+
+        assertEquals(2, summary.discoveredAudioFileCount)
+        assertEquals(1, summary.importedTrackCount)
+        assertEquals(listOf("Artist A/Album A/Bad.ogg"), summary.failures.map { it.relativePath })
+        assertEquals(1, gateway.navidromeScanCount)
+        assertNotNull(database.importSourceDao().getById(summary.sourceId))
+        assertEquals(1, database.trackDao().count())
+    }
+
+    @Test
     fun `updating navidrome source with blank password keeps existing credential`() = runTest {
         val database = createImportTestDatabase()
-        val gateway = RecordingImportSourceGateway()
+        val gateway = RecordingImportSourceGateway(
+            scanReport = ImportScanReport(
+                tracks = listOf(
+                    ImportedTrackCandidate(
+                        title = "Blue",
+                        mediaLocator = "lynmusic-navidrome://nav-1/song-1",
+                        relativePath = "Artist A/Album A/Blue.flac",
+                    ),
+                ),
+                discoveredAudioFileCount = 2,
+                failures = listOf(
+                    ImportScanFailure(
+                        relativePath = "Artist A/Album A/Bad.ogg",
+                        reason = "当前平台暂不支持导入该音频格式。",
+                    ),
+                ),
+            ),
+        )
         val credentials = ImportTestSecureCredentialStore(mutableMapOf("credential-nav-1" to "old-password"))
         database.importSourceDao().upsert(
             ImportSourceEntity(
@@ -281,12 +337,71 @@ class ImportSourceRepositoryTest {
         )
 
         assertTrue(result.isSuccess)
+        val summary = result.getOrThrow()
+        assertEquals(2, summary.discoveredAudioFileCount)
+        assertEquals(1, summary.importedTrackCount)
+        assertEquals(listOf("Artist A/Album A/Bad.ogg"), summary.failures.map { it.relativePath })
         assertEquals(1, gateway.navidromeScanCount)
         assertEquals("old-password", gateway.lastNavidromeScanDraft?.password)
         val updated = assertNotNull(database.importSourceDao().getById("nav-1"))
         assertEquals("https://nav2.example.com", updated.rootReference)
         assertEquals("demo2", updated.username)
         assertEquals("old-password", credentials.get("credential-nav-1"))
+    }
+
+    @Test
+    fun `rescanning navidrome source returns scan summary with failures`() = runTest {
+        val database = createImportTestDatabase()
+        val gateway = RecordingImportSourceGateway(
+            scanReport = ImportScanReport(
+                tracks = listOf(
+                    ImportedTrackCandidate(
+                        title = "Blue",
+                        mediaLocator = "lynmusic-navidrome://nav-1/song-1",
+                        relativePath = "Artist A/Album A/Blue.flac",
+                    ),
+                ),
+                discoveredAudioFileCount = 2,
+                failures = listOf(
+                    ImportScanFailure(
+                        relativePath = "Artist A/Album A/Bad.ogg",
+                        reason = "当前平台暂不支持导入该音频格式。",
+                    ),
+                ),
+            ),
+        )
+        val credentials = ImportTestSecureCredentialStore(mutableMapOf("credential-nav-1" to "secret"))
+        database.importSourceDao().upsert(
+            ImportSourceEntity(
+                id = "nav-1",
+                type = ImportSourceType.NAVIDROME.name,
+                label = "Navidrome",
+                rootReference = "https://nav.example.com",
+                server = null,
+                shareName = null,
+                directoryPath = null,
+                username = "demo",
+                credentialKey = "credential-nav-1",
+                allowInsecureTls = false,
+                enabled = true,
+                lastScannedAt = null,
+                createdAt = 1L,
+            ),
+        )
+        val repository = RoomImportSourceRepository(
+            database = database,
+            gateway = gateway,
+            secureCredentialStore = credentials,
+        )
+
+        val summary = repository.rescanSource("nav-1").getOrThrow()
+
+        assertNotNull(summary)
+        assertEquals(2, summary.discoveredAudioFileCount)
+        assertEquals(1, summary.importedTrackCount)
+        assertEquals(listOf("Artist A/Album A/Bad.ogg"), summary.failures.map { it.relativePath })
+        assertEquals(1, gateway.navidromeScanCount)
+        assertEquals("secret", gateway.lastNavidromeScanDraft?.password)
     }
 
     @Test

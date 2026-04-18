@@ -217,7 +217,8 @@ class ImportStoreTest {
         )
         assertTrue(repository.lastUpdatedNavidromeKeepExisting)
         assertNull(store.state.value.editingSource)
-        assertEquals("来源已更新并重新扫描。", store.state.value.message)
+        assertEquals("来源已更新并重新扫描。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
+        assertEquals(testScanSummary("nav-1"), store.state.value.latestScanSummariesBySourceId["nav-1"])
         harness.close()
     }
 
@@ -339,6 +340,92 @@ class ImportStoreTest {
 
         assertEquals("Samba 音乐源已导入。发现 3 个音频文件，成功导入 2 首，1 个失败。", store.state.value.message)
         assertEquals(summary, store.state.value.latestScanSummariesBySourceId["smb-1"])
+        harness.close()
+    }
+
+    @Test
+    fun `successful navidrome import stores scan summary and appends message`() = runTest {
+        val summary = ImportScanSummary(
+            sourceId = "nav-1",
+            discoveredAudioFileCount = 3,
+            importedTrackCount = 2,
+            failures = listOf(
+                ImportScanFailure(
+                    relativePath = "Artist A/Album A/Bad.ogg",
+                    reason = "当前平台暂不支持导入该音频格式。",
+                ),
+            ),
+        )
+        val repository = FakeImportSourceRepository(
+            navidromeResult = Result.success(summary),
+        )
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.NavidromeBaseUrlChanged("https://nav.example.com"))
+        store.dispatch(ImportIntent.NavidromeUsernameChanged("demo"))
+        store.dispatch(ImportIntent.NavidromePasswordChanged("secret"))
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.AddNavidromeSource)
+        advanceUntilIdle()
+
+        assertEquals("Navidrome 音乐源已导入。发现 3 个音频文件，成功导入 2 首，1 个失败。", store.state.value.message)
+        assertEquals(summary, store.state.value.latestScanSummariesBySourceId["nav-1"])
+        harness.close()
+    }
+
+    @Test
+    fun `testing navidrome source only updates test message without scan summary`() = runTest {
+        val harness = createStore(FakeImportSourceRepository())
+        val store = harness.store
+
+        store.dispatch(ImportIntent.NavidromeBaseUrlChanged("https://nav.example.com"))
+        store.dispatch(ImportIntent.NavidromeUsernameChanged("demo"))
+        store.dispatch(ImportIntent.NavidromePasswordChanged("secret"))
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.TestNavidromeSource)
+        advanceUntilIdle()
+
+        assertEquals("Navidrome 连接测试成功。", store.state.value.testMessage)
+        assertNull(store.state.value.message)
+        assertTrue(store.state.value.latestScanSummariesBySourceId.isEmpty())
+        harness.close()
+    }
+
+    @Test
+    fun `rescanning navidrome source stores summary and appends message`() = runTest {
+        val summary = ImportScanSummary(
+            sourceId = "nav-1",
+            discoveredAudioFileCount = 2,
+            importedTrackCount = 1,
+            failures = listOf(
+                ImportScanFailure(
+                    relativePath = "Artist A/Album A/Bad.ogg",
+                    reason = "当前平台暂不支持导入该音频格式。",
+                ),
+            ),
+        )
+        val repository = FakeImportSourceRepository(
+            navidromeResult = Result.success(summary),
+            sources = listOf(
+                source(
+                    sourceId = "nav-1",
+                    type = ImportSourceType.NAVIDROME,
+                    label = "Navidrome",
+                    rootReference = "https://nav.example.com",
+                    username = "demo",
+                    credentialKey = "credential-nav-1",
+                ),
+            ),
+        )
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.RescanSource("nav-1"))
+        advanceUntilIdle()
+
+        assertEquals("音乐源已重新扫描。发现 2 个音频文件，成功导入 1 首，1 个失败。", store.state.value.message)
+        assertEquals(summary, store.state.value.latestScanSummariesBySourceId["nav-1"])
         harness.close()
     }
 
@@ -531,7 +618,7 @@ private class FakeImportSourceRepository(
     localFolderResult: Result<ImportScanSummary?> = Result.success(testScanSummary("local-1")),
     sambaResult: Result<ImportScanSummary> = Result.success(testScanSummary("smb-1")),
     private val webDavResult: Result<ImportScanSummary> = Result.success(testScanSummary("dav-1")),
-    private val navidromeResult: Result<Unit> = Result.success(Unit),
+    private val navidromeResult: Result<ImportScanSummary> = Result.success(testScanSummary("nav-1")),
     sources: List<SourceWithStatus> = emptyList(),
 ) : ImportSourceRepository {
     private val mutableSources = MutableStateFlow(sources)
@@ -611,23 +698,28 @@ private class FakeImportSourceRepository(
         keepExistingCredentialWhenBlankPassword: Boolean,
     ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
 
-    override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
-        return pendingResult?.await() ?: navidromeResult
+    override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<ImportScanSummary> {
+        return pendingResult?.await()?.map { testScanSummary("nav-1") } ?: navidromeResult
     }
 
     override suspend fun updateNavidromeSource(
         sourceId: String,
         draft: NavidromeSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> {
+    ): Result<ImportScanSummary> {
         lastUpdatedNavidromeSourceId = sourceId
         lastUpdatedNavidromeDraft = draft
         lastUpdatedNavidromeKeepExisting = keepExistingCredentialWhenBlankPassword
-        return pendingResult?.await() ?: Result.success(Unit)
+        return pendingResult?.await()?.map { testScanSummary(sourceId) } ?: Result.success(testScanSummary(sourceId))
     }
 
     override suspend fun rescanSource(sourceId: String): Result<ImportScanSummary?> {
-        return pendingResult?.await()?.map { testScanSummary(sourceId) } ?: Result.success(testScanSummary(sourceId))
+        return pendingResult?.await()?.map { testScanSummary(sourceId) } ?: when (sourceId) {
+            "nav-1" -> navidromeResult.map { it }
+            "dav-1" -> webDavResult.map { it }
+            "smb-1" -> sambaResult.map { it }
+            else -> Result.success(testScanSummary(sourceId))
+        }
     }
 
     override suspend fun setSourceEnabled(sourceId: String, enabled: Boolean): Result<Unit> {

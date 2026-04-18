@@ -89,6 +89,14 @@ import platform.Security.kSecReturnData
 import platform.Security.kSecValueData
 import platform.posix.memcpy
 
+private val IOS_SUPPORTED_IMPORT_AUDIO_EXTENSIONS = setOf(
+    "mp3",
+    "m4a",
+    "aac",
+    "wav",
+    "flac",
+)
+
 fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
     val database = buildLynMusicDatabase(
         Room.databaseBuilder<LynMusicDatabase>(
@@ -375,7 +383,12 @@ private class IosImportSourceGateway(
     }
 
     override suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport {
-        return scanNavidromeLibrary(draft, sourceId, navidromeHttpClient)
+        return scanNavidromeLibrary(
+            draft = draft,
+            sourceId = sourceId,
+            httpClient = navidromeHttpClient,
+            supportedImportExtensions = IOS_SUPPORTED_IMPORT_AUDIO_EXTENSIONS,
+        )
     }
 }
 
