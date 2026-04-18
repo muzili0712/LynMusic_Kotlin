@@ -1,0 +1,7 @@
+language = Objective-C
+modules = JavaScriptCore
+package = platform.jsc
+linkerOpts.osx = -framework JavaScriptCore
+linkerOpts.ios = -framework JavaScriptCore
+linkerOpts.ios_arm64 = -framework JavaScriptCore
+linkerOpts.ios_simulator_arm64 = -framework JavaScriptCore
