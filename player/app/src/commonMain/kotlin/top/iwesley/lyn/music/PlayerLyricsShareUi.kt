@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -1657,7 +1658,7 @@ private fun LyricsShareFontMenuLetterIndexBar(
     var trackSize by remember { mutableStateOf(IntSize.Zero) }
     var activeEntryIndex by remember { mutableStateOf<Int?>(null) }
     var dragActive by remember { mutableStateOf(false) }
-    val activeLabel = activeEntryIndex?.let { index -> entries.getOrNull(index)?.label }
+    val activeEntry = activeEntryIndex?.let { index -> entries.getOrNull(index) }
     val hintOffsetY = remember(activeEntryIndex, entries, trackSize.height, density) {
         val index = activeEntryIndex ?: return@remember 0.dp
         if (trackSize.height <= 0 || entries.isEmpty()) return@remember 0.dp
@@ -1733,15 +1734,24 @@ private fun LyricsShareFontMenuLetterIndexBar(
         ) {
             entries.forEachIndexed { index, entry ->
                 val isActive = activeEntryIndex == index
-                Text(
-                    text = entry.label,
-                    color = if (isActive) MaterialTheme.colorScheme.primary else shellColors.secondaryText,
-                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-                    style = MaterialTheme.typography.labelSmall,
-                )
+                if (isLyricsShareFontFavoritesIndexEntry(entry)) {
+                    Icon(
+                        imageVector = Icons.Rounded.Star,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = if (isActive) MaterialTheme.colorScheme.primary else shellColors.secondaryText,
+                    )
+                } else {
+                    Text(
+                        text = entry.label,
+                        color = if (isActive) MaterialTheme.colorScheme.primary else shellColors.secondaryText,
+                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
             }
         }
-        if (activeLabel != null) {
+        if (activeEntry != null) {
             ElevatedCard(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -1758,11 +1768,19 @@ private fun LyricsShareFontMenuLetterIndexBar(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = activeLabel,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                    )
+                    if (isLyricsShareFontFavoritesIndexEntry(activeEntry)) {
+                        Icon(
+                            imageVector = Icons.Rounded.Star,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    } else {
+                        Text(
+                            text = activeEntry.label,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
         }
@@ -1788,12 +1806,25 @@ internal data class LyricsShareFontMenuIndexEntry(
     val firstIndex: Int,
 )
 
+internal fun isLyricsShareFontFavoritesIndexEntry(
+    entry: LyricsShareFontMenuIndexEntry,
+): Boolean = entry.label == LYRICS_SHARE_FONT_FAVORITES_INDEX_LABEL
+
 internal fun buildLyricsShareFontMenuIndexEntries(
     availableFonts: List<LyricsShareFontOption>,
 ): List<LyricsShareFontMenuIndexEntry> {
     val entries = mutableListOf<LyricsShareFontMenuIndexEntry>()
-    val seenLabels = mutableSetOf<String>()
+    availableFonts.indexOfFirst { it.isPrioritized }
+        .takeIf { it >= 0 }
+        ?.let { firstPrioritizedIndex ->
+            entries += LyricsShareFontMenuIndexEntry(
+                label = LYRICS_SHARE_FONT_FAVORITES_INDEX_LABEL,
+                firstIndex = firstPrioritizedIndex,
+            )
+        }
+    val firstIndexByLabel = linkedMapOf<String, Int>()
     availableFonts.forEachIndexed { index, option ->
+        if (option.isPrioritized) return@forEachIndexed
         val label = option.familyName
             .trim()
             .firstOrNull()
@@ -1801,12 +1832,23 @@ internal fun buildLyricsShareFontMenuIndexEntries(
             ?.takeIf { it in 'A'..'Z' }
             ?.toString()
             ?: "#"
-        if (seenLabels.add(label)) {
+        if (!firstIndexByLabel.containsKey(label)) {
+            firstIndexByLabel[label] = index
+        }
+    }
+    ('A'..'Z').forEach { letter ->
+        firstIndexByLabel[letter.toString()]?.let { firstIndex ->
             entries += LyricsShareFontMenuIndexEntry(
-                label = label,
-                firstIndex = index,
+                label = letter.toString(),
+                firstIndex = firstIndex,
             )
         }
+    }
+    firstIndexByLabel["#"]?.let { firstIndex ->
+        entries += LyricsShareFontMenuIndexEntry(
+            label = "#",
+            firstIndex = firstIndex,
+        )
     }
     return entries
 }
@@ -1830,7 +1872,7 @@ internal fun calculateLyricsShareFontMenuIndexScrollOffset(
     return (firstIndex * itemHeightPx).coerceIn(0, maxScrollValue)
 }
 
-private val LyricsShareFontMenuMaxHeight = 420.dp
+private val LyricsShareFontMenuMaxHeight = 430.dp
 private val LyricsShareFontMenuMinWidth = 360.dp
 private val LyricsShareFontMenuMaxWidth = 560.dp
 private val LyricsShareFontMenuItemHeight = 56.dp
@@ -1838,6 +1880,7 @@ private val LyricsShareFontMenuIndexReservedPadding = 28.dp
 private val LyricsShareFontMenuIndexWidth = 24.dp
 private val LyricsShareFontMenuIndexHintSize = 36.dp
 private val LyricsShareFontMenuIndexHintOffsetX = 46.dp
+private const val LYRICS_SHARE_FONT_FAVORITES_INDEX_LABEL = "★"
 
 @Composable
 private fun LyricsShareSelectionPane(

@@ -8,6 +8,7 @@ enum class LyricsShareTemplate {
 data class LyricsShareFontOption(
     val familyName: String,
     val previewText: String = familyName,
+    val isPrioritized: Boolean = false,
 )
 
 data class LyricsShareCardModel(

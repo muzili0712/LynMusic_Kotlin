@@ -747,6 +747,7 @@ class PlayerStore(
                             LyricsShareFontOption(
                                 familyName = normalizedFamilyName,
                                 previewText = option.previewText.ifBlank { normalizedFamilyName },
+                                isPrioritized = option.isPrioritized,
                             )
                         }
                     }

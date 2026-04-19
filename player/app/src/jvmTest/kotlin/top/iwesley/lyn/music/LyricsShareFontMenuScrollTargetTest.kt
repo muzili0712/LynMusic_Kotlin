@@ -4,6 +4,7 @@ import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class LyricsShareFontMenuScrollTargetTest {
     @Test
@@ -67,25 +68,27 @@ class LyricsShareFontMenuScrollTargetTest {
     }
 
     @Test
-    fun `index entries keep first occurrence order`() {
+    fun `index entries add favorites entry and ignore prioritized letters`() {
         val entries = buildLyricsShareFontMenuIndexEntries(
             listOf(
-                LyricsShareFontOption("Avenir Next"),
-                LyricsShareFontOption("Arial"),
-                LyricsShareFontOption("Baskerville"),
-                LyricsShareFontOption("Bodoni 72"),
+                LyricsShareFontOption("PingFang SC", isPrioritized = true),
+                LyricsShareFontOption("Baskerville", isPrioritized = true),
                 LyricsShareFontOption("Courier New"),
+                LyricsShareFontOption("Arial"),
+                LyricsShareFontOption("你好字体"),
             )
         )
 
         assertContentEquals(
-            listOf("A", "B", "C"),
+            listOf("★", "A", "C", "#"),
             entries.map { it.label },
         )
+        assertEquals(0, entries.first().firstIndex)
+        assertTrue(isLyricsShareFontFavoritesIndexEntry(entries.first()))
     }
 
     @Test
-    fun `non latin leading font maps to hash group`() {
+    fun `non latin leading font maps to hash group after letters`() {
         val entries = buildLyricsShareFontMenuIndexEntries(
             listOf(
                 LyricsShareFontOption("你好字体"),
@@ -95,25 +98,62 @@ class LyricsShareFontMenuScrollTargetTest {
         )
 
         assertContentEquals(
-            listOf("#", "A"),
+            listOf("A", "#"),
             entries.map { it.label },
         )
     }
 
     @Test
-    fun `entry firstIndex points to first matching font`() {
+    fun `index entries skip favorites entry when nothing is prioritized`() {
         val entries = buildLyricsShareFontMenuIndexEntries(
             listOf(
                 LyricsShareFontOption("Avenir Next"),
-                LyricsShareFontOption("Arial"),
-                LyricsShareFontOption("Baskerville"),
                 LyricsShareFontOption("Courier New"),
             )
         )
 
+        assertContentEquals(
+            listOf("A", "C"),
+            entries.map { it.label },
+        )
+    }
+
+    @Test
+    fun `entry firstIndex points to first matching non prioritized font in displayed list`() {
+        val entries = buildLyricsShareFontMenuIndexEntries(
+            listOf(
+                LyricsShareFontOption("Baskerville", isPrioritized = true),
+                LyricsShareFontOption("PingFang SC", isPrioritized = true),
+                LyricsShareFontOption("Arial"),
+                LyricsShareFontOption("Avenir Next"),
+                LyricsShareFontOption("Courier New"),
+            )
+        )
+
+        assertContentEquals(
+            listOf("★", "A", "C"),
+            entries.map { it.label },
+        )
         assertEquals(0, entries[0].firstIndex)
         assertEquals(2, entries[1].firstIndex)
-        assertEquals(3, entries[2].firstIndex)
+        assertEquals(4, entries[2].firstIndex)
+    }
+
+    @Test
+    fun `prioritized letter still appears when regular section has same letter`() {
+        val entries = buildLyricsShareFontMenuIndexEntries(
+            listOf(
+                LyricsShareFontOption("PingFang SC", isPrioritized = true),
+                LyricsShareFontOption("Arial"),
+                LyricsShareFontOption("Papyrus"),
+            )
+        )
+
+        assertContentEquals(
+            listOf("★", "A", "P"),
+            entries.map { it.label },
+        )
+        assertEquals(2, entries.last().firstIndex)
     }
 
     @Test

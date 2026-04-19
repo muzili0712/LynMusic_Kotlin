@@ -70,7 +70,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
 
     override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> = withContext(Dispatchers.IO) {
         runCatching {
-            filterJvmLyricsShareFontFamilyNames(
+            prioritizeJvmLyricsShareFontFamilyNames(
                 osName = System.getProperty("os.name").orEmpty(),
                 availableFonts = listJvmFontFamilyNames(),
             )
@@ -577,7 +577,7 @@ private fun listJvmFontFamilyNames(): List<String> {
         .sortedBy { it.lowercase() }
 }
 
-internal fun filterJvmLyricsShareFontFamilyNames(
+internal fun prioritizeJvmLyricsShareFontFamilyNames(
     osName: String,
     availableFonts: List<String>,
 ) : List<LyricsShareFontOption> {
@@ -586,14 +586,34 @@ internal fun filterJvmLyricsShareFontFamilyNames(
         val normalizedFamilyName = familyName.trim().takeIf { it.isNotEmpty() } ?: return@forEach
         availableByName.putIfAbsent(normalizedFamilyName.lowercase(), normalizedFamilyName)
     }
-    return lyricsShareFontWhitelistForDesktop(osName).mapNotNull { candidate ->
+    val prioritizedKeys = linkedSetOf<String>()
+    val prioritizedFonts = lyricsShareFontWhitelistForDesktop(osName).mapNotNull { candidate ->
         availableByName[candidate.familyName.lowercase()]?.let { resolvedFamilyName ->
+            prioritizedKeys += resolvedFamilyName.lowercase()
             LyricsShareFontOption(
                 familyName = resolvedFamilyName,
                 previewText = candidate.previewText,
+                isPrioritized = true,
             )
         }
     }
+    val remainingFamilies = availableByName.values
+        .filterNot { familyName -> familyName.lowercase() in prioritizedKeys }
+    val (alphabeticFamilies, nonAlphabeticFamilies) = remainingFamilies.partition(::isJvmLyricsShareAlphabeticFamilyName)
+    val otherFonts = (alphabeticFamilies + nonAlphabeticFamilies).map { familyName ->
+        LyricsShareFontOption(
+            familyName = familyName,
+            previewText = "你好 Hello",
+        )
+    }
+    return prioritizedFonts + otherFonts
+}
+
+internal fun isJvmLyricsShareAlphabeticFamilyName(
+    familyName: String,
+): Boolean {
+    val firstChar = familyName.trim().firstOrNull()?.uppercaseChar() ?: return false
+    return firstChar in 'A'..'Z'
 }
 
 internal fun lyricsShareFontWhitelistForDesktop(osName: String): List<JvmLyricsShareFontPreset> {
@@ -624,28 +644,29 @@ internal data class JvmLyricsShareFontPreset(
 )
 
 private val JVM_LYRICS_SHARE_FONT_WHITELIST_MACOS = listOf(
-    JvmLyricsShareFontPreset("PingFang SC", "你好"),
-    JvmLyricsShareFontPreset("Songti SC", "你好"),
-    JvmLyricsShareFontPreset("Hiragino Sans GB", "你好"),
-    JvmLyricsShareFontPreset("Avenir Next", "Hello"),
-    JvmLyricsShareFontPreset("Baskerville", "Hello"),
-    JvmLyricsShareFontPreset("Times New Roman", "Hello"),
+    JvmLyricsShareFontPreset("PingFang SC", "你好 Hello"),
+    JvmLyricsShareFontPreset("Songti SC", "你好 Hello"),
+    JvmLyricsShareFontPreset("Hiragino Sans GB", "你好 Hello"),
+    JvmLyricsShareFontPreset("LingWai SC", "你好 Hello"),
+    JvmLyricsShareFontPreset("Avenir Next", "你好 Hello"),
+    JvmLyricsShareFontPreset("Baskerville", "你好 Hello"),
+    JvmLyricsShareFontPreset("Times New Roman", "你好 Hello"),
 )
 
 private val JVM_LYRICS_SHARE_FONT_WHITELIST_WINDOWS = listOf(
-    JvmLyricsShareFontPreset("SimSun", "你好"),
-    JvmLyricsShareFontPreset("Microsoft YaHei", "你好"),
-    JvmLyricsShareFontPreset("Segoe UI", "Hello"),
-    JvmLyricsShareFontPreset("Georgia", "Hello"),
-    JvmLyricsShareFontPreset("Constantia", "Hello"),
+    JvmLyricsShareFontPreset("SimSun", "你好 Hello"),
+    JvmLyricsShareFontPreset("Microsoft YaHei", "你好 Hello"),
+    JvmLyricsShareFontPreset("Segoe UI", "你好 Hello"),
+    JvmLyricsShareFontPreset("Georgia", "你好 Hello"),
+    JvmLyricsShareFontPreset("Constantia", "你好 Hello"),
 )
 
 private val JVM_LYRICS_SHARE_FONT_WHITELIST_LINUX = listOf(
-    JvmLyricsShareFontPreset("Noto Sans CJK SC", "你好"),
-    JvmLyricsShareFontPreset("Noto Serif CJK SC", "你好"),
-    JvmLyricsShareFontPreset("Noto Sans", "Hello"),
-    JvmLyricsShareFontPreset("Noto Serif", "Hello"),
-    JvmLyricsShareFontPreset("DejaVu Serif", "Hello"),
+    JvmLyricsShareFontPreset("Noto Sans CJK SC", "你好 Hello"),
+    JvmLyricsShareFontPreset("Noto Serif CJK SC", "你好 Hello"),
+    JvmLyricsShareFontPreset("Noto Sans", "你好 Hello"),
+    JvmLyricsShareFontPreset("Noto Serif", "你好 Hello"),
+    JvmLyricsShareFontPreset("DejaVu Serif", "你好 Hello"),
 )
 
 private fun wrapTextLines(
