@@ -3,6 +3,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.composeCompiler)
 }
 
 kotlin {
@@ -25,6 +27,17 @@ kotlin {
     }
 
     sourceSets {
+        // T1 deleted applyDefaultHierarchyTemplate(); declare apple* source sets manually
+        // (gradle.properties also disables it globally).
+        val appleMain by creating { dependsOn(commonMain.get()) }
+        val appleTest by creating { dependsOn(commonTest.get()) }
+        val iosArm64Main by getting { dependsOn(appleMain) }
+        val iosSimulatorArm64Main by getting { dependsOn(appleMain) }
+        val macosArm64Main by getting { dependsOn(appleMain) }
+        val iosArm64Test by getting { dependsOn(appleTest) }
+        val iosSimulatorArm64Test by getting { dependsOn(appleTest) }
+        val macosArm64Test by getting { dependsOn(appleTest) }
+
         commonMain.dependencies {
             implementation(project(":shared:core"))
             implementation(project(":shared:data"))
@@ -32,6 +45,8 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.ktor.client.core)
+            implementation(libs.compose.runtime)
+            implementation(libs.compose.components.resources)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
