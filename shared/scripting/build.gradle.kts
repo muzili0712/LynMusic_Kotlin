@@ -25,6 +25,17 @@ kotlin {
     }
 
     sourceSets {
+        // T1 deleted applyDefaultHierarchyTemplate(); declare apple* source sets manually
+        // (gradle.properties also disables it globally).
+        val appleMain by creating { dependsOn(commonMain.get()) }
+        val appleTest by creating { dependsOn(commonTest.get()) }
+        val iosArm64Main by getting { dependsOn(appleMain) }
+        val iosSimulatorArm64Main by getting { dependsOn(appleMain) }
+        val macosArm64Main by getting { dependsOn(appleMain) }
+        val iosArm64Test by getting { dependsOn(appleTest) }
+        val iosSimulatorArm64Test by getting { dependsOn(appleTest) }
+        val macosArm64Test by getting { dependsOn(appleTest) }
+
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.ktor.client.core)
@@ -43,18 +54,8 @@ kotlin {
         jvmTest.dependencies {
             implementation(libs.kotlin.testJunit)
         }
-        // appleMain 无需额外依赖；cinterop 在下方配置
-    }
-
-    listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
-        target.compilations.getByName("main") {
-            cinterops {
-                create("javascriptcore") {
-                    defFile(project.file("src/nativeInterop/cinterop/javascriptcore.def"))
-                    packageName("platform.jsc")
-                }
-            }
-        }
+        // appleMain 直接使用 Kotlin/Native 内置的 `platform.JavaScriptCore` 包，
+        // 无需自建 cinterop（def 文件保留作参考，但未注册）。
     }
 }
 

@@ -27,7 +27,7 @@ sardine = "5.13"
 sardineAndroid = "0.9"
 sqlite = "2.6.2"
 vlcj = "4.12.1"
-quickJsWechat = "2.5.4"
+quickJsWechat = "3.2.0"
 graalPolyglot = "24.1.2"
 
 [libraries]
@@ -66,7 +66,7 @@ smbj = { module = "com.hierynomus:smbj", version.ref = "smbj" }
 sardine = { module = "com.github.lookfirst:sardine", version.ref = "sardine" }
 sardineAndroid = { module = "com.github.thegrizzlylabs:sardine-android", version.ref = "sardineAndroid" }
 vlcj = { module = "uk.co.caprica:vlcj", version.ref = "vlcj" }
-quickjs-wechat-android = { module = "com.whl.quickjs.wrapper:quickjs-android", version.ref = "quickJsWechat" }
+quickjs-wechat-android = { module = "wang.harlon.quickjs:wrapper-android", version.ref = "quickJsWechat" }
 graal-polyglot = { module = "org.graalvm.polyglot:polyglot", version.ref = "graalPolyglot" }
 graal-js-community = { module = "org.graalvm.polyglot:js-community", version.ref = "graalPolyglot" }
 
