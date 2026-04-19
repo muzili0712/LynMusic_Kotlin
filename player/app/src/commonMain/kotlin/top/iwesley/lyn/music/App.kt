@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -44,6 +47,8 @@ import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsStore
 import top.iwesley.lyn.music.feature.settings.SettingsStore
 import top.iwesley.lyn.music.feature.tags.MusicTagsStore
+import top.iwesley.lyn.music.online.OnlineSearchUi
+import top.iwesley.lyn.music.online.store.OnlineSearchStore
 import top.iwesley.lyn.music.ui.LynMusicTheme
 import top.iwesley.lyn.music.ui.mainShellColors
 
@@ -57,6 +62,7 @@ class LynMusicAppComponent(
     val importStore: ImportStore,
     val playerStore: PlayerStore,
     val settingsStore: SettingsStore,
+    val onlineSearchStore: OnlineSearchStore,
     private val scope: CoroutineScope,
     private val onDispose: suspend () -> Unit,
 ) {
@@ -84,6 +90,7 @@ fun buildPlayerAppComponent(
         logger = sharedGraph.logger,
         hydrateImmediately = false,
     )
+    val onlineContainer = AppContainer(scope = sharedGraph.scope)
     return LynMusicAppComponent(
         platform = sharedGraph.platform,
         logger = sharedGraph.logger,
@@ -100,6 +107,7 @@ fun buildPlayerAppComponent(
             logger = sharedGraph.logger,
         ),
         settingsStore = sharedGraph.settingsStore,
+        onlineSearchStore = onlineContainer.onlineSearchStore,
         scope = sharedGraph.scope,
         onDispose = {
             playbackRepository.close()
@@ -107,6 +115,7 @@ fun buildPlayerAppComponent(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(component: LynMusicAppComponent) {
     DisposableEffect(component) {
@@ -120,7 +129,10 @@ fun App(component: LynMusicAppComponent) {
     val importState by component.importStore.state.collectAsState()
     val playerState by component.playerStore.state.collectAsState()
     val settingsState by component.settingsStore.state.collectAsState()
+    val onlineSearchState by component.onlineSearchStore.state.collectAsState()
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.Library) }
+    var showOnlineSearch by rememberSaveable { mutableStateOf(false) }
+    val onlineSearchSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
     var pendingLibraryNavigationTarget by remember { mutableStateOf<LibraryNavigationTarget?>(null) }
     var isMusicTagsMobileEditorVisible by rememberSaveable { mutableStateOf(false) }
@@ -222,6 +234,7 @@ fun App(component: LynMusicAppComponent) {
                             onOpenAddToPlaylist = {
                                 pendingPlaylistTrack = playerState.snapshot.currentTrack
                             },
+                            onOpenOnlineSearch = { showOnlineSearch = true },
                         )
                     } else {
                         DesktopShell(
@@ -248,6 +261,7 @@ fun App(component: LynMusicAppComponent) {
                             onOpenAddToPlaylist = {
                                 pendingPlaylistTrack = playerState.snapshot.currentTrack
                             },
+                            onOpenOnlineSearch = { showOnlineSearch = true },
                         )
                     }
 
@@ -340,6 +354,28 @@ fun App(component: LynMusicAppComponent) {
                                 )
                             },
                         )
+                    }
+                    if (showOnlineSearch) {
+                        ModalBottomSheet(
+                            onDismissRequest = { showOnlineSearch = false },
+                            sheetState = onlineSearchSheetState,
+                        ) {
+                            OnlineSearchUi(
+                                state = onlineSearchState,
+                                onIntent = component.onlineSearchStore::dispatch,
+                                onPlay = { song ->
+                                    // TODO(T10): 接入 PlayerStore.dispatch(PlayerIntent.PlayOnlineTrack(song))
+                                    component.logger.log(
+                                        level = top.iwesley.lyn.music.core.model.DiagnosticLogLevel.INFO,
+                                        tag = "online-search",
+                                        message = "[T7-stub] play ${song.id.stableKey} @ ${song.defaultQuality.lxKey}",
+                                        throwable = null,
+                                    )
+                                    showOnlineSearch = false
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     }
                     playerState.message?.let { message ->
                         ToastCard(

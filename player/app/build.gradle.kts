@@ -32,9 +32,15 @@ kotlin {
         }
         val iosMain by creating {
             dependsOn(nativeMain)
+            dependencies {
+                implementation(libs.ktor.client.darwin)
+            }
         }
         val macosMain by creating {
             dependsOn(nativeMain)
+            dependencies {
+                implementation(libs.ktor.client.darwin)
+            }
         }
         val iosArm64Main by getting {
             dependsOn(iosMain)
@@ -49,6 +55,8 @@ kotlin {
             implementation(project(":shared:core"))
             implementation(project(":shared:data"))
             implementation(project(":shared:features"))
+            implementation(project(":shared:online"))
+            implementation(project(":shared:scripting"))
             implementation(project(":player:core"))
             implementation(libs.compose.components.resources)
             implementation(libs.compose.runtime)
@@ -57,15 +65,18 @@ kotlin {
             implementation(libs.compose.ui)
             implementation(libs.compose.uiToolingPreview)
             implementation(compose.materialIconsExtended)
+            implementation(libs.ktor.client.core)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
+            implementation(libs.ktor.client.okhttp)
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
+            implementation(libs.ktor.client.okhttp)
         }
         jvmTest.dependencies {
             implementation(libs.kotlin.testJunit)

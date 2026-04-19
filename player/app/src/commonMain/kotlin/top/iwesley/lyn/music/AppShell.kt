@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Card
@@ -100,6 +101,7 @@ internal fun MobileShell(
     hideMiniPlayerBar: Boolean,
     onMobileEditorVisibilityChanged: (Boolean) -> Unit,
     onOpenAddToPlaylist: () -> Unit,
+    onOpenOnlineSearch: () -> Unit,
 ) {
     val shellColors = mainShellColors
     val mobileNavIconSize = 29.dp
@@ -162,6 +164,24 @@ internal fun MobileShell(
                             ),
                         )
                     }
+                    NavigationBarItem(
+                        selected = false,
+                        onClick = onOpenOnlineSearch,
+                        icon = {
+                            Icon(
+                                Icons.Rounded.Search,
+                                contentDescription = "在线搜索",
+                                modifier = Modifier.size(mobileNavIconSize),
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                            indicatorColor = Color.Transparent,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
                     NavigationBarItem(
                         selected = isMoreSelected,
                         onClick = { isMoreSheetVisible = true },
@@ -316,6 +336,7 @@ internal fun DesktopShell(
     libraryNavigationTarget: LibraryNavigationTarget? = null,
     onLibraryNavigationHandled: () -> Unit = {},
     onOpenAddToPlaylist: () -> Unit,
+    onOpenOnlineSearch: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxSize(),
@@ -327,6 +348,27 @@ internal fun DesktopShell(
                 .padding(20.dp),
         ) {
             HeroHeader()
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .clickable { onOpenOnlineSearch() }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = "在线搜索",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = "在线搜索",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
