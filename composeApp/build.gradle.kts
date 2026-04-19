@@ -79,8 +79,12 @@ kotlin {
         val applePlaybackMain by creating {
             dependsOn(commonMain.get())
         }
+        val skiaLyricsShareMain by creating {
+            dependsOn(commonMain.get())
+        }
         val iosMain by creating {
             dependsOn(applePlaybackMain)
+            dependsOn(skiaLyricsShareMain)
             dependencies {
                 implementation(libs.ktor.client.darwin)
             }
@@ -96,6 +100,17 @@ kotlin {
         }
         val macosArm64Main by getting {
             dependsOn(macosMain)
+        }
+        val jvmMain by getting {
+            dependsOn(skiaLyricsShareMain)
+            dependencies {
+                implementation(compose.desktop.currentOs)
+                implementation(libs.kotlinx.coroutinesSwing)
+                implementation(libs.ktor.client.okhttp)
+                implementation(libs.sardine)
+                implementation(libs.smbj)
+                implementation(libs.vlcj)
+            }
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
@@ -120,14 +135,6 @@ kotlin {
         }
         jvmTest.dependencies {
             implementation(libs.androidx.sqlite.bundled)
-        }
-        jvmMain.dependencies {
-            implementation(compose.desktop.currentOs)
-            implementation(libs.kotlinx.coroutinesSwing)
-            implementation(libs.ktor.client.okhttp)
-            implementation(libs.sardine)
-            implementation(libs.smbj)
-            implementation(libs.vlcj)
         }
     }
 }
