@@ -35,6 +35,28 @@ object UnsupportedCompactPlayerLyricsPreferencesStore : CompactPlayerLyricsPrefe
     }
 }
 
+/**
+ * 在线歌曲默认音质偏好（lx-music SDK 约定的 lxKey 字符串，如 "320k"/"flac"）。
+ * 存字符串以便平台直接持久化，UI/业务层再按需映射为 Quality 枚举。
+ */
+interface DefaultQualityPreferencesStore {
+    val defaultQualityKey: StateFlow<String>
+
+    suspend fun setDefaultQualityKey(key: String)
+}
+
+object UnsupportedDefaultQualityPreferencesStore : DefaultQualityPreferencesStore {
+    private val mutableDefaultQualityKey = MutableStateFlow(DEFAULT_QUALITY_FALLBACK_KEY)
+
+    override val defaultQualityKey: StateFlow<String> = mutableDefaultQualityKey
+
+    override suspend fun setDefaultQualityKey(key: String) {
+        mutableDefaultQualityKey.value = key
+    }
+}
+
+const val DEFAULT_QUALITY_FALLBACK_KEY: String = "320k"
+
 interface DesktopVlcPreferencesStore {
     val desktopVlcManualPath: StateFlow<String?>
     val desktopVlcAutoDetectedPath: StateFlow<String?>

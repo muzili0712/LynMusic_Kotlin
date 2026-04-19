@@ -15,6 +15,7 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
+import top.iwesley.lyn.music.core.model.DefaultQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
@@ -351,9 +352,10 @@ private fun createSettingsTestDatabase(): LynMusicDatabase {
 }
 
 private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreferencesStore, DesktopVlcPreferencesStore,
-    CompactPlayerLyricsPreferencesStore {
+    CompactPlayerLyricsPreferencesStore, DefaultQualityPreferencesStore {
     override val useSambaCache = MutableStateFlow(true)
     override val showCompactPlayerLyrics = MutableStateFlow(false)
+    override val defaultQualityKey = MutableStateFlow("320k")
     override val selectedTheme = MutableStateFlow(AppThemeId.Ocean)
     override val customThemeTokens = MutableStateFlow(defaultCustomThemeTokens())
     override val textPalettePreferences = MutableStateFlow(defaultThemeTextPalettePreferences())
@@ -367,6 +369,10 @@ private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreference
 
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         showCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setDefaultQualityKey(key: String) {
+        defaultQualityKey.value = key
     }
 
     override suspend fun setSelectedTheme(themeId: AppThemeId) {

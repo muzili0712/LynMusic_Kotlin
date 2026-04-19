@@ -40,6 +40,7 @@ import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
+import top.iwesley.lyn.music.core.model.DefaultQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
@@ -138,6 +139,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             sambaCachePreferencesStore = appPreferencesStore,
             themePreferencesStore = appPreferencesStore,
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
+            defaultQualityPreferencesStore = appPreferencesStore,
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
@@ -260,7 +262,7 @@ private class AndroidCredentialStore(
 private class AndroidAppPreferencesStore(
     context: Context,
 ) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, CompactPlayerLyricsPreferencesStore,
-    LibrarySourceFilterPreferencesStore {
+    DefaultQualityPreferencesStore, LibrarySourceFilterPreferencesStore {
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.settings", Context.MODE_PRIVATE)
     private val mutableUseSambaCache = MutableStateFlow(
@@ -268,6 +270,9 @@ private class AndroidAppPreferencesStore(
     )
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(
         preferences.getBoolean(KEY_SHOW_COMPACT_PLAYER_LYRICS, false),
+    )
+    private val mutableDefaultQualityKey = MutableStateFlow(
+        preferences.getString(KEY_DEFAULT_QUALITY, "320k")?.trim()?.takeIf { it.isNotBlank() } ?: "320k",
     )
     private val mutableLibrarySourceFilter = MutableStateFlow(
         readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER),
@@ -281,6 +286,7 @@ private class AndroidAppPreferencesStore(
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
+    override val defaultQualityKey: StateFlow<String> = mutableDefaultQualityKey.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
@@ -295,6 +301,12 @@ private class AndroidAppPreferencesStore(
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_SHOW_COMPACT_PLAYER_LYRICS, enabled).apply()
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setDefaultQualityKey(key: String) {
+        val normalized = key.trim().ifBlank { "320k" }
+        preferences.edit().putString(KEY_DEFAULT_QUALITY, normalized).apply()
+        mutableDefaultQualityKey.value = normalized
     }
 
     override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
@@ -1508,6 +1520,7 @@ private const val SAMBA_LOG_TAG = "Samba"
 private const val METADATA_LOG_TAG = "Metadata"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
+private const val KEY_DEFAULT_QUALITY = "default_quality_lx_key"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"
 private const val ANDROID_KEYSTORE = "AndroidKeyStore"

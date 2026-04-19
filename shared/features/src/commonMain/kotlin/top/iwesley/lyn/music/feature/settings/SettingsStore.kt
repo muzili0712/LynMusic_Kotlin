@@ -50,6 +50,7 @@ data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = false,
     val showCompactPlayerLyrics: Boolean = false,
+    val defaultQualityLxKey: String = "320k",
     val selectedTheme: AppThemeId = AppThemeId.Ocean,
     val customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
     val textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
@@ -86,6 +87,7 @@ data class SettingsState(
 sealed interface SettingsIntent {
     data class UseSambaCacheChanged(val value: Boolean) : SettingsIntent
     data class ShowCompactPlayerLyricsChanged(val value: Boolean) : SettingsIntent
+    data class DefaultQualityChanged(val lxKey: String) : SettingsIntent
     data class ThemeSelected(val value: AppThemeId) : SettingsIntent
     data class ThemeTextPaletteSelected(val themeId: AppThemeId, val value: AppThemeTextPalette) : SettingsIntent
     data class CustomThemeColorUpdated(val role: CustomThemeColorRole, val argb: Int) : SettingsIntent
@@ -177,6 +179,11 @@ class SettingsStore(
             }
         }
         scope.launch {
+            repository.defaultQualityKey.collect { key ->
+                updateState { state -> state.copy(defaultQualityLxKey = key) }
+            }
+        }
+        scope.launch {
             repository.selectedTheme.collect { themeId ->
                 updateState { state -> state.copy(selectedTheme = themeId) }
             }
@@ -222,6 +229,11 @@ class SettingsStore(
             is SettingsIntent.ShowCompactPlayerLyricsChanged -> {
                 repository.setShowCompactPlayerLyrics(intent.value)
                 updateState { it.copy(showCompactPlayerLyrics = intent.value) }
+            }
+
+            is SettingsIntent.DefaultQualityChanged -> {
+                repository.setDefaultQualityKey(intent.lxKey)
+                updateState { it.copy(defaultQualityLxKey = intent.lxKey) }
             }
 
             is SettingsIntent.ThemeSelected -> {

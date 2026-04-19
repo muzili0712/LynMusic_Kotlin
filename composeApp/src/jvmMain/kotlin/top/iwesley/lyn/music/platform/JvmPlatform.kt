@@ -63,6 +63,7 @@ import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
+import top.iwesley.lyn.music.core.model.DefaultQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.AppThemeId
@@ -164,6 +165,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             sambaCachePreferencesStore = appPreferencesStore,
             themePreferencesStore = appPreferencesStore,
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
+            defaultQualityPreferencesStore = appPreferencesStore,
             desktopVlcPreferencesStore = appPreferencesStore,
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
@@ -213,12 +215,13 @@ private class JvmLyricsHttpClient : LyricsHttpClient {
 }
 
 private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
-    CompactPlayerLyricsPreferencesStore, DesktopVlcPreferencesStore, LibrarySourceFilterPreferencesStore {
+    CompactPlayerLyricsPreferencesStore, DefaultQualityPreferencesStore, DesktopVlcPreferencesStore, LibrarySourceFilterPreferencesStore {
     private val settingsFile = File(File(System.getProperty("user.home")), ".lynmusic/settings.properties").apply {
         parentFile?.mkdirs()
     }
     private val mutableUseSambaCache = MutableStateFlow(readUseSambaCache())
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(readShowCompactPlayerLyrics())
+    private val mutableDefaultQualityKey = MutableStateFlow(readDefaultQualityKey())
     private val mutableLibrarySourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER))
     private val mutableFavoritesSourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_FAVORITES_SOURCE_FILTER))
     private val mutableSelectedTheme = MutableStateFlow(readSelectedTheme())
@@ -235,6 +238,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
+    override val defaultQualityKey: StateFlow<String> = mutableDefaultQualityKey.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
@@ -256,6 +260,14 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
         properties.setProperty(KEY_SHOW_COMPACT_PLAYER_LYRICS, enabled.toString())
         persistProperties(properties)
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setDefaultQualityKey(key: String) {
+        val normalized = key.trim().ifBlank { "320k" }
+        val properties = loadProperties()
+        properties.setProperty(KEY_DEFAULT_QUALITY, normalized)
+        persistProperties(properties)
+        mutableDefaultQualityKey.value = normalized
     }
 
     override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
@@ -325,6 +337,10 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
 
     private fun readShowCompactPlayerLyrics(): Boolean {
         return loadProperties().getProperty(KEY_SHOW_COMPACT_PLAYER_LYRICS)?.toBooleanStrictOrNull() ?: false
+    }
+
+    private fun readDefaultQualityKey(): String {
+        return loadProperties().getProperty(KEY_DEFAULT_QUALITY)?.trim()?.takeIf { it.isNotBlank() } ?: "320k"
     }
 
     private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
@@ -1622,6 +1638,7 @@ private fun joinSegments(left: String, right: String): String {
 
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
+private const val KEY_DEFAULT_QUALITY = "default_quality_lx_key"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"
 private const val MAX_RECENT_VLC_LOGS = 8

@@ -363,12 +363,14 @@ fun App(component: LynMusicAppComponent) {
                             OnlineSearchUi(
                                 state = onlineSearchState,
                                 onIntent = component.onlineSearchStore::dispatch,
-                                onPlay = { song ->
-                                    // TODO(T10): 接入 PlayerStore.dispatch(PlayerIntent.PlayOnlineTrack(song))
+                                onPlay = { song, quality ->
+                                    // TODO(T10): 接入 PlayerStore.dispatch(PlayerIntent.PlayOnlineTrack(song, quality))
+                                    val effectiveQuality = quality ?: song.defaultQuality
                                     component.logger.log(
                                         level = top.iwesley.lyn.music.core.model.DiagnosticLogLevel.INFO,
                                         tag = "online-search",
-                                        message = "[T7-stub] play ${song.id.stableKey} @ ${song.defaultQuality.lxKey}",
+                                        message = "[T11-stub] play ${song.id.stableKey} @ ${effectiveQuality.lxKey}" +
+                                            if (quality != null) " (long-press override)" else " (default)",
                                         throwable = null,
                                     )
                                     showOnlineSearch = false

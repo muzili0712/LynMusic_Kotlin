@@ -1,6 +1,7 @@
 package top.iwesley.lyn.music.online
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -26,24 +31,27 @@ import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.online.store.OnlineSearchIntent
 import top.iwesley.lyn.music.online.store.OnlineSearchState
 import top.iwesley.lyn.music.online.types.OnlineSong
+import top.iwesley.lyn.music.online.types.Quality
 
 /**
  * 在线搜索主 UI：源选择栏 + 关键字输入框 + 当前源的结果列表。
  *
  * 输入框每次变动都会派发 [OnlineSearchIntent.QueryChanged]；
- * 点击结果调用 [onPlay]（由上层 T10 接入 PlayerStore）。
+ * - 点击结果调用 `onPlay(song, null)`，表示沿用用户默认音质偏好；
+ * - 长按结果弹出 [QualityPickerDialog]，选定后调用 `onPlay(song, quality)` 本次播放覆盖默认音质。
  *
  * 加载/错误来自 [OnlineSearchState.loadingBySource] / [OnlineSearchState.errorBySource]，
  * 以当前 [OnlineSearchState.activeSource] 为键读取。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun OnlineSearchUi(
     state: OnlineSearchState,
     onIntent: (OnlineSearchIntent) -> Unit,
-    onPlay: (OnlineSong) -> Unit,
+    onPlay: (OnlineSong, Quality?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var qualityPickFor by remember { mutableStateOf<OnlineSong?>(null) }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -135,7 +143,10 @@ fun OnlineSearchUi(
                             song = song,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onPlay(song) }
+                                .combinedClickable(
+                                    onClick = { onPlay(song, null) },
+                                    onLongClick = { qualityPickFor = song },
+                                )
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                         )
                         HorizontalDivider()
@@ -143,6 +154,18 @@ fun OnlineSearchUi(
                 }
             }
         }
+    }
+
+    qualityPickFor?.let { song ->
+        QualityPickerDialog(
+            available = song.availableQualities.ifEmpty { listOf(Quality.K320) },
+            current = song.defaultQuality,
+            onPick = { quality ->
+                onPlay(song, quality)
+                qualityPickFor = null
+            },
+            onDismiss = { qualityPickFor = null },
+        )
     }
 }
 
