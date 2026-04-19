@@ -14,7 +14,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.Volatile
 import kotlin.random.Random
 import kotlin.time.Clock
+import top.iwesley.lyn.music.core.model.DiagnosticLogLevel
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
+import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackGateway
@@ -31,6 +33,11 @@ import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
+import top.iwesley.lyn.music.online.diagnostics.OnlineLogTags
+import top.iwesley.lyn.music.online.resolve.SongUrlResolver
+import top.iwesley.lyn.music.online.types.OnlineMusicId
+import top.iwesley.lyn.music.online.types.Quality
+import top.iwesley.lyn.music.scripting.MusicSourceException
 
 interface PlaybackRepository {
     val snapshot: StateFlow<PlaybackSnapshot>
@@ -53,6 +60,12 @@ class DefaultPlaybackRepository(
     private val scope: CoroutineScope,
     private val systemPlaybackControlsPlatformService: SystemPlaybackControlsPlatformService = UnsupportedSystemPlaybackControlsPlatformService,
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
+    /**
+     * 在线歌曲 URL 解析器。可选 —— 未注入时 online-lazy:// 形式的 locator 会直接走 gateway，
+     * 等价于原 M0 之前的行为。T10 上线 OnlineSongToTrack 后，AppContainer / 组件图应传入
+     * [top.iwesley.lyn.music.online.resolve.DefaultSongUrlResolver]。
+     */
+    private val songUrlResolver: SongUrlResolver? = null,
     hydrateImmediately: Boolean = true,
 ) : PlaybackRepository {
     private val mutableSnapshot = MutableStateFlow(PlaybackSnapshot(isHydratingPlayback = true))
@@ -447,9 +460,41 @@ class DefaultPlaybackRepository(
             "load-start request=${request.loadToken.requestId} track=${request.track.id} " +
                 "playWhenReady=${request.playWhenReady} startPositionMs=${request.startPositionMs}"
         }
+        // 在线 lazy locator：先 resolve 成真实直链，再走 gateway。
+        // T10 的 OnlineSongToTrack 才会真正产出 online-lazy:// URI；在此之前所有 Track 都走 else 分支，
+        // 这一段等同 no-op。参数 songUrlResolver 为空时也直接 pass-through。
+        val resolvedTrack = try {
+            resolveOnlineTrackIfNeeded(request.track)
+        } catch (e: MusicSourceException) {
+            GlobalDiagnosticLogger.log(
+                DiagnosticLogLevel.ERROR,
+                OnlineLogTags.RESOLVER,
+                "resolve failed for track=${request.track.id} sourceId=${request.track.sourceId}: ${e.message}",
+                e,
+            )
+            if (!request.loadToken.isCurrent()) {
+                logger.debug(PLAYBACK_LOG_TAG) {
+                    "load-failed-stale request=${request.loadToken.requestId} track=${request.track.id} " +
+                        "cause=${e.message.orEmpty()}"
+                }
+                return
+            }
+            logger.error(PLAYBACK_LOG_TAG, e) {
+                "resolve-failed request=${request.loadToken.requestId} track=${request.track.id} " +
+                    "locator=${request.track.mediaLocator}"
+            }
+            mutableSnapshot.update {
+                it.copy(
+                    isPlaying = false,
+                    positionMs = request.startPositionMs.coerceAtLeast(0L),
+                    errorMessage = buildPlaybackLoadFailureMessage(e),
+                )
+            }
+            return
+        }
         runCatching {
             gateway.load(
-                track = request.track,
+                track = resolvedTrack,
                 playWhenReady = request.playWhenReady,
                 startPositionMs = request.startPositionMs,
                 loadToken = request.loadToken,
@@ -482,6 +527,26 @@ class DefaultPlaybackRepository(
                 )
             }
         }
+    }
+
+    /**
+     * 若 [track.mediaLocator] 是 `online-lazy://source/songmid?q=xxx`，且构造时注入了
+     * [songUrlResolver]，则解析成真实直链并返回 `track.copy(mediaLocator = resolvedUrl)`；
+     * 其它场景（本地 / SMB / WebDAV / resolver 未注入）原样返回，保证向后兼容。
+     *
+     * 当前阶段（T10 OnlineSongToTrack 尚未接入）实际不会有 Track 命中 online 分支。
+     */
+    private suspend fun resolveOnlineTrackIfNeeded(track: Track): Track {
+        val resolver = songUrlResolver ?: return track
+        if (!isOnlineTrack(track)) return track
+        val parsed = parseOnlineLocator(track.mediaLocator) ?: return track
+        val resolved = resolver.resolve(
+            id = OnlineMusicId(parsed.source, parsed.songmid),
+            preferredQuality = parsed.quality,
+            // M0 阶段不传 songContext；T10 会把 OnlineSong 随 Track extras 塞入跨源兜底所需上下文。
+            songContext = null,
+        )
+        return track.copy(mediaLocator = resolved.url)
     }
 
     private fun createLoadRequest(
@@ -569,4 +634,44 @@ private fun buildPlaybackLoadFailureMessage(throwable: Throwable): String {
 
 private fun String.toPlaybackMode(): PlaybackMode {
     return runCatching { PlaybackMode.valueOf(this) }.getOrDefault(PlaybackMode.ORDER)
+}
+
+private const val ONLINE_LAZY_SCHEME_PREFIX: String = "online-lazy://"
+
+/**
+ * 识别 Track 是否属于在线懒解析：mediaLocator 前缀是 `online-lazy://` 即可（T10 adapter 的约定）。
+ * sourceId 用 `online-` 前缀也识别，作为冗余 fallback 以应对未来 adapter 命名变化。
+ */
+private fun isOnlineTrack(track: Track): Boolean =
+    track.mediaLocator.startsWith(ONLINE_LAZY_SCHEME_PREFIX) ||
+        track.sourceId.startsWith("online-")
+
+private data class OnlineLocator(
+    val source: String,
+    val songmid: String,
+    val quality: Quality,
+)
+
+/**
+ * 解析 `online-lazy://{source}/{songmid}?q={quality}` 形式的 URI。
+ *
+ * - 未带 `q` 时默认按 320k（lx SDK 默认档）解析。
+ * - 任一关键字段缺失（source / songmid 空）返回 `null`，让上层退化为 pass-through。
+ */
+private fun parseOnlineLocator(locator: String): OnlineLocator? {
+    if (!locator.startsWith(ONLINE_LAZY_SCHEME_PREFIX)) return null
+    val body = locator.removePrefix(ONLINE_LAZY_SCHEME_PREFIX)
+    val parts = body.split('?', limit = 2)
+    val path = parts[0]
+    val query = parts.getOrNull(1).orEmpty()
+    val pathParts = path.split('/', limit = 2)
+    val source = pathParts.getOrNull(0)?.takeIf { it.isNotBlank() } ?: return null
+    val songmid = pathParts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: return null
+    val qKey = query.split('&')
+        .mapNotNull { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 } }
+        .firstOrNull { it[0] == "q" }
+        ?.get(1)
+        ?: Quality.K320.lxKey
+    val quality = Quality.fromLxKey(qKey) ?: Quality.K320
+    return OnlineLocator(source, songmid, quality)
 }

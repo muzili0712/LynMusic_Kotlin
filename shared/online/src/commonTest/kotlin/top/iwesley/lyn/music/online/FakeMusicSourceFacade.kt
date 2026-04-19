@@ -15,8 +15,16 @@ import top.iwesley.lyn.music.online.types.SourceManifest
  * 计数 +1；缓存命中则不再触达 facade，计数保持不变。
  *
  * 返回内容足够测试辨识即可（stable id、页号回显等），不追求数据真实性。
+ *
+ * 可选构造参数：
+ * - [searchResults]：按 `(sourceId to keyword)` 覆盖搜索返回；未命中时退回默认占位 song。
+ * - [urlProvider]：覆盖 `getPlayableUrl` 行为（用于模拟音质失败 / 错误注入）。
+ * 两个参数均为默认值，保证旧测试（`FakeMusicSourceFacade()` 无参）继续 work。
  */
-class FakeMusicSourceFacade : MusicSourceFacade {
+class FakeMusicSourceFacade(
+    private val searchResults: Map<Pair<String, String>, SearchPage<OnlineSong>> = emptyMap(),
+    private val urlProvider: (suspend (OnlineMusicId, Quality) -> PlayableUrl)? = null,
+) : MusicSourceFacade {
 
     override val sources: List<SourceInfo> = SourceManifest.all
 
@@ -36,6 +44,7 @@ class FakeMusicSourceFacade : MusicSourceFacade {
         limit: Int,
     ): SearchPage<OnlineSong> {
         searchCallCount++
+        searchResults[sourceId to keyword]?.let { return it }
         return SearchPage(
             items = listOf(
                 OnlineSong(
@@ -59,6 +68,7 @@ class FakeMusicSourceFacade : MusicSourceFacade {
 
     override suspend fun getPlayableUrl(id: OnlineMusicId, quality: Quality): PlayableUrl {
         urlCallCount++
+        urlProvider?.let { return it(id, quality) }
         return PlayableUrl(
             url = "https://fake/${id.stableKey}/${quality.lxKey}",
             quality = quality,

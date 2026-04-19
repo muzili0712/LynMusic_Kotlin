@@ -28,6 +28,9 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":shared:core"))
             implementation(project(":shared:data"))
+            implementation(project(":shared:online"))
+            // 为了直接 catch `MusicSourceException` 子类（在 loadGatewaySafely 的 online 分支里使用）。
+            implementation(project(":shared:scripting"))
             implementation(libs.androidx.room.runtime)
             implementation(libs.kotlinx.coroutines.core)
         }

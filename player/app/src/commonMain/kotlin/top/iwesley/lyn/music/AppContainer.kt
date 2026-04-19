@@ -5,6 +5,9 @@ import kotlinx.coroutines.CoroutineScope
 import top.iwesley.lyn.music.online.DefaultMusicSourceFacade
 import top.iwesley.lyn.music.online.MusicSourceFacade
 import top.iwesley.lyn.music.online.repository.OnlineMusicRepository
+import top.iwesley.lyn.music.online.resolve.DefaultSongUrlResolver
+import top.iwesley.lyn.music.online.resolve.FindMusicM0
+import top.iwesley.lyn.music.online.resolve.SongUrlResolver
 import top.iwesley.lyn.music.online.source.JsBridgeImpl
 import top.iwesley.lyn.music.online.source.createPlatformCrypto
 import top.iwesley.lyn.music.online.store.OnlineSearchStore
@@ -43,6 +46,18 @@ class AppContainer(
     val onlineSearchStore: OnlineSearchStore = OnlineSearchStore(
         repository = onlineMusicRepository,
         scope = scope,
+    )
+
+    /**
+     * T9 产物：URL 解析器（同源降级 + 跨源 findMusic 兜底）。
+     *
+     * 会被 `buildPlayerAppComponent` 传给 [top.iwesley.lyn.music.data.repository.DefaultPlaybackRepository]；
+     * 当前阶段（T10 OnlineSongToTrack 尚未上线）所有 Track 的 mediaLocator 都不是 `online-lazy://` 形式，
+     * 因此 resolver 实际不会被触达，为"代码就绪但运行期 no-op"状态。
+     */
+    val songUrlResolver: SongUrlResolver = DefaultSongUrlResolver(
+        repository = onlineMusicRepository,
+        findMusic = FindMusicM0(onlineMusicRepository),
     )
 
     companion object {
