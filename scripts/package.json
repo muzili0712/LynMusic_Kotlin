@@ -1,0 +1,7 @@
+{
+  "name": "lyn-sdk-bundler",
+  "private": true,
+  "type": "module",
+  "scripts": { "bundle": "node bundle-sdk.mjs" },
+  "devDependencies": { "esbuild": "^0.24.0" }
+}

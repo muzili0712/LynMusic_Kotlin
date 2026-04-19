@@ -21,3 +21,13 @@ captures
 node_modules/
 debug_doc/
 .worktrees/
+
+# lyn sdk bundler
+scripts/node_modules/
+scripts/package-lock.json
+
+# keep vendored lx SDK source (license: GPL-3.0, 合规自担)
+!vendor/lx-sdk/**
+
+# keep esbuild bundles (M0 资产 check-in)
+!shared/online/src/commonMain/composeResources/files/sdk/*.js
