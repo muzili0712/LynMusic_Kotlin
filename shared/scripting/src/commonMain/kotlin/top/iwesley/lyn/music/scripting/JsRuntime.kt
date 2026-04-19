@@ -9,6 +9,14 @@ import kotlinx.coroutines.CoroutineDispatcher
 interface JsRuntime : AutoCloseable {
     suspend fun evaluate(script: String, name: String = "anon.js"): JsValue
     suspend fun invoke(path: String, vararg args: JsValue): JsValue
+
+    /**
+     * 注册 host 函数到 JS 全局作用域。
+     *
+     * 注意：actual 实现内部使用 runBlocking 同步切换到 runtime 专用 dispatcher；
+     * 不要从该 dispatcher 线程上的协程调用 register，否则死锁。通常 register 只在
+     * JsRuntime 创建后、evaluate 前一次性完成。
+     */
     fun register(name: String, host: HostFunction)
     val dispatcher: CoroutineDispatcher
     val sourceId: String

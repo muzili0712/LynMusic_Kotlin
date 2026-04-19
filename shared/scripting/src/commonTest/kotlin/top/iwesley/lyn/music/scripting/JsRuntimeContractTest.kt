@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.scripting
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class JsRuntimeContractTest {
 
@@ -34,6 +35,16 @@ class JsRuntimeContractTest {
             }
             val r = rt.evaluate("addOne(41)")
             assertEquals(JsValue.Num(42.0), r)
+        }
+    }
+
+    @Test
+    fun js_throw_is_wrapped_as_script_runtime_error() = runTest {
+        runtime().use { rt ->
+            val ex = assertFailsWith<MusicSourceException.ScriptRuntimeError> {
+                rt.evaluate("throw new Error('boom')")
+            }
+            assertEquals("test", ex.sourceId)
         }
     }
 }

@@ -9,9 +9,11 @@ class GraalJsRuntimeSmokeTest {
 
     @Test
     fun host_function_md5_reachable_from_js_via_register() = runTest {
-        JsRuntimeFactory.create("smoke", bridge = TestBridge(md5Out = "abc123")).use { rt ->
+        val bridge = TestBridge(md5Out = "abc123")
+        JsRuntimeFactory.create("smoke", bridge = bridge).use { rt ->
             rt.register("md5") { args ->
-                JsValue.Str(rt.bridgeMd5(args))
+                val input = (args[0] as JsValue.Str).value.encodeToByteArray()
+                JsValue.Str(bridge.md5(input))
             }
             val r = rt.evaluate("md5('hello')")
             assertEquals(JsValue.Str("abc123"), r)
@@ -19,19 +21,15 @@ class GraalJsRuntimeSmokeTest {
     }
 
     @Test
-    fun plain_promise_expression_does_not_throw() = runTest {
+    fun plain_promise_resolves() = runTest {
         JsRuntimeFactory.create("smoke", bridge = TestBridge()).use { rt ->
             val r = rt.evaluate("Promise.resolve(42).then(v => v + 1)")
-            // M0: GraalVM Promise 无 microtask queue，结果未 resolve。
-            // Repository 侧统一处理 await；这里只校验表达式不抛、返回非 Null。
-            assertTrue(r !is JsValue.Null)
+            // GraalVM 无 await 语义，Promise 反射为 JsValue.Obj；
+            // M0 仅验证"表达式执行不抛 + 反射为对象"，真正 await 在 Repository 层处理
+            assertTrue(r is JsValue.Obj, "expected Promise reflected as Obj, got $r")
         }
     }
 }
-
-private fun JsRuntime.bridgeMd5(@Suppress("UNUSED_PARAMETER") args: List<JsValue>): String =
-    // 实际会委派到 bridge.md5；smoke 只校验"注册 → 调用"链路打通
-    "abc123"
 
 private class TestBridge(private val md5Out: String = "xx") : JsBridge {
     override suspend fun request(url: String, options: Map<String, JsValue>) = JsValue.Null

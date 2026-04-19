@@ -75,9 +75,13 @@ private class QuickJsRuntime(
 
     override fun register(name: String, host: HostFunction) {
         runBlocking(dispatcher) {
+            // TODO(T5 死锁风险): 若 host(...) 内部 withContext(dispatcher) 试图切回本单线程 dispatcher，
+            // runBlocking 会死锁。T5 真正 IO/网络 HostFunction 落地前，必须评估：
+            //   a) 换 QuickJS JSPromise 异步桥（推荐）
+            //   b) host 约定不得 withContext(同 dispatcher)
+            //   c) HostFunction 改为非 suspend，IO 提前在调用方完成
+            // 当前 M0 bridge 全部同步 compute-only，runBlocking 安全。
             val callback = JSCallFunction { args ->
-                // host 是 suspend；同 GraalVM 路径，M0 由 bridge stub 同步返回，
-                // runBlocking 不会死锁。T5 若宿主函数真做 IO，需评估换异步 promise 桥。
                 runBlocking {
                     host(args.map { it.toJsValue() }).toHost()
                 }

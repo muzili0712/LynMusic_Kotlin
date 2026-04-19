@@ -37,8 +37,6 @@ private class GraalJsRuntime(
         .allowHostAccess(HostAccess.ALL)
         .build()
 
-    private val hosts = mutableMapOf<String, HostFunction>()
-
     init {
         // 在 executor 线程上 enter/leave 一次做 bootstrap，保证后续该线程一直持有 context
         runBlocking(dispatcher) {
@@ -51,30 +49,45 @@ private class GraalJsRuntime(
     override suspend fun evaluate(script: String, name: String): JsValue =
         withContext(dispatcher) {
             withContext0 {
-                val src = Source.newBuilder("js", script, name).build()
-                context.eval(src).toJsValue()
+                try {
+                    val src = Source.newBuilder("js", script, name).build()
+                    context.eval(src).toJsValue()
+                } catch (t: Throwable) {
+                    if (t is MusicSourceException) throw t
+                    throw MusicSourceException.ScriptRuntimeError(sourceId, t.message ?: "", t)
+                }
             }
         }
 
     override suspend fun invoke(path: String, vararg args: JsValue): JsValue =
         withContext(dispatcher) {
             withContext0 {
-                var cur: Value = context.getBindings("js")
-                for (seg in path.split('.')) {
-                    cur = cur.getMember(seg)
-                        ?: throw MusicSourceException.ScriptRuntimeError(
-                            sourceId, "path not found: $path", null,
-                        )
+                try {
+                    var cur: Value = context.getBindings("js")
+                    for (seg in path.split('.')) {
+                        cur = cur.getMember(seg)
+                            ?: throw MusicSourceException.ScriptRuntimeError(
+                                sourceId, "path not found: $path", null,
+                            )
+                    }
+                    val result = cur.execute(*args.map { it.toHost() }.toTypedArray())
+                    result.toJsValue()
+                } catch (t: Throwable) {
+                    if (t is MusicSourceException) throw t
+                    throw MusicSourceException.ScriptRuntimeError(sourceId, t.message ?: "", t)
                 }
-                val result = cur.execute(*args.map { it.toHost() }.toTypedArray())
-                result.toJsValue()
             }
         }
 
     override fun register(name: String, host: HostFunction) {
-        hosts[name] = host
         runBlocking(dispatcher) {
             withContext0 {
+                // TODO(T5 死锁风险): 若 host(...) 内部 withContext(dispatcher) 试图切回本单线程 dispatcher，
+                // runBlocking 会死锁。T5 真正 IO/网络 HostFunction 落地前，必须评估：
+                //   a) 换 ProxyPromise 异步桥（推荐）
+                //   b) host 约定不得 withContext(同 dispatcher)
+                //   c) HostFunction 改为非 suspend，IO 提前在调用方完成
+                // 当前 M0 bridge 全部同步 compute-only，runBlocking 安全。
                 val proxy = ProxyExecutable { graalArgs ->
                     val parsed = graalArgs.map { it.toJsValue() }
                     runBlocking { host(parsed).toHost() }
