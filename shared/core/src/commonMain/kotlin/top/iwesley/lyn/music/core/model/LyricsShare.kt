@@ -16,7 +16,7 @@ data class LyricsShareFontOption(
     val previewText: String = displayName,
     val isPrioritized: Boolean = false,
     val kind: LyricsShareFontKind = LyricsShareFontKind.SYSTEM,
-    val previewPngBytes: ByteArray? = null,
+    val fontFilePath: String? = null,
 )
 
 data class LyricsShareCardModel(

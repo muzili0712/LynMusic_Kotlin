@@ -92,7 +92,7 @@ import top.iwesley.lyn.music.feature.settings.CustomThemeColorRole
 import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.platform.PlatformBackHandler
-import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
+import top.iwesley.lyn.music.platform.lyricsSharePreviewFontFamily
 import top.iwesley.lyn.music.ui.mainShellColors
 
 @Composable
@@ -1247,26 +1247,24 @@ private fun LyricsShareImportedFontPreview(
     option: LyricsShareFontOption,
     modifier: Modifier = Modifier,
 ) {
-    val previewBitmap = rememberPlatformImageBitmap(option.previewPngBytes)
+    val previewFontFamily = lyricsSharePreviewFontFamily(
+        fontKey = option.fontKey,
+        displayName = option.displayName,
+        fontFilePath = option.fontFilePath,
+    )
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
         contentAlignment = Alignment.Center,
     ) {
-        if (previewBitmap != null) {
-            Image(
-                bitmap = previewBitmap,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.FillBounds,
-            )
-        } else {
-            Text(
-                text = option.previewText,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            text = option.previewText,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = previewFontFamily,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

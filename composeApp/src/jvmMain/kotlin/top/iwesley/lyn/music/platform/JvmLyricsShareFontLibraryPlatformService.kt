@@ -5,12 +5,7 @@ import java.nio.file.Files
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jetbrains.skia.EncodedImageFormat
-import org.jetbrains.skia.Font
 import org.jetbrains.skia.FontMgr
-import org.jetbrains.skia.Paint
-import org.jetbrains.skia.Surface
-import org.jetbrains.skia.Typeface
 import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT
 import top.iwesley.lyn.music.core.model.LyricsShareFontKind
 import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
@@ -79,16 +74,13 @@ class JvmLyricsShareFontLibraryPlatformService(
 
     private fun toImportedFontOption(file: File): LyricsShareFontOption? {
         val metadata = parseImportedLyricsShareFontFile(file.name) ?: return null
-        val previewBytes = runCatching {
-            renderJvmImportedFontPreview(file.absolutePath)
-        }.getOrNull()
         return LyricsShareFontOption(
             fontKey = metadata.fontKey,
             displayName = metadata.displayName,
             previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
             isPrioritized = true,
             kind = LyricsShareFontKind.IMPORTED,
-            previewPngBytes = previewBytes,
+            fontFilePath = file.absolutePath,
         )
     }
 
@@ -105,22 +97,6 @@ class JvmLyricsShareFontLibraryPlatformService(
 
 private fun validateJvmImportedFontFile(file: File) {
     checkNotNull(FontMgr.default.makeFromFile(file.absolutePath)) { "无法加载所选字体文件。" }
-}
-
-private fun renderJvmImportedFontPreview(fontPath: String): ByteArray {
-    val typeface = FontMgr.default.makeFromFile(fontPath) ?: error("无法渲染字体预览。")
-    val surface = Surface.makeRasterN32Premul(480, 120)
-    val canvas = surface.canvas
-    canvas.clear(0xFFF7F4EE.toInt())
-    val paint = Paint().apply {
-        isAntiAlias = true
-        color = 0xFF2E2A24.toInt()
-    }
-    val font = Font(typeface, 42f)
-    canvas.drawString(DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT, 28f, 74f, font, paint)
-    val encoded = surface.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG, 100)
-        ?: error("无法编码字体预览。")
-    return encoded.bytes
 }
 
 private data class ImportedLyricsShareFontFileMetadata(

@@ -818,7 +818,7 @@ class PlayerStore(
                                 previewText = option.previewText.ifBlank { option.displayName.ifBlank { normalizedFontKey } },
                                 isPrioritized = option.isPrioritized,
                                 kind = option.kind,
-                                previewPngBytes = option.previewPngBytes,
+                                fontFilePath = option.fontFilePath?.trim()?.takeIf { it.isNotEmpty() },
                             )
                         }
                     }

@@ -1,15 +1,11 @@
 package top.iwesley.lyn.music.platform
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
 import android.graphics.Typeface
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.documentfile.provider.DocumentFile
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
@@ -97,14 +93,13 @@ class AndroidLyricsShareFontLibraryPlatformService(
 
     private fun toImportedFontOption(file: File): LyricsShareFontOption? {
         val metadata = parseAndroidImportedLyricsShareFontFile(file.name) ?: return null
-        val previewBytes = runCatching { renderAndroidImportedFontPreview(file) }.getOrNull()
         return LyricsShareFontOption(
             fontKey = metadata.fontKey,
             displayName = metadata.displayName,
             previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
             isPrioritized = true,
             kind = LyricsShareFontKind.IMPORTED,
-            previewPngBytes = previewBytes,
+            fontFilePath = file.absolutePath,
         )
     }
 
@@ -122,23 +117,6 @@ class AndroidLyricsShareFontLibraryPlatformService(
 private fun validateAndroidImportedFontFile(file: File) {
     Typeface.createFromFile(file).also { typeface ->
         check(typeface != null) { "无法加载所选字体文件。" }
-    }
-}
-
-private fun renderAndroidImportedFontPreview(file: File): ByteArray {
-    val typeface = Typeface.createFromFile(file)
-    val bitmap = Bitmap.createBitmap(480, 120, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    canvas.drawColor(0xFFF7F4EE.toInt())
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF2E2A24.toInt()
-        textSize = 42f
-        this.typeface = typeface
-    }
-    canvas.drawText(DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT, 28f, 76f, paint)
-    return ByteArrayOutputStream().use { output ->
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
-        output.toByteArray()
     }
 }
 

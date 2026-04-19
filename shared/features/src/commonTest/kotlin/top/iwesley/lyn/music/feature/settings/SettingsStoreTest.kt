@@ -81,6 +81,7 @@ class SettingsStoreTest {
                     displayName = "My Imported Font",
                     previewText = "你好 Hello",
                     kind = LyricsShareFontKind.IMPORTED,
+                    fontFilePath = "/tmp/abc__My Imported Font.ttf",
                 ),
             ),
         )
@@ -97,6 +98,7 @@ class SettingsStoreTest {
 
         assertEquals(1, fontLibrary.listCalls)
         assertEquals(listOf("imported:abc"), store.state.value.importedLyricsShareFonts.map { it.fontKey })
+        assertEquals("/tmp/abc__My Imported Font.ttf", store.state.value.importedLyricsShareFonts.single().fontFilePath)
         assertFalse(store.state.value.lyricsShareFontsLoading)
         scope.cancel()
     }
@@ -109,6 +111,7 @@ class SettingsStoreTest {
             displayName = "Fancy Imported Font",
             previewText = "你好 Hello",
             kind = LyricsShareFontKind.IMPORTED,
+            fontFilePath = "/tmp/def__Fancy Imported Font.ttf",
         )
         val fontLibrary = FakeLyricsShareFontLibraryPlatformService().apply {
             nextImportResult = Result.success(importedFont)
@@ -128,6 +131,7 @@ class SettingsStoreTest {
 
         assertEquals(1, fontLibrary.importCalls)
         assertEquals(listOf("imported:def"), store.state.value.importedLyricsShareFonts.map { it.fontKey })
+        assertEquals("/tmp/def__Fancy Imported Font.ttf", store.state.value.importedLyricsShareFonts.single().fontFilePath)
         assertEquals("字体已导入。", store.state.value.message)
         assertFalse(store.state.value.importingLyricsShareFont)
         assertEquals(listOf<SettingsEffect>(SettingsEffect.LyricsShareFontsChanged), effects)

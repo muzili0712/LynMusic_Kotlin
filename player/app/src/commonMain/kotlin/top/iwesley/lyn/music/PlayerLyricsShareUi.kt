@@ -1678,8 +1678,11 @@ private fun LyricsShareFontMenuList(
                 .padding(end = if (shouldShowIndexBar) LyricsShareFontMenuIndexReservedPadding else 0.dp),
         ) {
             availableFonts.forEach { option ->
-                val previewFontFamily = lyricsSharePreviewFontFamily(option.displayName)
-                val previewBitmap = rememberPlatformImageBitmap(option.previewPngBytes)
+                val previewFontFamily = lyricsSharePreviewFontFamily(
+                    fontKey = option.fontKey,
+                    displayName = option.displayName,
+                    fontFilePath = option.fontFilePath,
+                )
                 val isSelected = option.fontKey == selectedFontKey
                 DropdownMenuItem(
                     modifier = Modifier.height(LyricsShareFontMenuItemHeight),
@@ -1695,25 +1698,13 @@ private fun LyricsShareFontMenuList(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            if (previewBitmap != null) {
-                                Image(
-                                    bitmap = previewBitmap,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(34.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
-                                    contentScale = ContentScale.FillBounds,
-                                )
-                            } else {
-                                Text(
-                                    text = option.previewText,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    fontFamily = previewFontFamily,
-                                )
-                            }
+                            Text(
+                                text = option.previewText,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontFamily = previewFontFamily,
+                            )
                         }
                     },
                     trailingIcon = if (isSelected) {
@@ -2329,7 +2320,10 @@ private fun LyricsShareNoteCard(
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
-    val previewFontFamily = lyricsSharePreviewFontFamily(model.fontKey)
+    val previewFontFamily = lyricsSharePreviewFontFamily(
+        fontKey = model.fontKey,
+        displayName = model.fontKey,
+    )
     val primaryTextColor = Color(0xFF3C2E24)
     val footerTextColor = composeColorFromArgb(LyricsShareCardSpec.TEXT_FOOTER_ARGB)
     val secondaryTextColor = Color(0xFF70584B)
@@ -2402,7 +2396,10 @@ private fun LyricsShareArtworkTintCard(
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
-    val previewFontFamily = lyricsSharePreviewFontFamily(model.fontKey)
+    val previewFontFamily = lyricsSharePreviewFontFamily(
+        fontKey = model.fontKey,
+        displayName = model.fontKey,
+    )
     val backgroundColor = composeColorFromArgb(LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB)
     val topTint = composeColorFromArgb(
         argbWithAlpha(

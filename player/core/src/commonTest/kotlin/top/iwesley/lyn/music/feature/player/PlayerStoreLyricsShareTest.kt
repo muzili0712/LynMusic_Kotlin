@@ -210,6 +210,13 @@ class PlayerStoreLyricsShareTest {
         val shareService = FakeLyricsSharePlatformService(
             fontListResult = Result.success(
                 listOf(
+                    LyricsShareFontOption(
+                        fontKey = "imported:abc123",
+                        displayName = "Imported Font",
+                        previewText = "你好 Hello",
+                        kind = LyricsShareFontKind.IMPORTED,
+                        fontFilePath = "/tmp/abc123__Imported Font.ttf",
+                    ),
                     LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC", previewText = "你好"),
                     LyricsShareFontOption(fontKey = "Serif", displayName = "Serif", previewText = "Hello"),
                     LyricsShareFontOption(fontKey = "pingfang sc", displayName = "pingfang sc", previewText = "不同预览"),
@@ -385,6 +392,13 @@ class PlayerStoreLyricsShareTest {
         val shareService = FakeLyricsSharePlatformService(
             fontListResult = Result.success(
                 listOf(
+                    LyricsShareFontOption(
+                        fontKey = "imported:abc123",
+                        displayName = "Imported Font",
+                        previewText = "你好 Hello",
+                        kind = LyricsShareFontKind.IMPORTED,
+                        fontFilePath = "/tmp/abc123__Imported Font.ttf",
+                    ),
                     LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC", previewText = "你好"),
                     LyricsShareFontOption(fontKey = "Serif", displayName = "Serif", previewText = "Hello"),
                     LyricsShareFontOption(fontKey = "pingfang sc", displayName = "pingfang sc", previewText = "不同预览"),
@@ -413,8 +427,9 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(listOf("PingFang SC", "Serif", "Arial"), state.availableLyricsShareFonts.map { it.fontKey })
-        assertEquals(listOf("你好", "Hello", "Hello"), state.availableLyricsShareFonts.map { it.previewText })
+        assertEquals(listOf("imported:abc123", "PingFang SC", "Serif", "Arial"), state.availableLyricsShareFonts.map { it.fontKey })
+        assertEquals(listOf("你好 Hello", "你好", "Hello", "Hello"), state.availableLyricsShareFonts.map { it.previewText })
+        assertEquals("/tmp/abc123__Imported Font.ttf", state.availableLyricsShareFonts.first().fontFilePath)
         assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.selectedLyricsShareFontKey)
         assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.shareCardModel?.fontKey)
         assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, shareService.lastPreviewModel?.fontKey)
