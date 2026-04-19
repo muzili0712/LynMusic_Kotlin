@@ -44,4 +44,15 @@ class SourceManifestTest {
             )
         }
     }
+
+    @Test
+    fun enabled_sources_all_have_nine_methods() {
+        SourceManifest.enabled.forEach { info ->
+            assertEquals(
+                SourceMethod.entries.toSet(),
+                info.methods,
+                "source ${info.id} methods != full set",
+            )
+        }
+    }
 }

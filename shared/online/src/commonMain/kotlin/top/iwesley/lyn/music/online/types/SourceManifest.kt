@@ -3,125 +3,85 @@ package top.iwesley.lyn.music.online.types
 /**
  * M0 在线音乐源清单。
  *
- * 启用：kw / kg / tx / wy / mg（五源全量：Search/Url/Lyric/Pic 必备）。
+ * 启用：kw / kg / tx / wy / mg（五源全量：Search/Url/Lyric/Pic 必备；M0 不在清单层做能力裁剪，
+ * 运行时失败由 JS 桥 → Result 错误统一返回）。
  * 禁用：xm（lx-music-mobile 官方本身即为 stub，保留占位以便 UI 展示"暂不可用"而不是消失）。
  *
  * 注：音质集合 [Quality.degradationOrder] 仅作上限参考，实际可用音质以单曲级 `availableQualities` 为准。
  */
 object SourceManifest {
+
+    /** 九项能力全集。启用源默认声明支持全部能力，运行时失败由错误通道返回。 */
+    private val allMethods: Set<SourceMethod> = SourceMethod.entries.toSet()
+
     val all: List<SourceInfo> = listOf(
         SourceInfo(
             id = "kw",
-            name = "酷我音乐",
-            enabled = true,
-            methods = setOf(
-                SourceMethod.Search,
-                SourceMethod.Url,
-                SourceMethod.Lyric,
-                SourceMethod.Pic,
-                SourceMethod.Leaderboard,
-                SourceMethod.Songlist,
-                SourceMethod.HotSearch,
-                SourceMethod.TipSearch,
-            ),
-            qualities = listOf(
+            displayName = "酷我音乐",
+            supportedQualities = setOf(
                 Quality.FLAC,
                 Quality.K320,
                 Quality.K192,
                 Quality.K128,
             ),
+            methods = allMethods,
+            enabled = true,
         ),
         SourceInfo(
             id = "kg",
-            name = "酷狗音乐",
-            enabled = true,
-            methods = setOf(
-                SourceMethod.Search,
-                SourceMethod.Url,
-                SourceMethod.Lyric,
-                SourceMethod.Pic,
-                SourceMethod.Leaderboard,
-                SourceMethod.Songlist,
-                SourceMethod.HotSearch,
-                SourceMethod.TipSearch,
-            ),
-            qualities = listOf(
+            displayName = "酷狗音乐",
+            supportedQualities = setOf(
                 Quality.FLAC24BIT,
                 Quality.FLAC,
                 Quality.K320,
                 Quality.K128,
             ),
+            methods = allMethods,
+            enabled = true,
         ),
         SourceInfo(
             id = "tx",
-            name = "QQ 音乐",
-            enabled = true,
-            methods = setOf(
-                SourceMethod.Search,
-                SourceMethod.Url,
-                SourceMethod.Lyric,
-                SourceMethod.Pic,
-                SourceMethod.Leaderboard,
-                SourceMethod.Songlist,
-                SourceMethod.HotSearch,
-                SourceMethod.TipSearch,
-                SourceMethod.Comment,
-            ),
-            qualities = listOf(
+            displayName = "QQ 音乐",
+            supportedQualities = setOf(
                 Quality.FLAC24BIT,
                 Quality.FLAC,
                 Quality.K320,
                 Quality.K128,
             ),
+            methods = allMethods,
+            enabled = true,
         ),
         SourceInfo(
             id = "wy",
-            name = "网易云音乐",
-            enabled = true,
-            methods = setOf(
-                SourceMethod.Search,
-                SourceMethod.Url,
-                SourceMethod.Lyric,
-                SourceMethod.Pic,
-                SourceMethod.Leaderboard,
-                SourceMethod.Songlist,
-                SourceMethod.HotSearch,
-                SourceMethod.TipSearch,
-                SourceMethod.Comment,
-            ),
-            qualities = listOf(
-                Quality.FLAC24BIT,
+            displayName = "网易云音乐",
+            supportedQualities = setOf(
                 Quality.FLAC,
                 Quality.K320,
+                Quality.K192,
                 Quality.K128,
             ),
+            methods = allMethods,
+            enabled = true,
         ),
         SourceInfo(
             id = "mg",
-            name = "咪咕音乐",
-            enabled = true,
-            methods = setOf(
-                SourceMethod.Search,
-                SourceMethod.Url,
-                SourceMethod.Lyric,
-                SourceMethod.Pic,
-                SourceMethod.Leaderboard,
-                SourceMethod.Songlist,
-            ),
-            qualities = listOf(
+            displayName = "咪咕音乐",
+            supportedQualities = setOf(
                 Quality.FLAC24BIT,
                 Quality.FLAC,
                 Quality.K320,
                 Quality.K128,
             ),
+            methods = allMethods,
+            enabled = true,
         ),
         SourceInfo(
             id = "xm",
-            name = "虾米音乐",
+            displayName = "虾米（暂不可用）",
+            supportedQualities = emptySet(),
+            methods = emptySet(),
             enabled = false,
             disabledReason = "lx-music-mobile 官方 xm 源为 stub，未提供可用实现，M0 暂不启用。",
-            methods = emptySet(),
-            qualities = emptyList(),
         ),
     )
 
