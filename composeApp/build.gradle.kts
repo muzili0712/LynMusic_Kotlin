@@ -110,6 +110,7 @@ kotlin {
             implementation(project(":shared:core"))
             implementation(project(":shared:data"))
             implementation(project(":shared:features"))
+            implementation(project(":shared:scripting"))
             implementation(project(":player:core"))
             implementation(project(":player:app"))
             implementation(libs.androidx.room.runtime)

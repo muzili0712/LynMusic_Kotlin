@@ -22,6 +22,7 @@ import javax.swing.SwingUtilities
 import javax.swing.WindowConstants
 import javax.swing.border.EmptyBorder
 import kotlin.system.exitProcess
+import top.iwesley.lyn.music.scripting.MusicSourceException
 
 internal fun installJvmUncaughtExceptionHandler() {
     val currentHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -68,10 +69,32 @@ internal fun formatJvmCrashReport(
         throwable.message?.takeIf { it.isNotBlank() }?.let { message ->
             printer.println("Message: $message")
         }
+        unwrapMusicSourceException(throwable)?.let { online ->
+            printer.println()
+            printer.println("=== Online Music Context ===")
+            printer.println("source: ${online.sourceId}")
+            when (online) {
+                is MusicSourceException.ScriptRuntimeError -> printer.println("jsStack: ${online.jsStack}")
+                is MusicSourceException.Timeout -> printer.println("stage: ${online.stage}")
+                is MusicSourceException.Network -> printer.println("http: ${online.code}")
+                else -> Unit
+            }
+        }
         printer.println()
         throwable.printStackTrace(printer)
     }
     return truncateJvmCrashReport(writer.toString(), maxChars)
+}
+
+/** 沿着 cause chain 找第一个 [MusicSourceException]。 */
+private fun unwrapMusicSourceException(throwable: Throwable): MusicSourceException? {
+    var current: Throwable? = throwable
+    val visited = HashSet<Throwable>()
+    while (current != null && visited.add(current)) {
+        if (current is MusicSourceException) return current
+        current = current.cause
+    }
+    return null
 }
 
 private fun truncateJvmCrashReport(report: String, maxChars: Int): String {

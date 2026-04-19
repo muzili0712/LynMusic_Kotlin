@@ -1,10 +1,14 @@
 package top.iwesley.lyn.music.online.source
 
 import kotlin.time.Clock
+import kotlin.time.TimeSource
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import lynmusic.shared.online.generated.resources.Res
 import org.jetbrains.compose.resources.ExperimentalResourceApi
+import top.iwesley.lyn.music.core.model.DiagnosticLogLevel
+import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
+import top.iwesley.lyn.music.online.diagnostics.OnlineLogTags
 import top.iwesley.lyn.music.online.types.OnlineLyric
 import top.iwesley.lyn.music.online.types.OnlineMusicId
 import top.iwesley.lyn.music.online.types.OnlineSong
@@ -145,63 +149,102 @@ class JsMusicSource(
     }
 
     suspend fun search(keyword: String, page: Int, limit: Int): SearchPage<OnlineSong> {
-        val rt = ensureLoaded()
-        val result = rt.invoke(
-            "__lyn_source_${info.id}.musicSearch.search",
-            JsValue.Str(keyword),
-            JsValue.Num(page.toDouble()),
-            JsValue.Num(limit.toDouble()),
-        )
-        return parseSearchPage(result, info.id, page)
+        log("search-start q=$keyword page=$page")
+        val mark = TimeSource.Monotonic.markNow()
+        try {
+            val rt = ensureLoaded()
+            val result = rt.invoke(
+                "__lyn_source_${info.id}.musicSearch.search",
+                JsValue.Str(keyword),
+                JsValue.Num(page.toDouble()),
+                JsValue.Num(limit.toDouble()),
+            )
+            val parsed = parseSearchPage(result, info.id, page)
+            val took = mark.elapsedNow().inWholeMilliseconds
+            log("search-ok items=${parsed.items.size} took=${took}ms")
+            return parsed
+        } catch (e: Throwable) {
+            log("search-err: ${e.message}", level = DiagnosticLogLevel.WARN, t = e)
+            throw e
+        }
     }
 
     suspend fun getPlayableUrl(songmid: String, quality: Quality): PlayableUrl {
-        val rt = ensureLoaded()
-        val musicInfo = JsValue.Obj(
-            mapOf(
-                "songmid" to JsValue.Str(songmid),
-                "source" to JsValue.Str(info.id),
-            ),
-        )
-        val result = rt.invoke(
-            "__lyn_source_${info.id}.getMusicUrl",
-            musicInfo,
-            JsValue.Str(quality.lxKey),
-        )
-        val url = (result as? JsValue.Obj)?.entries?.get("url")?.let { (it as? JsValue.Str)?.value }
-            ?: throw MusicSourceException.Parse(info.id, null)
-        return PlayableUrl(url, quality, Clock.System.now())
+        log("url-start quality=${quality.lxKey}")
+        try {
+            val rt = ensureLoaded()
+            val musicInfo = JsValue.Obj(
+                mapOf(
+                    "songmid" to JsValue.Str(songmid),
+                    "source" to JsValue.Str(info.id),
+                ),
+            )
+            val result = rt.invoke(
+                "__lyn_source_${info.id}.getMusicUrl",
+                musicInfo,
+                JsValue.Str(quality.lxKey),
+            )
+            val url = (result as? JsValue.Obj)?.entries?.get("url")?.let { (it as? JsValue.Str)?.value }
+                ?: throw MusicSourceException.Parse(info.id, null)
+            log("url-ok")
+            return PlayableUrl(url, quality, Clock.System.now())
+        } catch (e: Throwable) {
+            log("url-err: ${e.message}", level = DiagnosticLogLevel.WARN, t = e)
+            throw e
+        }
     }
 
     suspend fun getLyric(songmid: String): OnlineLyric {
-        val rt = ensureLoaded()
-        val musicInfo = JsValue.Obj(
-            mapOf(
-                "songmid" to JsValue.Str(songmid),
-                "source" to JsValue.Str(info.id),
-            ),
-        )
-        val r = rt.invoke("__lyn_source_${info.id}.getLyric", musicInfo)
-        val o = r as? JsValue.Obj ?: throw MusicSourceException.Parse(info.id, null)
-        val lyric = (o.entries["lyric"] as? JsValue.Str)?.value.orEmpty()
-        return OnlineLyric(
-            original = lyric,
-            translation = (o.entries["tlyric"] as? JsValue.Str)?.value?.ifBlank { null },
-            enhanced = (o.entries["lxlyric"] as? JsValue.Str)?.value?.ifBlank { null },
-        )
+        log("lyric-start")
+        try {
+            val rt = ensureLoaded()
+            val musicInfo = JsValue.Obj(
+                mapOf(
+                    "songmid" to JsValue.Str(songmid),
+                    "source" to JsValue.Str(info.id),
+                ),
+            )
+            val r = rt.invoke("__lyn_source_${info.id}.getLyric", musicInfo)
+            val o = r as? JsValue.Obj ?: throw MusicSourceException.Parse(info.id, null)
+            val lyric = (o.entries["lyric"] as? JsValue.Str)?.value.orEmpty()
+            val parsed = OnlineLyric(
+                original = lyric,
+                translation = (o.entries["tlyric"] as? JsValue.Str)?.value?.ifBlank { null },
+                enhanced = (o.entries["lxlyric"] as? JsValue.Str)?.value?.ifBlank { null },
+            )
+            log("lyric-ok")
+            return parsed
+        } catch (e: Throwable) {
+            log("lyric-err: ${e.message}", level = DiagnosticLogLevel.WARN, t = e)
+            throw e
+        }
     }
 
     suspend fun getPic(songmid: String): String {
-        val rt = ensureLoaded()
-        val musicInfo = JsValue.Obj(
-            mapOf(
-                "songmid" to JsValue.Str(songmid),
-                "source" to JsValue.Str(info.id),
-            ),
-        )
-        val r = rt.invoke("__lyn_source_${info.id}.getPic", musicInfo)
-        return (r as? JsValue.Str)?.value ?: throw MusicSourceException.Parse(info.id, null)
+        log("pic-start")
+        try {
+            val rt = ensureLoaded()
+            val musicInfo = JsValue.Obj(
+                mapOf(
+                    "songmid" to JsValue.Str(songmid),
+                    "source" to JsValue.Str(info.id),
+                ),
+            )
+            val r = rt.invoke("__lyn_source_${info.id}.getPic", musicInfo)
+            val pic = (r as? JsValue.Str)?.value ?: throw MusicSourceException.Parse(info.id, null)
+            log("pic-ok")
+            return pic
+        } catch (e: Throwable) {
+            log("pic-err: ${e.message}", level = DiagnosticLogLevel.WARN, t = e)
+            throw e
+        }
     }
+
+    private fun log(
+        msg: String,
+        level: DiagnosticLogLevel = DiagnosticLogLevel.DEBUG,
+        t: Throwable? = null,
+    ) = GlobalDiagnosticLogger.log(level, OnlineLogTags.source(info.id), msg, t)
 
     fun close() {
         runtime?.close()

@@ -1,7 +1,10 @@
 package top.iwesley.lyn.music.online.repository
 
+import top.iwesley.lyn.music.core.model.DiagnosticLogLevel
+import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.online.MusicSourceFacade
 import top.iwesley.lyn.music.online.cache.OnlineMemoryCache
+import top.iwesley.lyn.music.online.diagnostics.OnlineLogTags
 import top.iwesley.lyn.music.online.types.OnlineLyric
 import top.iwesley.lyn.music.online.types.OnlineMusicId
 import top.iwesley.lyn.music.online.types.OnlineSong
@@ -42,7 +45,11 @@ class OnlineMusicRepository(
         limit: Int = 30,
     ): SearchPage<OnlineSong> {
         val key = searchKey(sourceId, keyword, page, limit)
-        searchCache.get(key)?.let { return it }
+        searchCache.get(key)?.let {
+            logCache("hit $key")
+            return it
+        }
+        logCache("miss $key")
         val fresh = facade.search(sourceId, keyword, page, limit)
         searchCache.put(key, fresh)
         return fresh
@@ -56,17 +63,27 @@ class OnlineMusicRepository(
 
     /** 歌词；命中缓存直接返回。 */
     suspend fun getLyric(id: OnlineMusicId): OnlineLyric {
-        lyricCache.get(id.stableKey)?.let { return it }
+        val key = id.stableKey
+        lyricCache.get(key)?.let {
+            logCache("hit lyric:$key")
+            return it
+        }
+        logCache("miss lyric:$key")
         val fresh = facade.getLyric(id)
-        lyricCache.put(id.stableKey, fresh)
+        lyricCache.put(key, fresh)
         return fresh
     }
 
     /** 封面 URL；命中缓存直接返回。 */
     suspend fun getPic(id: OnlineMusicId): String {
-        picCache.get(id.stableKey)?.let { return it }
+        val key = id.stableKey
+        picCache.get(key)?.let {
+            logCache("hit pic:$key")
+            return it
+        }
+        logCache("miss pic:$key")
         val fresh = facade.getPic(id)
-        picCache.put(id.stableKey, fresh)
+        picCache.put(key, fresh)
         return fresh
     }
 
@@ -79,4 +96,8 @@ class OnlineMusicRepository(
 
     private fun searchKey(sourceId: String, keyword: String, page: Int, limit: Int): String =
         "$sourceId|$keyword|$page|$limit"
+
+    private fun logCache(message: String) {
+        GlobalDiagnosticLogger.log(DiagnosticLogLevel.DEBUG, OnlineLogTags.CACHE, message, null)
+    }
 }
