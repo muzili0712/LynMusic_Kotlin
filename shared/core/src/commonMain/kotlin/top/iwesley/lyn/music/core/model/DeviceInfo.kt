@@ -4,6 +4,8 @@ data class DeviceInfoSnapshot(
     val systemName: String,
     val systemVersion: String,
     val resolution: String? = null,
+    val resolutionWidthPx: Int? = null,
+    val resolutionHeightPx: Int? = null,
     val cpuDescription: String? = null,
     val totalMemoryBytes: Long? = null,
     val deviceModel: String? = null,

@@ -94,6 +94,7 @@ import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.lyricsSharePreviewFontFamily
 import top.iwesley.lyn.music.ui.mainShellColors
+import kotlin.math.roundToInt
 
 @Composable
 internal fun SettingsTab(
@@ -1325,6 +1326,7 @@ private fun AboutDeviceSettingsPane(
 ) {
     val shellColors = mainShellColors
     val snapshot = state.deviceInfoSnapshot
+    val localDensity = LocalDensity.current
     val summaryTitle = when {
         snapshot?.deviceModel?.isNotBlank() == true -> snapshot.deviceModel
         snapshot?.systemName?.isNotBlank() == true -> snapshot.systemName
@@ -1406,6 +1408,23 @@ private fun AboutDeviceSettingsPane(
             AboutDeviceFieldRow(
                 label = "分辨率",
                 value = deviceInfoDisplayValue(snapshot?.resolution, state.deviceInfoLoading),
+            )
+            AboutDeviceFieldRow(
+                label = "DP 分辨率",
+                value = deviceInfoDpResolutionValue(
+                    widthPx = snapshot?.resolutionWidthPx,
+                    heightPx = snapshot?.resolutionHeightPx,
+                    density = localDensity.density,
+                    loading = state.deviceInfoLoading,
+                ),
+            )
+            AboutDeviceFieldRow(
+                label = "像素密度",
+                value = deviceInfoDensityValue(localDensity.density),
+            )
+            AboutDeviceFieldRow(
+                label = "字体缩放",
+                value = deviceInfoFontScaleValue(localDensity.fontScale),
             )
         }
         AboutDeviceInfoCard(title = "硬件") {
@@ -1842,6 +1861,43 @@ private fun deviceInfoDisplayValue(value: String?, loading: Boolean): String {
         value != null && value.isNotBlank() -> value
         loading -> "正在读取..."
         else -> "不可用"
+    }
+}
+
+internal fun deviceInfoDpResolutionValue(
+    widthPx: Int?,
+    heightPx: Int?,
+    density: Float,
+    loading: Boolean,
+): String {
+    val resolvedWidth = widthPx?.takeIf { it > 0 }
+    val resolvedHeight = heightPx?.takeIf { it > 0 }
+    if (resolvedWidth == null || resolvedHeight == null) {
+        return if (loading) "正在读取..." else "不可用"
+    }
+    if (!density.isFinite() || density <= 0f) return "不可用"
+    val widthDp = (resolvedWidth / density).roundToInt()
+    val heightDp = (resolvedHeight / density).roundToInt()
+    return "$widthDp × $heightDp dp"
+}
+
+internal fun deviceInfoDensityValue(density: Float): String {
+    return formatDeviceInfoDecimal(density)?.let { "$it px/dp" } ?: "不可用"
+}
+
+internal fun deviceInfoFontScaleValue(fontScale: Float): String {
+    return formatDeviceInfoDecimal(fontScale)?.let { "${it}x" } ?: "不可用"
+}
+
+internal fun formatDeviceInfoDecimal(value: Float): String? {
+    if (!value.isFinite() || value <= 0f) return null
+    val scaled = (value * 100).roundToInt()
+    val integerPart = scaled / 100
+    val fractionalPart = scaled % 100
+    return when {
+        fractionalPart == 0 -> integerPart.toString()
+        fractionalPart % 10 == 0 -> "$integerPart.${fractionalPart / 10}"
+        else -> "$integerPart.${fractionalPart.toString().padStart(2, '0')}"
     }
 }
 

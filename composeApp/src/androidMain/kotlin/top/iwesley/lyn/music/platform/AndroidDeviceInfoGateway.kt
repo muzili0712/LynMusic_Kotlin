@@ -18,10 +18,13 @@ private class AndroidDeviceInfoGateway(
 ) : DeviceInfoGateway {
     override suspend fun loadDeviceInfoSnapshot(): Result<DeviceInfoSnapshot> = withContext(Dispatchers.Default) {
         runCatching {
+            val (resolutionWidthPx, resolutionHeightPx) = androidResolutionPx(activity)
             DeviceInfoSnapshot(
                 systemName = "Android",
                 systemVersion = androidSystemVersion(),
-                resolution = androidResolution(activity),
+                resolution = formatResolution(resolutionWidthPx, resolutionHeightPx),
+                resolutionWidthPx = resolutionWidthPx,
+                resolutionHeightPx = resolutionHeightPx,
                 cpuDescription = androidCpuDescription(),
                 totalMemoryBytes = androidTotalMemoryBytes(activity.applicationContext),
                 deviceModel = androidDeviceModel(),
@@ -39,7 +42,7 @@ private fun androidSystemVersion(): String {
     }
 }
 
-private fun androidResolution(activity: ComponentActivity): String? {
+private fun androidResolutionPx(activity: ComponentActivity): Pair<Int?, Int?> {
     val displayMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         activity.display?.mode
     } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -50,7 +53,7 @@ private fun androidResolution(activity: ComponentActivity): String? {
     }
     val width = displayMode?.physicalWidth?.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels.takeIf { it > 0 }
     val height = displayMode?.physicalHeight?.takeIf { it > 0 } ?: activity.resources.displayMetrics.heightPixels.takeIf { it > 0 }
-    return formatResolution(width, height)
+    return width to height
 }
 
 private fun androidCpuDescription(): String? {

@@ -57,6 +57,8 @@ internal fun jvmDeviceInfoSnapshot(raw: JvmDeviceInfoRaw): DeviceInfoSnapshot {
         systemName = raw.systemName.ifBlank { "Desktop" },
         systemVersion = raw.systemVersion.ifBlank { "不可用" },
         resolution = formatJvmResolution(raw.resolutionWidth, raw.resolutionHeight),
+        resolutionWidthPx = raw.resolutionWidth?.takeIf { it > 0 },
+        resolutionHeightPx = raw.resolutionHeight?.takeIf { it > 0 },
         cpuDescription = formatJvmCpuDescription(
             processorIdentifier = raw.processorIdentifier,
             osArch = raw.osArch,

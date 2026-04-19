@@ -23,10 +23,13 @@ private class IosDeviceInfoGateway : DeviceInfoGateway {
         runCatching {
             val device = UIDevice.currentDevice
             val processInfo = NSProcessInfo.processInfo
+            val (resolutionWidthPx, resolutionHeightPx) = iosResolutionPx()
             DeviceInfoSnapshot(
                 systemName = device.systemName(),
                 systemVersion = device.systemVersion,
-                resolution = iosResolution(),
+                resolution = formatResolution(resolutionWidthPx, resolutionHeightPx),
+                resolutionWidthPx = resolutionWidthPx,
+                resolutionHeightPx = resolutionHeightPx,
                 cpuDescription = iosCpuDescription(processInfo),
                 totalMemoryBytes = processInfo.physicalMemory.toLong().takeIf { it > 0L },
                 deviceModel = iosDeviceModel(device, processInfo),
@@ -36,13 +39,22 @@ private class IosDeviceInfoGateway : DeviceInfoGateway {
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun iosResolution(): String? {
+private fun iosResolutionPx(): Pair<Int?, Int?> {
     val bounds = UIScreen.mainScreen.nativeBounds
     return bounds.useContents {
         val width = size.width.toInt().takeIf { it > 0 }
         val height = size.height.toInt().takeIf { it > 0 }
-        if (width != null && height != null) "$width × $height px" else null
+        width to height
     }
+}
+
+private fun formatResolution(
+    width: Int?,
+    height: Int?,
+): String? {
+    val resolvedWidth = width?.takeIf { it > 0 } ?: return null
+    val resolvedHeight = height?.takeIf { it > 0 } ?: return null
+    return "$resolvedWidth × $resolvedHeight px"
 }
 
 private fun iosCpuDescription(processInfo: NSProcessInfo): String? {
