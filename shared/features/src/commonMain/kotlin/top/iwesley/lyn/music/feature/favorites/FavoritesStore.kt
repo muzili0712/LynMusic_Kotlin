@@ -11,10 +11,14 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.FavoritesRepository
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
+import top.iwesley.lyn.music.data.repository.OnlineSongRecord
 import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
 import top.iwesley.lyn.music.feature.library.deriveVisibleArtists
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
+import top.iwesley.lyn.music.online.adapter.onlineSourceId
+import top.iwesley.lyn.music.online.adapter.onlineTrackId
+import top.iwesley.lyn.music.online.types.OnlineSong
 
 data class FavoritesState(
     val query: String = "",
@@ -139,6 +143,15 @@ class FavoritesStore(
         }
     }
 
+    /**
+     * T10: 在线歌曲收藏切换。Store 负责把 [song] 映射到 [OnlineSongRecord] 后委派给
+     * [FavoritesRepository]。shared:data 不能依赖 shared:online，所以 OnlineSong → 原语映射
+     * 发生在这里（features 模块同时看得到两侧类型）。
+     */
+    suspend fun toggleFavoriteOnline(song: OnlineSong): Result<Boolean> {
+        return favoritesRepository.toggleFavoriteOnline(song.toOnlineSongRecord())
+    }
+
     private fun refreshNavidromeFavoritesOnFirstActivation(navidromeSourceIds: Set<String>) {
         if (hasTriggeredInitialRemoteRefresh || navidromeSourceIds.isEmpty()) return
         hasTriggeredInitialRemoteRefresh = true
@@ -257,4 +270,27 @@ class FavoritesStore(
             LibrarySourceFilter.NAVIDROME,
         )
     }
+}
+
+/**
+ * T10: OnlineSong → OnlineSongRecord 适配。
+ *
+ * 放在 features 层而不是 shared:data，因为 shared:data 无法反向依赖 shared:online。
+ * 在 FavoritesStore 和 PlaylistsStore 共用。
+ */
+internal fun OnlineSong.toOnlineSongRecord(): OnlineSongRecord {
+    val source = id.source
+    val songmid = id.songmid
+    return OnlineSongRecord(
+        trackId = onlineTrackId(source = source, songmid = songmid),
+        sourceId = onlineSourceId(source = source),
+        source = source,
+        songmid = songmid,
+        name = name,
+        singer = singer,
+        album = album,
+        intervalSeconds = intervalSeconds,
+        coverUrl = coverUrl,
+        defaultQualityKey = defaultQuality.lxKey,
+    )
 }

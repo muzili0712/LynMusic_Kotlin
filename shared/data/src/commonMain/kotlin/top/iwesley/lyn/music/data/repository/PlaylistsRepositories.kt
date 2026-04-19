@@ -23,6 +23,7 @@ import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.db.OnlineSongEntity
 import top.iwesley.lyn.music.data.db.PlaylistEntity
 import top.iwesley.lyn.music.data.db.PlaylistRemoteBindingEntity
 import top.iwesley.lyn.music.data.db.PlaylistTrackEntity
@@ -176,6 +177,37 @@ class RoomPlaylistRepository(
                 touchPlaylist(playlist)
                 cleanupPlaylistIfNecessary(playlistId)
             }
+        }
+    }
+
+    override suspend fun addOnlineSongToPlaylist(
+        playlistId: String,
+        record: OnlineSongRecord,
+    ): Result<Unit> {
+        return runCatching {
+            val playlist = database.playlistDao().getById(playlistId) ?: error("歌单不存在。")
+            if (database.playlistTrackDao().getByPlaylistIdAndTrackId(playlistId, record.trackId) != null) {
+                error("歌曲已在歌单中。")
+            }
+            val nowMs = now()
+            database.onlineSongDao().upsert(record.toEntity(nowMs = nowMs))
+            val nextOrdinal = database.playlistTrackDao().getByPlaylistId(playlist.id)
+                .mapNotNull { it.localOrdinal }
+                .maxOrNull()
+                ?.plus(1)
+                ?: 0
+            database.playlistTrackDao().upsert(
+                PlaylistTrackEntity(
+                    playlistId = playlist.id,
+                    trackId = record.trackId,
+                    sourceId = record.sourceId,
+                    addedAt = nowMs,
+                    localOrdinal = nextOrdinal,
+                    remoteOrdinal = null,
+                    origin = ORIGIN_ONLINE,
+                ),
+            )
+            touchPlaylist(playlist)
         }
     }
 
@@ -471,6 +503,10 @@ class RoomPlaylistRepository(
             username = username,
             password = password,
         )
+    }
+
+    private companion object {
+        const val ORIGIN_ONLINE = "ONLINE"
     }
 }
 

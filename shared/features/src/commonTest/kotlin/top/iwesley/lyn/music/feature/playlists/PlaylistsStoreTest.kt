@@ -27,8 +27,12 @@ import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
+import top.iwesley.lyn.music.data.repository.OnlineSongRecord
 import top.iwesley.lyn.music.data.repository.PlaylistRepository
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.online.types.OnlineMusicId
+import top.iwesley.lyn.music.online.types.OnlineSong
+import top.iwesley.lyn.music.online.types.Quality
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaylistsStoreTest {
@@ -159,6 +163,37 @@ class PlaylistsStoreTest {
 
         assertEquals("删除失败", store.state.value.message)
         assertTrue(store.state.value.playlists.isNotEmpty())
+        scope.cancel()
+    }
+
+    @Test
+    fun `add online song to playlist forwards mapped record to repository`() = runTest {
+        val repository = FakePlaylistRepository()
+        val importSources = FakePlaylistsImportSourceRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = PlaylistsStore(repository, importSources, scope)
+        advanceUntilIdle()
+
+        store.dispatch(PlaylistsIntent.CreatePlaylist("在线收藏"))
+        advanceUntilIdle()
+        val playlistId = store.state.value.selectedPlaylistId
+        requireNotNull(playlistId)
+
+        val song = sampleOnlinePlaylistSong()
+        val result = store.addOnlineSongToPlaylist(playlistId, song)
+        advanceUntilIdle()
+
+        assertEquals(Result.success(Unit), result)
+        assertEquals(1, repository.addedOnlineRecords.size)
+        val (forwardedPlaylistId, record) = repository.addedOnlineRecords.single()
+        assertEquals(playlistId, forwardedPlaylistId)
+        assertEquals("online-kg-KG-1", record.trackId)
+        assertEquals("online-kg", record.sourceId)
+        assertEquals("kg", record.source)
+        assertEquals("KG-1", record.songmid)
+        assertEquals("K-Song", record.name)
+        assertEquals("K-Artist", record.singer)
+        assertEquals("flac", record.defaultQualityKey)
         scope.cancel()
     }
 
@@ -298,6 +333,16 @@ private class FakePlaylistRepository(
         refreshCalls += 1
         return Result.success(Unit)
     }
+
+    val addedOnlineRecords = mutableListOf<Pair<String, OnlineSongRecord>>()
+
+    override suspend fun addOnlineSongToPlaylist(
+        playlistId: String,
+        record: OnlineSongRecord,
+    ): Result<Unit> {
+        addedOnlineRecords += playlistId to record
+        return Result.success(Unit)
+    }
 }
 
 private class FakePlaylistsImportSourceRepository(
@@ -381,6 +426,20 @@ private fun source(
             rootReference = label,
             createdAt = 1L,
         ),
+    )
+}
+
+private fun sampleOnlinePlaylistSong(): OnlineSong {
+    return OnlineSong(
+        id = OnlineMusicId(source = "kg", songmid = "KG-1"),
+        name = "K-Song",
+        singer = "K-Artist",
+        album = null,
+        albumId = null,
+        intervalSeconds = 180,
+        coverUrl = null,
+        availableQualities = listOf(Quality.K320, Quality.FLAC),
+        defaultQuality = Quality.FLAC,
     )
 }
 

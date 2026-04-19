@@ -28,6 +28,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":shared:core"))
             implementation(project(":shared:data"))
+            implementation(project(":shared:online"))
             implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {

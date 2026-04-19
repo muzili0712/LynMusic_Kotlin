@@ -161,6 +161,17 @@ interface PlaylistRepository {
     suspend fun addTrackToPlaylist(playlistId: String, track: Track): Result<Unit>
     suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String): Result<Unit>
     suspend fun refreshNavidromePlaylists(): Result<Unit>
+
+    /**
+     * T10: 往用户歌单加入一首在线歌曲。
+     *
+     * 实现：先 `online_song` upsert 缓存 metadata；再 `playlist_track(origin = ONLINE, localOrdinal = next)`
+     * upsert。读回路径（UI 如何展示在线条目）是 M1 的任务，M0 仅保证入库。
+     */
+    suspend fun addOnlineSongToPlaylist(
+        playlistId: String,
+        record: OnlineSongRecord,
+    ): Result<Unit>
 }
 
 interface LyricsRepository {

@@ -21,7 +21,11 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.data.repository.FavoritesRepository
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
+import top.iwesley.lyn.music.data.repository.OnlineSongRecord
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.online.types.OnlineMusicId
+import top.iwesley.lyn.music.online.types.OnlineSong
+import top.iwesley.lyn.music.online.types.Quality
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FavoritesStoreTest {
@@ -179,6 +183,35 @@ class FavoritesStoreTest {
     }
 
     @Test
+    fun `toggle favorite online forwards mapped record to repository`() = runTest {
+        val favoritesRepository = FakeFavoritesRepository()
+        val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
+        advanceUntilIdle()
+
+        val song = sampleOnlineSong()
+        val result = store.toggleFavoriteOnline(song)
+        advanceUntilIdle()
+
+        assertEquals(true, result.getOrNull())
+        assertEquals(1, favoritesRepository.onlineToggleCalls.size)
+        val record = favoritesRepository.onlineToggleCalls.single()
+        assertEquals("online-kw-KW-123", record.trackId)
+        assertEquals("online-kw", record.sourceId)
+        assertEquals("kw", record.source)
+        assertEquals("KW-123", record.songmid)
+        assertEquals("Song Name", record.name)
+        assertEquals("Artist A", record.singer)
+        assertEquals("Album X", record.album)
+        assertEquals(210, record.intervalSeconds)
+        assertEquals("https://cover.example/xx.jpg", record.coverUrl)
+        assertEquals("320k", record.defaultQualityKey)
+        scope.cancel()
+    }
+
+    @Test
     fun `favorites source filter loads from persisted preferences and updates them on change`() = runTest {
         val favoritesRepository = FakeFavoritesRepository(
             tracks = sampleFavoriteTracks(),
@@ -262,6 +295,22 @@ private class FakeFavoritesRepository(
     override suspend fun refreshNavidromeFavorites(): Result<Unit> {
         refreshCalls += 1
         return Result.success(Unit)
+    }
+
+    val onlineToggleCalls = mutableListOf<OnlineSongRecord>()
+
+    override suspend fun toggleFavoriteOnline(record: OnlineSongRecord): Result<Boolean> {
+        onlineToggleCalls += record
+        val nextIds = mutableFavoriteTrackIds.value.toMutableSet()
+        val isNowFavorite = if (record.trackId in nextIds) {
+            nextIds.remove(record.trackId)
+            false
+        } else {
+            nextIds.add(record.trackId)
+            true
+        }
+        mutableFavoriteTrackIds.value = nextIds
+        return Result.success(isNowFavorite)
     }
 }
 
@@ -378,6 +427,20 @@ private fun sampleSources(): List<SourceWithStatus> {
     return listOf(
         sampleSource("local-1", ImportSourceType.LOCAL_FOLDER, "下载目录"),
         sampleSource("nav-1", ImportSourceType.NAVIDROME, "Navidrome"),
+    )
+}
+
+private fun sampleOnlineSong(): OnlineSong {
+    return OnlineSong(
+        id = OnlineMusicId(source = "kw", songmid = "KW-123"),
+        name = "Song Name",
+        singer = "Artist A",
+        album = "Album X",
+        albumId = null,
+        intervalSeconds = 210,
+        coverUrl = "https://cover.example/xx.jpg",
+        availableQualities = listOf(Quality.K128, Quality.K320, Quality.FLAC),
+        defaultQuality = Quality.K320,
     )
 }
 

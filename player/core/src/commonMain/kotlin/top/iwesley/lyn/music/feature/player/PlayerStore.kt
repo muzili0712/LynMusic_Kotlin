@@ -23,6 +23,9 @@ import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
+import top.iwesley.lyn.music.online.adapter.toTrack
+import top.iwesley.lyn.music.online.types.OnlineSong
+import top.iwesley.lyn.music.online.types.Quality
 
 data class PlayerState(
     val snapshot: PlaybackSnapshot = PlaybackSnapshot(),
@@ -62,6 +65,14 @@ data class PlayerState(
 
 sealed interface PlayerIntent {
     data class PlayTracks(val tracks: List<Track>, val startIndex: Int) : PlayerIntent
+    data class PlayOnlineTrack(
+        val song: OnlineSong,
+        val quality: Quality? = null,
+    ) : PlayerIntent
+    data class PlayOnlineTracks(
+        val songs: List<OnlineSong>,
+        val startIndex: Int = 0,
+    ) : PlayerIntent
     data class PlayQueueIndex(val index: Int) : PlayerIntent
     data object TogglePlayPause : PlayerIntent
     data object SkipNext : PlayerIntent
@@ -187,6 +198,15 @@ class PlayerStore(
     override suspend fun handleIntent(intent: PlayerIntent) {
         when (intent) {
             is PlayerIntent.PlayTracks -> playbackRepository.playTracks(intent.tracks, intent.startIndex)
+            is PlayerIntent.PlayOnlineTrack -> {
+                val quality = intent.quality ?: intent.song.defaultQuality
+                val track = intent.song.toTrack(preferredQuality = quality.lxKey)
+                playbackRepository.playTracks(listOf(track), 0)
+            }
+            is PlayerIntent.PlayOnlineTracks -> {
+                val tracks = intent.songs.map { it.toTrack() }
+                playbackRepository.playTracks(tracks, intent.startIndex)
+            }
             is PlayerIntent.PlayQueueIndex -> playQueueIndex(intent.index)
             PlayerIntent.TogglePlayPause -> playbackRepository.togglePlayPause()
             PlayerIntent.SkipNext -> playbackRepository.skipNext()

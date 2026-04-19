@@ -23,6 +23,7 @@ import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.FavoriteTrackEntity
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.db.OnlineSongEntity
 import top.iwesley.lyn.music.domain.NavidromeResolvedSource
 import top.iwesley.lyn.music.domain.normalizeNavidromeBaseUrl
 import top.iwesley.lyn.music.domain.requestNavidromeJson
@@ -34,7 +35,39 @@ interface FavoritesRepository {
     suspend fun toggleFavorite(track: Track): Result<Boolean>
     suspend fun setFavorite(track: Track, favorite: Boolean): Result<Boolean>
     suspend fun refreshNavidromeFavorites(): Result<Unit>
+
+    /**
+     * T10: 在线歌曲收藏切换。
+     *
+     * 实现：存在则删除返回 false；不存在则把 [record] upsert 进 `online_song` 缓存表 + 写入
+     * `favorite_track(origin = ONLINE)` 返回 true。Track 的 id 依据 [OnlineSongRecord.trackId] / sourceId。
+     *
+     * 读回在线收藏（让它出现在 Favorites 列表）是 M1 的范围，M0 只保证"入库"。
+     */
+    suspend fun toggleFavoriteOnline(record: OnlineSongRecord): Result<Boolean>
 }
+
+/**
+ * T10: 跨模块传递在线歌曲元数据的精简 DTO。
+ *
+ * shared:data 不能反向依赖 shared:online（后者已依赖前者），所以不能直接在 Repository
+ * 接口里引用 `OnlineSong`。Store 层拿到 OnlineSong 后组装 [OnlineSongRecord] 传入。
+ *
+ * [trackId] 形如 `online-${source}-${songmid}`；[sourceId] 形如 `online-${source}`；
+ * 二者由上层（OnlineSongToTrack adapter）保证与 Track 的 id/sourceId 对齐。
+ */
+data class OnlineSongRecord(
+    val trackId: String,
+    val sourceId: String,
+    val source: String,
+    val songmid: String,
+    val name: String,
+    val singer: String,
+    val album: String?,
+    val intervalSeconds: Int,
+    val coverUrl: String?,
+    val defaultQualityKey: String,
+)
 
 class RoomFavoritesRepository(
     private val database: LynMusicDatabase,
@@ -84,6 +117,35 @@ class RoomFavoritesRepository(
                 setNavidromeFavorite(track, navidromeSongId, existing, favorite)
             } else {
                 setLocalFavorite(track, existing, favorite)
+            }
+        }
+    }
+
+    override suspend fun toggleFavoriteOnline(record: OnlineSongRecord): Result<Boolean> {
+        return runCatching {
+            val existing = database.favoriteTrackDao().getByTrackId(record.trackId)
+            if (existing != null) {
+                database.favoriteTrackDao().deleteByTrackId(record.trackId)
+                logger.info(FAVORITES_LOG_TAG) {
+                    "unfavorite-online track=${record.trackId} source=${record.source} songmid=${record.songmid}"
+                }
+                false
+            } else {
+                val nowMs = favoriteNow()
+                database.onlineSongDao().upsert(record.toEntity(nowMs = nowMs))
+                database.favoriteTrackDao().upsert(
+                    FavoriteTrackEntity(
+                        trackId = record.trackId,
+                        sourceId = record.sourceId,
+                        remoteSongId = null,
+                        favoritedAt = nowMs,
+                        origin = ORIGIN_ONLINE,
+                    ),
+                )
+                logger.info(FAVORITES_LOG_TAG) {
+                    "favorite-online track=${record.trackId} source=${record.source} songmid=${record.songmid}"
+                }
+                true
             }
         }
     }
@@ -226,7 +288,25 @@ class RoomFavoritesRepository(
 
     private companion object {
         const val FAVORITES_LOG_TAG = "Favorites"
+        const val ORIGIN_ONLINE = "ONLINE"
     }
+}
+
+/**
+ * T10 helper：把跨模块的 [OnlineSongRecord] DTO 映射到 Room 实体。[nowMs] 用于 createdAt。
+ */
+internal fun OnlineSongRecord.toEntity(nowMs: Long): OnlineSongEntity {
+    return OnlineSongEntity(
+        source = source,
+        songmid = songmid,
+        name = name,
+        singer = singer,
+        album = album,
+        intervalSeconds = intervalSeconds.coerceAtLeast(0),
+        coverUrl = coverUrl,
+        defaultQuality = defaultQualityKey,
+        createdAt = nowMs,
+    )
 }
 
 private fun JsonElement?.asJsonObjectOrNull(): JsonObject? = this as? JsonObject

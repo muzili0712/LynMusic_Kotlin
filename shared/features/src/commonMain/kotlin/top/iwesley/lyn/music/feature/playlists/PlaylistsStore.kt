@@ -12,7 +12,9 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 import top.iwesley.lyn.music.data.repository.PlaylistRepository
+import top.iwesley.lyn.music.feature.favorites.toOnlineSongRecord
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.online.types.OnlineSong
 
 data class PlaylistsState(
     val isLoadingContent: Boolean = true,
@@ -213,6 +215,16 @@ class PlaylistsStore(
             .onFailure { throwable ->
                 updateState { it.copy(message = throwable.message.orEmpty().ifBlank { "移出歌单失败。" }) }
             }
+    }
+
+    /**
+     * T10: 往用户歌单加入一首在线歌曲。Store 把 [song] 转成 `OnlineSongRecord` 后委派 repository。
+     */
+    suspend fun addOnlineSongToPlaylist(playlistId: String, song: OnlineSong): Result<Unit> {
+        return playlistRepository.addOnlineSongToPlaylist(
+            playlistId = playlistId,
+            record = song.toOnlineSongRecord(),
+        )
     }
 
     private suspend fun refreshPlaylists() {
