@@ -46,10 +46,14 @@ interface SongUrlResolver {
 
 /**
  * 默认实现。依赖 [OnlineMusicRepository] 拉 URL、[FindMusicM0] 做跨源匹配。
+ *
+ * [sourceResolvers]（M1.0 引入）：Kotlin-first 单源 URL 拿取器；若源 id 命中则优先使用，
+ * 否则退回 [repository] 的 JS 引擎路径。Task 7 建立路由骨架，Tasks 8-12 按源接入各 Resolver。
  */
 class DefaultSongUrlResolver(
     private val repository: OnlineMusicRepository,
     private val findMusic: FindMusicM0,
+    private val sourceResolvers: Map<String, SourceUrlResolver> = emptyMap(),
 ) : SongUrlResolver {
 
     override suspend fun resolve(
@@ -62,11 +66,16 @@ class DefaultSongUrlResolver(
             .dropWhile { it != preferredQuality }
             .ifEmpty { Quality.degradationOrder }
 
-        // 同源降级
+        // 同源降级；优先 Kotlin sourceResolver，缺席时退回 JS repository。
         for (q in degrade) {
+            val kotlinResolver = sourceResolvers[id.source]
             try {
-                val playable = repository.getPlayableUrl(id, q)
-                log(id.source, "url-ok q=${q.lxKey}")
+                val playable = if (kotlinResolver != null) {
+                    kotlinResolver.resolve(id.songmid, q)
+                } else {
+                    repository.getPlayableUrl(id, q)
+                }
+                log(id.source, "url-ok q=${q.lxKey} via=${if (kotlinResolver != null) "kotlin" else "js"}")
                 return ResolvedUrl(playable.url, q, id.source)
             } catch (e: MusicSourceException) {
                 log(
@@ -79,15 +88,20 @@ class DefaultSongUrlResolver(
             }
         }
 
-        // 跨源 findMusic（M0 仅在有 songContext 时执行）
+        // 跨源 findMusic（M0 仅在有 songContext 时执行）；替代源同样优先 Kotlin Resolver。
         if (songContext != null) {
             val alt = findMusic.find(songContext, excludeSource = id.source)
             if (alt != null) {
                 try {
-                    val playable = repository.getPlayableUrl(alt.id, alt.defaultQuality)
+                    val altResolver = sourceResolvers[alt.id.source]
+                    val playable = if (altResolver != null) {
+                        altResolver.resolve(alt.id.songmid, alt.defaultQuality)
+                    } else {
+                        repository.getPlayableUrl(alt.id, alt.defaultQuality)
+                    }
                     log(
                         sourceId = id.source,
-                        message = "cross-source-fallback source=${alt.id.source} q=${alt.defaultQuality.lxKey}",
+                        message = "cross-source-fallback source=${alt.id.source} q=${alt.defaultQuality.lxKey} via=${if (altResolver != null) "kotlin" else "js"}",
                     )
                     return ResolvedUrl(playable.url, alt.defaultQuality, alt.id.source)
                 } catch (e: MusicSourceException) {

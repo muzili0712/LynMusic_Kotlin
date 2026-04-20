@@ -51,4 +51,35 @@ class SongUrlResolverTest {
             resolver.resolve(OnlineMusicId("kw", "1"), Quality.K320)
         }
     }
+
+    @Test
+    fun returns_url_from_source_resolver_when_available() = runTest {
+        val facade = FakeMusicSourceFacade()
+        val stubResolver = object : top.iwesley.lyn.music.online.resolve.SourceUrlResolver {
+            override suspend fun resolve(songmid: String, quality: Quality): PlayableUrl =
+                PlayableUrl("https://kotlin-resolver/$songmid-${quality.lxKey}", quality, kotlin.time.Clock.System.now())
+        }
+        val resolver = DefaultSongUrlResolver(
+            repository = OnlineMusicRepository(facade),
+            findMusic = FindMusicM0(OnlineMusicRepository(facade)),
+            sourceResolvers = mapOf("kw" to stubResolver),
+        )
+        val r = resolver.resolve(OnlineMusicId("kw", "abc"), Quality.K320)
+        assertEquals("https://kotlin-resolver/abc-320k", r.url)
+        assertEquals("kw", r.sourceId)
+    }
+
+    @Test
+    fun falls_back_to_js_repository_when_source_resolver_absent() = runTest {
+        val facade = FakeMusicSourceFacade(urlProvider = { _, q ->
+            PlayableUrl("https://js-facade/${q.lxKey}", q, kotlin.time.Clock.System.now())
+        })
+        val resolver = DefaultSongUrlResolver(
+            repository = OnlineMusicRepository(facade),
+            findMusic = FindMusicM0(OnlineMusicRepository(facade)),
+            sourceResolvers = emptyMap(),
+        )
+        val r = resolver.resolve(OnlineMusicId("kw", "abc"), Quality.K320)
+        assertEquals("https://js-facade/320k", r.url)
+    }
 }
