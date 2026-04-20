@@ -11,13 +11,28 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Android actual。Android 也跑 JVM（Dalvik/ART），`javax.crypto` / `java.util.zip` 全部可用。
+ * JVM + Android 共享的 [PlatformCrypto] 实现（Android 的 ART 同样实现了 `javax.crypto`
+ * 和 `java.util.zip`，两边语义一致）。
  *
- * 本文件是 [JvmPlatformCrypto] 的复刻——因为 androidMain / jvmMain 是各自独立的 KMP source set，
- * 跨 set 继承需要额外的 source set dependsOn 结构；为避免动 build.gradle，选择最直接的：
- * 同 package 同名 class 在两个 source set 各写一份。两份逻辑必须保持严格一致。
+ * 原先 jvmMain / androidMain 各写一份副本；本次通过 `androidJvmMain` 中间源集合并。
+ *
+ * mode 参数示例：`"CBC/PKCS5Padding"` / `"ECB/PKCS7Padding"` / `"CBC"`。
+ * - 仅给算法 mode（"CBC"/"ECB"）时默认按 `PKCS5Padding` 组装 transformation。
+ * - 完整给 `mode/padding` 时按原样拼入 `AES/<mode>/<padding>`（空格容忍，大小写不敏感）。
+ *
+ * RSA 按 padding 参数分派 transformation：
+ *  - `"PKCS1"` (默认) → `RSA/ECB/PKCS1Padding`
+ *  - `"NoPadding"` / `"None"` / `"Raw"` → `RSA/ECB/NoPadding`（wy 源 aesRsaEncrypt 专用，要求 data 长度 == key 长度）
+ *  - 其它 → `RSA/ECB/${padding}Padding` 原样下发
+ * 公钥格式容忍 PEM 头尾 + 多行；lx 源常以 PEM 传入。
+ *
+ * zlib inflate 按 format 参数分派：
+ *  - `"auto"` (默认) → 按 magic 推断（gzip 1F8B / zlib 78xx / 其它 raw）
+ *  - `"zlib"` → `Inflater()` 默认 wrap，识别 zlib header
+ *  - `"raw"` → `Inflater(true)` nowrap，pako.inflateRaw 对应
+ *  - `"gzip"` → `GZIPInputStream`，pako.ungzip 对应
  */
-class AndroidPlatformCrypto : PlatformCrypto {
+class JvmPlatformCrypto : PlatformCrypto {
 
     override fun md5Hex(input: ByteArray): String =
         MessageDigest.getInstance("MD5").digest(input)
@@ -74,7 +89,7 @@ class AndroidPlatformCrypto : PlatformCrypto {
         return when (detected) {
             "gzip" -> GZIPInputStream(input.inputStream()).use { it.readBytes() }
             "raw" -> inflateWith(input, nowrap = true)
-            else -> inflateWith(input, nowrap = false)
+            else -> inflateWith(input, nowrap = false) // "zlib" 或 fallback
         }
     }
 
@@ -103,7 +118,7 @@ class AndroidPlatformCrypto : PlatformCrypto {
         val b1 = bytes[1].toInt() and 0xFF
         return when {
             b0 == 0x1F && b1 == 0x8B -> "gzip"
-            b0 == 0x78 -> "zlib"
+            b0 == 0x78 -> "zlib"  // 0x78 0x01/0x9C/0xDA 是常见 zlib header
             else -> "raw"
         }
     }
@@ -135,6 +150,7 @@ class AndroidPlatformCrypto : PlatformCrypto {
     private fun buildTransformation(algo: String, modeRaw: String): String {
         val normalized = modeRaw.trim().replace("\\s+".toRegex(), "")
         if (normalized.contains("/")) {
+            // 已经是 "MODE/PADDING" 或 "ALGO/MODE/PADDING" 形式
             val segs = normalized.split("/")
             val raw = when (segs.size) {
                 2 -> "$algo/${segs[0].uppercase()}/${segs[1]}"
@@ -143,13 +159,18 @@ class AndroidPlatformCrypto : PlatformCrypto {
             }
             return normalizePadding(raw)
         }
+        // 仅 "CBC" / "ECB"
         return "$algo/${normalized.uppercase()}/PKCS5Padding"
     }
 
     /**
-     * 与 [JvmPlatformCrypto.normalizePadding] 保持严格一致：PKCS#5 与 PKCS#7 在
-     * 16 字节块上产出相同填充，JVM SunJCE 只认 PKCS5Padding 字面量，Android BC
-     * provider 两个都支持；统一改写 PKCS7Padding → PKCS5Padding 便于 caller 共享代码。
+     * JVM 默认 SunJCE provider 不注册 "PKCS7Padding" 字面量（会抛
+     * `NoSuchAlgorithmException: Cannot find any provider supporting
+     * AES/ECB/PKCS7Padding`），但注册了 "PKCS5Padding"。对于 16 字节块的 AES，
+     * PKCS#5 和 PKCS#7 产生完全相同的填充字节 —— PKCS#5 只是 PKCS#7 在 8 字节块
+     * 上的特化。Android (BC provider) 和 iOS (CommonCrypto) 都支持 "PKCS7Padding"。
+     * 这里把传入的 "PKCS7Padding" 在 JVM 上改写成 "PKCS5Padding"，密文不变，
+     * 避免 caller 用 Kotlin-common-style 名字（wy eapi / kg 某些端点）就炸。
      */
     private fun normalizePadding(transformation: String): String =
         transformation.replace(Regex("/PKCS7Padding$", RegexOption.IGNORE_CASE), "/PKCS5Padding")
@@ -166,4 +187,4 @@ class AndroidPlatformCrypto : PlatformCrypto {
     }
 }
 
-actual fun createPlatformCrypto(): PlatformCrypto = AndroidPlatformCrypto()
+actual fun createPlatformCrypto(): PlatformCrypto = JvmPlatformCrypto()

@@ -38,6 +38,14 @@ kotlin {
         val iosSimulatorArm64Test by getting { dependsOn(appleTest) }
         val macosArm64Test by getting { dependsOn(appleTest) }
 
+        // androidJvmMain 中间源集：Android (ART) 和 JVM 都能用 javax.crypto/java.util.zip，
+        // 共享一份 JvmPlatformCrypto 实现（原先 androidMain 手抄了一份 JVM 副本）。
+        val androidJvmMain by creating { dependsOn(commonMain.get()) }
+        val androidJvmTest by creating { dependsOn(commonTest.get()) }
+        val jvmMain by getting { dependsOn(androidJvmMain) }
+        val androidMain by getting { dependsOn(androidJvmMain) }
+        val jvmTest by getting { dependsOn(androidJvmTest) }
+
         commonMain.dependencies {
             implementation(project(":shared:core"))
             implementation(project(":shared:data"))
