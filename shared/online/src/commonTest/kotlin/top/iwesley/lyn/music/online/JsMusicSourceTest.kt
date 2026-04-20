@@ -25,12 +25,12 @@ class JsMusicSourceTest {
         override fun sha256(input: ByteArray) = ByteArray(0)
         override fun aesEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String) = data
         override fun desEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String) = data
-        override fun rsaEncrypt(data: ByteArray, publicKeyPem: String) = data
+        override fun rsaEncrypt(data: ByteArray, publicKeyPem: String, padding: String) = data
         override fun base64Encode(input: ByteArray) = ""
         override fun base64Decode(input: String) = ByteArray(0)
         override fun bufferFrom(str: String, encoding: String) = str.encodeToByteArray()
         override fun bufferToString(bytes: ByteArray, encoding: String) = bytes.decodeToString()
-        override fun zlibInflate(input: ByteArray) = input
+        override fun zlibInflate(input: ByteArray, format: String) = input
         override fun iconvDecode(input: ByteArray, encoding: String) = input.decodeToString()
         override fun iconvEncode(input: String, encoding: String) = input.encodeToByteArray()
         override suspend fun setTimeout(delayMs: Long, callback: suspend () -> Unit) = 0L

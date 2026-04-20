@@ -35,7 +35,7 @@ class ApplePlatformCryptoStub : PlatformCrypto {
     override fun desEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String): ByteArray =
         throw NotImplementedError(MSG)
 
-    override fun rsaEncrypt(data: ByteArray, publicKeyPem: String): ByteArray =
+    override fun rsaEncrypt(data: ByteArray, publicKeyPem: String, padding: String): ByteArray =
         throw NotImplementedError(MSG)
 
     override fun base64Encode(input: ByteArray): String =
@@ -64,7 +64,7 @@ class ApplePlatformCryptoStub : PlatformCrypto {
         }
     }
 
-    override fun zlibInflate(input: ByteArray): ByteArray =
+    override fun zlibInflate(input: ByteArray, format: String): ByteArray =
         throw NotImplementedError(MSG)
 
     override fun iconvDecode(input: ByteArray, encoding: String): String =

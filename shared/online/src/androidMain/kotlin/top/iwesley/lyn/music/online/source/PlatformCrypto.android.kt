@@ -4,6 +4,7 @@ import java.security.KeyFactory
 import java.security.MessageDigest
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
+import java.util.zip.GZIPInputStream
 import java.util.zip.Inflater
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
@@ -34,14 +35,19 @@ class AndroidPlatformCrypto : PlatformCrypto {
     override fun desEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String): ByteArray =
         symmetricEncrypt("DES", data, key, iv, mode)
 
-    override fun rsaEncrypt(data: ByteArray, publicKeyPem: String): ByteArray {
+    override fun rsaEncrypt(data: ByteArray, publicKeyPem: String, padding: String): ByteArray {
         val clean = publicKeyPem.lines()
             .filterNot { it.startsWith("-----") }
             .joinToString("")
             .replace("\\s".toRegex(), "")
         val keySpec = X509EncodedKeySpec(Base64.getDecoder().decode(clean))
         val key = KeyFactory.getInstance("RSA").generatePublic(keySpec)
-        val cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
+        val transform = when (padding.uppercase()) {
+            "NOPADDING", "NONE", "RAW" -> "RSA/ECB/NoPadding"
+            "PKCS1" -> "RSA/ECB/PKCS1Padding"
+            else -> "RSA/ECB/${padding}Padding"
+        }
+        val cipher = Cipher.getInstance(transform)
         cipher.init(Cipher.ENCRYPT_MODE, key)
         return cipher.doFinal(data)
     }
@@ -60,8 +66,20 @@ class AndroidPlatformCrypto : PlatformCrypto {
         }
     }
 
-    override fun zlibInflate(input: ByteArray): ByteArray {
-        val inflater = Inflater()
+    override fun zlibInflate(input: ByteArray, format: String): ByteArray {
+        val detected = when (format.lowercase()) {
+            "auto" -> detectZlibFormat(input)
+            else -> format.lowercase()
+        }
+        return when (detected) {
+            "gzip" -> GZIPInputStream(input.inputStream()).use { it.readBytes() }
+            "raw" -> inflateWith(input, nowrap = true)
+            else -> inflateWith(input, nowrap = false)
+        }
+    }
+
+    private fun inflateWith(input: ByteArray, nowrap: Boolean): ByteArray {
+        val inflater = Inflater(nowrap)
         inflater.setInput(input)
         val buffer = ByteArray(4096)
         val out = java.io.ByteArrayOutputStream(input.size * 4)
@@ -77,6 +95,17 @@ class AndroidPlatformCrypto : PlatformCrypto {
             inflater.end()
         }
         return out.toByteArray()
+    }
+
+    private fun detectZlibFormat(bytes: ByteArray): String {
+        if (bytes.size < 2) return "raw"
+        val b0 = bytes[0].toInt() and 0xFF
+        val b1 = bytes[1].toInt() and 0xFF
+        return when {
+            b0 == 0x1F && b1 == 0x8B -> "gzip"
+            b0 == 0x78 -> "zlib"
+            else -> "raw"
+        }
     }
 
     override fun iconvDecode(input: ByteArray, encoding: String): String =

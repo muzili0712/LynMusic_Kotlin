@@ -103,12 +103,12 @@ private class KwStubBridge : JsBridge {
     override fun sha256(input: ByteArray): ByteArray = ByteArray(32)
     override fun aesEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String): ByteArray = data
     override fun desEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String): ByteArray = data
-    override fun rsaEncrypt(data: ByteArray, publicKeyPem: String): ByteArray = data
+    override fun rsaEncrypt(data: ByteArray, publicKeyPem: String, padding: String): ByteArray = data
     override fun base64Encode(input: ByteArray): String = ""
     override fun base64Decode(input: String): ByteArray = ByteArray(0)
     override fun bufferFrom(str: String, encoding: String): ByteArray = str.encodeToByteArray()
     override fun bufferToString(bytes: ByteArray, encoding: String): String = bytes.decodeToString()
-    override fun zlibInflate(input: ByteArray): ByteArray = input
+    override fun zlibInflate(input: ByteArray, format: String): ByteArray = input
     override fun iconvDecode(input: ByteArray, encoding: String): String = input.decodeToString()
     override fun iconvEncode(input: String, encoding: String): ByteArray = input.encodeToByteArray()
     override suspend fun setTimeout(delayMs: Long, callback: suspend () -> Unit): Long = 0L

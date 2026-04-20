@@ -13,7 +13,11 @@ interface JsBridge {
 
     fun aesEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String): ByteArray
     fun desEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String): ByteArray
-    fun rsaEncrypt(data: ByteArray, publicKeyPem: String): ByteArray
+    /**
+     * RSA 公钥加密。padding 大小写不敏感：`"PKCS1"` 默认；`"NoPadding"` / `"None"` / `"Raw"` 走无填充（wy 源 `aesRsaEncrypt`）。
+     * 其它值按 `"RSA/ECB/${padding}Padding"` 原样下发 JVM Cipher。
+     */
+    fun rsaEncrypt(data: ByteArray, publicKeyPem: String, padding: String = "PKCS1"): ByteArray
 
     fun base64Encode(input: ByteArray): String
     fun base64Decode(input: String): ByteArray
@@ -21,7 +25,11 @@ interface JsBridge {
     fun bufferFrom(str: String, encoding: String): ByteArray
     fun bufferToString(bytes: ByteArray, encoding: String): String
 
-    fun zlibInflate(input: ByteArray): ByteArray
+    /**
+     * zlib 解压。format 大小写不敏感：`"auto"`（默认，按 magic 推断）、`"zlib"`、`"raw"`（pako.inflateRaw）、`"gzip"`（pako.ungzip）。
+     * kg 源在 JS 侧把三种 pako API 都映射到同一桥方法，用 format 区分。
+     */
+    fun zlibInflate(input: ByteArray, format: String = "auto"): ByteArray
 
     fun iconvDecode(input: ByteArray, encoding: String): String
     fun iconvEncode(input: String, encoding: String): ByteArray

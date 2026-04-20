@@ -70,8 +70,8 @@ class JsBridgeImpl(
         crypto.aesEncrypt(data, key, iv, mode)
     override fun desEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String): ByteArray =
         crypto.desEncrypt(data, key, iv, mode)
-    override fun rsaEncrypt(data: ByteArray, publicKeyPem: String): ByteArray =
-        crypto.rsaEncrypt(data, publicKeyPem)
+    override fun rsaEncrypt(data: ByteArray, publicKeyPem: String, padding: String): ByteArray =
+        crypto.rsaEncrypt(data, publicKeyPem, padding)
 
     override fun base64Encode(input: ByteArray): String = crypto.base64Encode(input)
     override fun base64Decode(input: String): ByteArray = crypto.base64Decode(input)
@@ -92,7 +92,7 @@ class JsBridgeImpl(
             else -> bytes.decodeToString()
         }
 
-    override fun zlibInflate(input: ByteArray): ByteArray = crypto.zlibInflate(input)
+    override fun zlibInflate(input: ByteArray, format: String): ByteArray = crypto.zlibInflate(input, format)
     override fun iconvDecode(input: ByteArray, encoding: String): String = crypto.iconvDecode(input, encoding)
     override fun iconvEncode(input: String, encoding: String): ByteArray = crypto.iconvEncode(input, encoding)
 
@@ -144,12 +144,24 @@ interface PlatformCrypto {
     fun sha256(input: ByteArray): ByteArray
     fun aesEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String): ByteArray
     fun desEncrypt(data: ByteArray, key: ByteArray, iv: ByteArray?, mode: String): ByteArray
-    fun rsaEncrypt(data: ByteArray, publicKeyPem: String): ByteArray
+    /**
+     * RSA 公钥加密。
+     *
+     * @param padding 大小写不敏感；支持 `"PKCS1"`（默认，四源通用）、`"NoPadding"` / `"None"` / `"Raw"`（wy 源 `aesRsaEncrypt` 走 NoPadding）。
+     *   其它值按 `"RSA/ECB/${padding}Padding"` 原样组装 transformation。
+     */
+    fun rsaEncrypt(data: ByteArray, publicKeyPem: String, padding: String = "PKCS1"): ByteArray
     fun base64Encode(input: ByteArray): String
     fun base64Decode(input: String): ByteArray
     fun hexEncode(input: ByteArray): String
     fun hexDecode(input: String): ByteArray
-    fun zlibInflate(input: ByteArray): ByteArray
+    /**
+     * zlib 解压。
+     *
+     * @param format 大小写不敏感；`"auto"`（默认，按 magic 推断 gzip / zlib / raw）、`"zlib"`、`"raw"`（pako.inflateRaw / nowrap）、`"gzip"`（pako.ungzip）。
+     *   kg 源同时用 `pako.inflate` + `pako.inflateRaw` + `pako.ungzip`，全部路由到本方法，由 format 区分。
+     */
+    fun zlibInflate(input: ByteArray, format: String = "auto"): ByteArray
     fun iconvDecode(input: ByteArray, encoding: String): String
     fun iconvEncode(input: String, encoding: String): ByteArray
 }
