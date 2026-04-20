@@ -2,7 +2,10 @@ package top.iwesley.lyn.music
 
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import top.iwesley.lyn.music.core.model.DiagnosticLogLevel
+import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.data.repository.SettingsRepository
 import top.iwesley.lyn.music.online.DefaultMusicSourceFacade
 import top.iwesley.lyn.music.online.MusicSourceFacade
@@ -51,7 +54,8 @@ class AppContainer(
         if (persisted.isBlank()) {
             val generated = DeviceFingerprint.generate()
             scope.launch {
-                settingsRepository.setDeviceFingerprint(
+                persistFingerprintWithRetry(
+                    settingsRepository,
                     "${generated.guid}|${generated.wid}|${generated.deviceId}",
                 )
             }
@@ -127,3 +131,35 @@ class AppContainer(
  * 五平台各自在 actual 里返回 `android / ios / macos / jvm`。
  */
 expect fun currentPlatformTag(): String
+
+/**
+ * 持久化首启指纹；对磁盘 IO 失败做有限次重试，最终仍失败时记录 warn 但不抛。
+ *
+ * 失败代价：下次启动 [AppContainer] 会生成新指纹重走本路径，只要不是持续故障就能自愈；
+ * 但 tx/wy 等侧可能因 guid 飘移短期判定风险，所以 warn 必须可见以便排查。
+ */
+private suspend fun persistFingerprintWithRetry(
+    settingsRepository: SettingsRepository,
+    value: String,
+    maxAttempts: Int = 3,
+    backoffMillis: Long = 200L,
+) {
+    var lastError: Throwable? = null
+    repeat(maxAttempts) { attempt ->
+        try {
+            settingsRepository.setDeviceFingerprint(value)
+            return
+        } catch (t: Throwable) {
+            lastError = t
+            if (attempt < maxAttempts - 1) {
+                delay(backoffMillis * (1L shl attempt))
+            }
+        }
+    }
+    GlobalDiagnosticLogger.log(
+        level = DiagnosticLogLevel.WARN,
+        tag = "AppContainer.fingerprint",
+        message = "persist failed after $maxAttempts attempts; next launch will regenerate",
+        throwable = lastError,
+    )
+}
