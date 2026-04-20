@@ -95,8 +95,8 @@ class MgUrlResolver(
         val match = rateformats.firstOrNull {
             it.jsonObject["formatType"]?.jsonPrimitive?.contentOrNull == code
         }?.jsonObject ?: throw MusicSourceException.UrlExpired("mg")
-        val rawUrl = match["url"]?.jsonPrimitive?.contentOrNull
-            ?: match["androidUrl"]?.jsonPrimitive?.contentOrNull
+        val rawUrl = match["url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }
+            ?: match["androidUrl"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }
             ?: throw MusicSourceException.UrlExpired("mg")
 
         val playUrl = if (rawUrl.startsWith("//")) "http:$rawUrl" else rawUrl
