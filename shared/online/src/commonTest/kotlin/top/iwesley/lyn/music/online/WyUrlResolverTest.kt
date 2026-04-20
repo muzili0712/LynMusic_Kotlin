@@ -1,15 +1,7 @@
 package top.iwesley.lyn.music.online
 
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestData
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.OutgoingContent
-import io.ktor.http.content.TextContent
-import io.ktor.http.headersOf
-import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.online.resolve.WyUrlResolver
 import top.iwesley.lyn.music.online.source.createPlatformCrypto
@@ -24,37 +16,6 @@ class WyUrlResolverTest {
 
     private val happyJson =
         """{"code":200,"data":[{"id":12345,"url":"http://m10.music.126.net/abc.mp3","br":320000,"size":1234567}]}"""
-
-    private fun mockHttp(json: String, status: HttpStatusCode = HttpStatusCode.OK): HttpClient =
-        HttpClient(MockEngine { _ ->
-            respond(
-                content = ByteReadChannel(json),
-                status = status,
-                headers = headersOf(HttpHeaders.ContentType, "application/json"),
-            )
-        })
-
-    private fun mockHttpCapturing(
-        captured: MutableList<HttpRequestData>,
-        json: String,
-    ): HttpClient = HttpClient(MockEngine { req ->
-        captured += req
-        respond(
-            content = ByteReadChannel(json),
-            status = HttpStatusCode.OK,
-            headers = headersOf(HttpHeaders.ContentType, "application/json"),
-        )
-    })
-
-    /**
-     * 从 MockEngine 抓到的请求中提取 body 文本。ktor 把 `setBody(String)` +
-     * `contentType(FormUrlEncoded)` 包装成 [TextContent]；兜底处理 ByteArrayContent。
-     */
-    private fun bodyText(req: HttpRequestData): String = when (val b = req.body) {
-        is TextContent -> b.text
-        is OutgoingContent.ByteArrayContent -> b.bytes().decodeToString()
-        else -> error("unsupported outgoing body: ${b::class.simpleName}")
-    }
 
     @Test
     fun resolves_wy_url_for_k320() = runTest {

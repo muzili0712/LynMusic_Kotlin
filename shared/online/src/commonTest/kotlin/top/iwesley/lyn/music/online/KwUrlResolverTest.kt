@@ -1,13 +1,7 @@
 package top.iwesley.lyn.music.online
 
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestData
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
-import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.online.resolve.KwUrlResolver
 import top.iwesley.lyn.music.online.source.createPlatformCrypto
@@ -21,27 +15,6 @@ import kotlin.test.assertTrue
 class KwUrlResolverTest {
 
     private val happyJson = """{"code":200,"url":"https://sycdn.kuwo.cn/abc.mp3"}"""
-
-    private fun mockHttp(json: String, status: HttpStatusCode = HttpStatusCode.OK): HttpClient =
-        HttpClient(MockEngine { _ ->
-            respond(
-                content = ByteReadChannel(json),
-                status = status,
-                headers = headersOf(HttpHeaders.ContentType, "application/json"),
-            )
-        })
-
-    private fun mockHttpCapturing(
-        captured: MutableList<HttpRequestData>,
-        json: String,
-    ): HttpClient = HttpClient(MockEngine { req ->
-        captured += req
-        respond(
-            content = ByteReadChannel(json),
-            status = HttpStatusCode.OK,
-            headers = headersOf(HttpHeaders.ContentType, "application/json"),
-        )
-    })
 
     @Test
     fun resolves_kw_url_for_k320() = runTest {

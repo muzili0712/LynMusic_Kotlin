@@ -1,15 +1,7 @@
 package top.iwesley.lyn.music.online
 
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestData
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.OutgoingContent
-import io.ktor.http.content.TextContent
-import io.ktor.http.headersOf
-import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.online.resolve.DeviceFingerprint
 import top.iwesley.lyn.music.online.resolve.TxUrlResolver
@@ -26,37 +18,6 @@ class TxUrlResolverTest {
 
     private val happyJson =
         """{"code":0,"req_0":{"data":{"sip":["https://ws.stream.qqmusic.qq.com/"],"midurlinfo":[{"purl":"C400xxxxxx.m4a?guid=a","filename":"C400xxxxxx.m4a"}]}}}"""
-
-    private fun mockHttp(json: String, status: HttpStatusCode = HttpStatusCode.OK): HttpClient =
-        HttpClient(MockEngine { _ ->
-            respond(
-                content = ByteReadChannel(json),
-                status = status,
-                headers = headersOf(HttpHeaders.ContentType, "application/json"),
-            )
-        })
-
-    private fun mockHttpCapturing(
-        captured: MutableList<HttpRequestData>,
-        json: String,
-    ): HttpClient = HttpClient(MockEngine { req ->
-        captured += req
-        respond(
-            content = ByteReadChannel(json),
-            status = HttpStatusCode.OK,
-            headers = headersOf(HttpHeaders.ContentType, "application/json"),
-        )
-    })
-
-    /**
-     * 从 MockEngine 抓到的请求中提取 body 文本。ktor 把 `setBody(String)` + `contentType(Json)`
-     * 包装成 [TextContent]；若未来换 ktor 版本走 [OutgoingContent.ByteArrayContent]，也兜底解码。
-     */
-    private fun bodyText(req: HttpRequestData): String = when (val b = req.body) {
-        is TextContent -> b.text
-        is OutgoingContent.ByteArrayContent -> b.bytes().decodeToString()
-        else -> error("unsupported outgoing body: ${b::class.simpleName}")
-    }
 
     private val fakeFingerprint = DeviceFingerprint(
         guid = "a".repeat(32),
