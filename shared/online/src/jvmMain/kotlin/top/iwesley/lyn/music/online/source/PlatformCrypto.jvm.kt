@@ -149,15 +149,28 @@ class JvmPlatformCrypto : PlatformCrypto {
         if (normalized.contains("/")) {
             // 已经是 "MODE/PADDING" 或 "ALGO/MODE/PADDING" 形式
             val segs = normalized.split("/")
-            return when (segs.size) {
+            val raw = when (segs.size) {
                 2 -> "$algo/${segs[0].uppercase()}/${segs[1]}"
                 3 -> "${segs[0].uppercase()}/${segs[1].uppercase()}/${segs[2]}"
                 else -> "$algo/CBC/PKCS5Padding"
             }
+            return normalizePadding(raw)
         }
         // 仅 "CBC" / "ECB"
         return "$algo/${normalized.uppercase()}/PKCS5Padding"
     }
+
+    /**
+     * JVM 默认 SunJCE provider 不注册 "PKCS7Padding" 字面量（会抛
+     * `NoSuchAlgorithmException: Cannot find any provider supporting
+     * AES/ECB/PKCS7Padding`），但注册了 "PKCS5Padding"。对于 16 字节块的 AES，
+     * PKCS#5 和 PKCS#7 产生完全相同的填充字节 —— PKCS#5 只是 PKCS#7 在 8 字节块
+     * 上的特化。Android (BC provider) 和 iOS (CommonCrypto) 都支持 "PKCS7Padding"。
+     * 这里把传入的 "PKCS7Padding" 在 JVM 上改写成 "PKCS5Padding"，密文不变，
+     * 避免 caller 用 Kotlin-common-style 名字（wy eapi / kg 某些端点）就炸。
+     */
+    private fun normalizePadding(transformation: String): String =
+        transformation.replace(Regex("/PKCS7Padding$", RegexOption.IGNORE_CASE), "/PKCS5Padding")
 
     private fun charsetFromLxName(name: String): java.nio.charset.Charset {
         val normalized = name.trim().uppercase().replace("_", "-")

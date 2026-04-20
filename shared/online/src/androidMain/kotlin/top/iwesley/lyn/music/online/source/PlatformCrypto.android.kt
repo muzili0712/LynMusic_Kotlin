@@ -136,14 +136,23 @@ class AndroidPlatformCrypto : PlatformCrypto {
         val normalized = modeRaw.trim().replace("\\s+".toRegex(), "")
         if (normalized.contains("/")) {
             val segs = normalized.split("/")
-            return when (segs.size) {
+            val raw = when (segs.size) {
                 2 -> "$algo/${segs[0].uppercase()}/${segs[1]}"
                 3 -> "${segs[0].uppercase()}/${segs[1].uppercase()}/${segs[2]}"
                 else -> "$algo/CBC/PKCS5Padding"
             }
+            return normalizePadding(raw)
         }
         return "$algo/${normalized.uppercase()}/PKCS5Padding"
     }
+
+    /**
+     * 与 [JvmPlatformCrypto.normalizePadding] 保持严格一致：PKCS#5 与 PKCS#7 在
+     * 16 字节块上产出相同填充，JVM SunJCE 只认 PKCS5Padding 字面量，Android BC
+     * provider 两个都支持；统一改写 PKCS7Padding → PKCS5Padding 便于 caller 共享代码。
+     */
+    private fun normalizePadding(transformation: String): String =
+        transformation.replace(Regex("/PKCS7Padding$", RegexOption.IGNORE_CASE), "/PKCS5Padding")
 
     private fun charsetFromLxName(name: String): java.nio.charset.Charset {
         val normalized = name.trim().uppercase().replace("_", "-")
