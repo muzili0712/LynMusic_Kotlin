@@ -25,6 +25,7 @@ import top.iwesley.lyn.music.buildSharedGraph
 import top.iwesley.lyn.music.core.model.ConsoleDiagnosticLogger
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DefaultQualityPreferencesStore
+import top.iwesley.lyn.music.core.model.DeviceFingerprintPreferencesStore
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
@@ -119,6 +120,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             themePreferencesStore = appPreferencesStore,
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
             defaultQualityPreferencesStore = appPreferencesStore,
+            deviceFingerprintPreferencesStore = appPreferencesStore,
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createIosArtworkCacheStore(),
@@ -234,7 +236,8 @@ private class IosKeychainCredentialStore : SecureCredentialStore {
 }
 
 private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
-    CompactPlayerLyricsPreferencesStore, DefaultQualityPreferencesStore, LibrarySourceFilterPreferencesStore {
+    CompactPlayerLyricsPreferencesStore, DefaultQualityPreferencesStore, LibrarySourceFilterPreferencesStore,
+    DeviceFingerprintPreferencesStore {
     private val defaults = NSUserDefaults.standardUserDefaults
     private val mutableUseSambaCache = MutableStateFlow(
         if (defaults.objectForKey(KEY_USE_SAMBA_CACHE) == null) false else defaults.boolForKey(KEY_USE_SAMBA_CACHE),
@@ -254,6 +257,9 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private val mutableSelectedTheme = MutableStateFlow(readSelectedTheme())
     private val mutableCustomThemeTokens = MutableStateFlow(readCustomThemeTokens())
     private val mutableTextPalettePreferences = MutableStateFlow(readTextPalettePreferences())
+    private val mutableDeviceFingerprint = MutableStateFlow(
+        defaults.stringForKey(KEY_DEVICE_FINGERPRINT)?.takeIf { it.isNotBlank() } ?: "",
+    )
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
@@ -263,6 +269,7 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
     override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
     override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
+    override val fingerprint: StateFlow<String> = mutableDeviceFingerprint.asStateFlow()
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         defaults.setBool(enabled, KEY_USE_SAMBA_CACHE)
@@ -305,6 +312,15 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette) {
         defaults.setObject(palette.name, textPaletteKey(themeId))
         mutableTextPalettePreferences.value = mutableTextPalettePreferences.value.withThemePalette(themeId, palette)
+    }
+
+    override suspend fun setFingerprint(value: String) {
+        if (value.isBlank()) {
+            defaults.removeObjectForKey(KEY_DEVICE_FINGERPRINT)
+        } else {
+            defaults.setObject(value, KEY_DEVICE_FINGERPRINT)
+        }
+        mutableDeviceFingerprint.value = value
     }
 
     private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
@@ -449,3 +465,4 @@ private const val KEY_THEME_TEXT_PALETTE_FOREST = "theme_text_palette_forest"
 private const val KEY_THEME_TEXT_PALETTE_OCEAN = "theme_text_palette_ocean"
 private const val KEY_THEME_TEXT_PALETTE_SAND = "theme_text_palette_sand"
 private const val KEY_THEME_TEXT_PALETTE_CUSTOM = "theme_text_palette_custom"
+private const val KEY_DEVICE_FINGERPRINT = "device_fingerprint"

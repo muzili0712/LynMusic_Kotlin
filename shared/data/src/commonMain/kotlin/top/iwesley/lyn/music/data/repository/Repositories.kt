@@ -13,6 +13,7 @@ import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DefaultQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
+import top.iwesley.lyn.music.core.model.DeviceFingerprintPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportIndexState
 import top.iwesley.lyn.music.core.model.ImportSource
@@ -45,6 +46,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDefaultQualityPreferencesStore
+import top.iwesley.lyn.music.core.model.UnsupportedDeviceFingerprintPreferencesStore
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
@@ -212,6 +214,7 @@ interface SettingsRepository {
     val desktopVlcAutoDetectedPath: StateFlow<String?>
     val desktopVlcManualPath: StateFlow<String?>
     val desktopVlcEffectivePath: StateFlow<String?>
+    val deviceFingerprint: StateFlow<String>
 
     suspend fun ensureDefaults()
     suspend fun setUseSambaCache(enabled: Boolean)
@@ -222,6 +225,7 @@ interface SettingsRepository {
     suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette)
     suspend fun setDesktopVlcManualPath(path: String)
     suspend fun clearDesktopVlcManualPath()
+    suspend fun setDeviceFingerprint(value: String)
     suspend fun saveLyricsSource(config: LyricsSourceConfig)
     suspend fun saveWorkflowLyricsSource(rawJson: String, editingId: String? = null): WorkflowLyricsSourceConfig
     suspend fun setLyricsSourceEnabled(sourceId: String, enabled: Boolean)
@@ -924,6 +928,8 @@ class DefaultSettingsRepository(
         UnsupportedCompactPlayerLyricsPreferencesStore,
     private val defaultQualityPreferencesStore: DefaultQualityPreferencesStore =
         UnsupportedDefaultQualityPreferencesStore,
+    private val deviceFingerprintPreferencesStore: DeviceFingerprintPreferencesStore =
+        UnsupportedDeviceFingerprintPreferencesStore,
 ) : SettingsRepository {
     override val lyricsSources: Flow<List<LyricsSourceDefinition>> = combine(
         database.lyricsSourceConfigDao().observeAll(),
@@ -943,6 +949,7 @@ class DefaultSettingsRepository(
     override val desktopVlcAutoDetectedPath: StateFlow<String?> = desktopVlcPreferencesStore.desktopVlcAutoDetectedPath
     override val desktopVlcManualPath: StateFlow<String?> = desktopVlcPreferencesStore.desktopVlcManualPath
     override val desktopVlcEffectivePath: StateFlow<String?> = desktopVlcPreferencesStore.desktopVlcEffectivePath
+    override val deviceFingerprint: StateFlow<String> = deviceFingerprintPreferencesStore.fingerprint
 
     override suspend fun ensureDefaults() {
         val existing = database.lyricsSourceConfigDao().getAll()
@@ -995,6 +1002,10 @@ class DefaultSettingsRepository(
 
     override suspend fun clearDesktopVlcManualPath() {
         desktopVlcPreferencesStore.setDesktopVlcManualPath(null)
+    }
+
+    override suspend fun setDeviceFingerprint(value: String) {
+        deviceFingerprintPreferencesStore.setFingerprint(value)
     }
 
     override suspend fun saveLyricsSource(config: LyricsSourceConfig) {

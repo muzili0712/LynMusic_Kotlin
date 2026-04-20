@@ -41,6 +41,7 @@ import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DefaultQualityPreferencesStore
+import top.iwesley.lyn.music.core.model.DeviceFingerprintPreferencesStore
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
@@ -140,6 +141,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             themePreferencesStore = appPreferencesStore,
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
             defaultQualityPreferencesStore = appPreferencesStore,
+            deviceFingerprintPreferencesStore = appPreferencesStore,
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
@@ -262,7 +264,7 @@ private class AndroidCredentialStore(
 private class AndroidAppPreferencesStore(
     context: Context,
 ) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, CompactPlayerLyricsPreferencesStore,
-    DefaultQualityPreferencesStore, LibrarySourceFilterPreferencesStore {
+    DefaultQualityPreferencesStore, LibrarySourceFilterPreferencesStore, DeviceFingerprintPreferencesStore {
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.settings", Context.MODE_PRIVATE)
     private val mutableUseSambaCache = MutableStateFlow(
@@ -283,6 +285,9 @@ private class AndroidAppPreferencesStore(
     private val mutableSelectedTheme = MutableStateFlow(readSelectedTheme())
     private val mutableCustomThemeTokens = MutableStateFlow(readCustomThemeTokens())
     private val mutableTextPalettePreferences = MutableStateFlow(readTextPalettePreferences())
+    private val mutableDeviceFingerprint = MutableStateFlow(
+        preferences.getString(KEY_DEVICE_FINGERPRINT, "")?.takeIf { it.isNotBlank() } ?: "",
+    )
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
@@ -292,6 +297,7 @@ private class AndroidAppPreferencesStore(
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
     override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
     override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
+    override val fingerprint: StateFlow<String> = mutableDeviceFingerprint.asStateFlow()
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_USE_SAMBA_CACHE, enabled).apply()
@@ -336,6 +342,13 @@ private class AndroidAppPreferencesStore(
     override suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette) {
         preferences.edit().putString(textPaletteKey(themeId), palette.name).apply()
         mutableTextPalettePreferences.value = mutableTextPalettePreferences.value.withThemePalette(themeId, palette)
+    }
+
+    override suspend fun setFingerprint(value: String) {
+        val editor = preferences.edit()
+        if (value.isBlank()) editor.remove(KEY_DEVICE_FINGERPRINT) else editor.putString(KEY_DEVICE_FINGERPRINT, value)
+        editor.apply()
+        mutableDeviceFingerprint.value = value
     }
 
     private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
@@ -1523,6 +1536,7 @@ private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
 private const val KEY_DEFAULT_QUALITY = "default_quality_lx_key"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"
+private const val KEY_DEVICE_FINGERPRINT = "device_fingerprint"
 private const val ANDROID_KEYSTORE = "AndroidKeyStore"
 private const val CREDENTIAL_KEY_ALIAS = "lynmusic.credentials.master"
 private const val AES_TRANSFORMATION = "AES/GCM/NoPadding"

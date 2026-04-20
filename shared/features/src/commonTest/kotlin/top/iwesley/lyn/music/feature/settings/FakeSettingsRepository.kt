@@ -47,6 +47,7 @@ internal class FakeSettingsRepository(
     private val mutableDesktopVlcEffectivePath = MutableStateFlow(
         desktopVlcManualPath ?: desktopVlcAutoDetectedPath,
     )
+    private val mutableDeviceFingerprint = MutableStateFlow("")
 
     override val lyricsSources: Flow<List<LyricsSourceDefinition>> = mutableSources.asStateFlow()
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
@@ -58,6 +59,7 @@ internal class FakeSettingsRepository(
     override val desktopVlcAutoDetectedPath: StateFlow<String?> = mutableDesktopVlcAutoDetectedPath.asStateFlow()
     override val desktopVlcManualPath: StateFlow<String?> = mutableDesktopVlcManualPath.asStateFlow()
     override val desktopVlcEffectivePath: StateFlow<String?> = mutableDesktopVlcEffectivePath.asStateFlow()
+    override val deviceFingerprint: StateFlow<String> = mutableDeviceFingerprint.asStateFlow()
 
     var setCustomThemeTokensCalls: Int = 0
         private set
@@ -105,6 +107,10 @@ internal class FakeSettingsRepository(
     override suspend fun clearDesktopVlcManualPath() {
         mutableDesktopVlcManualPath.value = null
         mutableDesktopVlcEffectivePath.value = mutableDesktopVlcAutoDetectedPath.value
+    }
+
+    override suspend fun setDeviceFingerprint(value: String) {
+        mutableDeviceFingerprint.value = value
     }
 
     override suspend fun saveLyricsSource(config: LyricsSourceConfig) {

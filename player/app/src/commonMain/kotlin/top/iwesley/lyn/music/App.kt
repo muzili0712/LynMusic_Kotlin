@@ -83,9 +83,13 @@ fun buildPlayerAppComponent(
     playerRuntimeServices: PlayerRuntimeServices,
 ): LynMusicAppComponent {
     // 先建在线容器，拿到 SongUrlResolver 以便注入 PlaybackRepository。
-    // T9：resolver 已接通 loadGatewaySafely 的 online 分支；T10 起 OnlineSongToTrack 产出的
+    // T9：resolver 已接通 loadGatewaySafely 的 online 分支；T10+ OnlineSongToTrack 产出的
     // `online-lazy://…` locator 会实际走这条路径。
-    val onlineContainer = AppContainer(scope = sharedGraph.scope)
+    // M1.0 T13：AppContainer 消费 settingsRepository 读取/持久化 DeviceFingerprint。
+    val onlineContainer = AppContainer(
+        scope = sharedGraph.scope,
+        settingsRepository = sharedGraph.settingsRepository,
+    )
     val playbackRepository = DefaultPlaybackRepository(
         database = sharedGraph.database,
         gateway = playerRuntimeServices.playbackGateway,

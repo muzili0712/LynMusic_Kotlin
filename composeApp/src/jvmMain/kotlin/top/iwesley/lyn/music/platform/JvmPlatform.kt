@@ -48,6 +48,7 @@ import top.iwesley.lyn.music.core.model.ConsoleDiagnosticLogger
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
+import top.iwesley.lyn.music.core.model.DeviceFingerprintPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
@@ -167,6 +168,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
             defaultQualityPreferencesStore = appPreferencesStore,
             desktopVlcPreferencesStore = appPreferencesStore,
+            deviceFingerprintPreferencesStore = appPreferencesStore,
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createJvmArtworkCacheStore(),
@@ -215,7 +217,8 @@ private class JvmLyricsHttpClient : LyricsHttpClient {
 }
 
 private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
-    CompactPlayerLyricsPreferencesStore, DefaultQualityPreferencesStore, DesktopVlcPreferencesStore, LibrarySourceFilterPreferencesStore {
+    CompactPlayerLyricsPreferencesStore, DefaultQualityPreferencesStore, DesktopVlcPreferencesStore, LibrarySourceFilterPreferencesStore,
+    DeviceFingerprintPreferencesStore {
     private val settingsFile = File(File(System.getProperty("user.home")), ".lynmusic/settings.properties").apply {
         parentFile?.mkdirs()
     }
@@ -229,6 +232,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private val mutableTextPalettePreferences = MutableStateFlow(readTextPalettePreferences())
     private val mutableDesktopVlcManualPath = MutableStateFlow(readDesktopVlcManualPath())
     private val mutableDesktopVlcAutoDetectedPath = MutableStateFlow<String?>(null)
+    private val mutableDeviceFingerprint = MutableStateFlow(readDeviceFingerprint())
     private val mutableDesktopVlcEffectivePath = MutableStateFlow(
         resolveDesktopVlcEffectivePath(
             manualPath = mutableDesktopVlcManualPath.value,
@@ -247,6 +251,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override val desktopVlcEffectivePath: StateFlow<String?> = mutableDesktopVlcEffectivePath.asStateFlow()
     override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
     override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
+    override val fingerprint: StateFlow<String> = mutableDeviceFingerprint.asStateFlow()
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         val properties = loadProperties()
@@ -329,6 +334,21 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
             manualPath = mutableDesktopVlcManualPath.value,
             autoDetectedPath = mutableDesktopVlcAutoDetectedPath.value,
         )
+    }
+
+    override suspend fun setFingerprint(value: String) {
+        val properties = loadProperties()
+        if (value.isBlank()) {
+            properties.remove(KEY_DEVICE_FINGERPRINT)
+        } else {
+            properties.setProperty(KEY_DEVICE_FINGERPRINT, value)
+        }
+        persistProperties(properties)
+        mutableDeviceFingerprint.value = value
+    }
+
+    private fun readDeviceFingerprint(): String {
+        return loadProperties().getProperty(KEY_DEVICE_FINGERPRINT, "") ?: ""
     }
 
     private fun readUseSambaCache(): Boolean {
@@ -423,6 +443,7 @@ private const val KEY_THEME_TEXT_PALETTE_OCEAN = "theme_text_palette_ocean"
 private const val KEY_THEME_TEXT_PALETTE_SAND = "theme_text_palette_sand"
 private const val KEY_THEME_TEXT_PALETTE_CUSTOM = "theme_text_palette_custom"
 private const val KEY_DESKTOP_VLC_MANUAL_PATH = "desktop_vlc_manual_path"
+private const val KEY_DEVICE_FINGERPRINT = "device_fingerprint"
 
 private class JvmAudioTagGateway(
     private val database: LynMusicDatabase,

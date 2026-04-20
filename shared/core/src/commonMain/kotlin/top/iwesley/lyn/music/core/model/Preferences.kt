@@ -57,6 +57,30 @@ object UnsupportedDefaultQualityPreferencesStore : DefaultQualityPreferencesStor
 
 const val DEFAULT_QUALITY_FALLBACK_KEY: String = "320k"
 
+/**
+ * lx-music 设备指纹持久化：部分源（tx 的 guid/wid、wy 的 deviceId）签名算法依赖
+ * 跨会话稳定的 fingerprint；首启后必须持久化到各平台偏好里，避免源侧风控拒绝。
+ *
+ * 存储格式为单串 "guid|wid|deviceId"（由 [top.iwesley.lyn.music.online.resolve.DeviceFingerprint]
+ * 的三字段按管道分隔拼接，空字符串表示尚未生成）。把三段并在一起主要是为了复用已有
+ * key-value 存储通道；未来要扩三段之外的字段，可以再切 JSON 重编码。
+ */
+interface DeviceFingerprintPreferencesStore {
+    val fingerprint: StateFlow<String>
+
+    suspend fun setFingerprint(value: String)
+}
+
+object UnsupportedDeviceFingerprintPreferencesStore : DeviceFingerprintPreferencesStore {
+    private val mutableFingerprint = MutableStateFlow("")
+
+    override val fingerprint: StateFlow<String> = mutableFingerprint
+
+    override suspend fun setFingerprint(value: String) {
+        mutableFingerprint.value = value
+    }
+}
+
 interface DesktopVlcPreferencesStore {
     val desktopVlcManualPath: StateFlow<String?>
     val desktopVlcAutoDetectedPath: StateFlow<String?>

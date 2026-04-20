@@ -11,6 +11,7 @@ import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DefaultQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
+import top.iwesley.lyn.music.core.model.DeviceFingerprintPreferencesStore
 import top.iwesley.lyn.music.core.model.DeviceInfoGateway
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
@@ -26,6 +27,7 @@ import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDefaultQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDesktopVlcPreferencesStore
+import top.iwesley.lyn.music.core.model.UnsupportedDeviceFingerprintPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
 import top.iwesley.lyn.music.core.model.UnsupportedVlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
@@ -33,6 +35,7 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
 import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
 import top.iwesley.lyn.music.data.repository.LyricsRepository
+import top.iwesley.lyn.music.data.repository.SettingsRepository
 import top.iwesley.lyn.music.data.repository.RoomMusicTagsRepository
 import top.iwesley.lyn.music.data.repository.RoomFavoritesRepository
 import top.iwesley.lyn.music.data.repository.RoomImportSourceRepository
@@ -59,6 +62,8 @@ data class SharedRuntimeServices(
     val defaultQualityPreferencesStore: DefaultQualityPreferencesStore =
         UnsupportedDefaultQualityPreferencesStore,
     val desktopVlcPreferencesStore: DesktopVlcPreferencesStore = UnsupportedDesktopVlcPreferencesStore,
+    val deviceFingerprintPreferencesStore: DeviceFingerprintPreferencesStore =
+        UnsupportedDeviceFingerprintPreferencesStore,
     val librarySourceFilterPreferencesStore: LibrarySourceFilterPreferencesStore,
     val lyricsHttpClient: LyricsHttpClient,
     val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
@@ -81,6 +86,7 @@ class SharedGraph(
     val musicTagsStore: MusicTagsStore,
     val importStore: ImportStore,
     val settingsStore: SettingsStore,
+    val settingsRepository: SettingsRepository,
     val lyricsRepository: LyricsRepository,
     val audioTagGateway: AudioTagGateway,
     val logger: DiagnosticLogger,
@@ -106,6 +112,7 @@ fun buildSharedGraph(
         desktopVlcPreferencesStore = runtimeServices.desktopVlcPreferencesStore,
         compactPlayerLyricsPreferencesStore = runtimeServices.compactPlayerLyricsPreferencesStore,
         defaultQualityPreferencesStore = runtimeServices.defaultQualityPreferencesStore,
+        deviceFingerprintPreferencesStore = runtimeServices.deviceFingerprintPreferencesStore,
     )
     NavidromeLocatorRuntime.install(
         object : top.iwesley.lyn.music.core.model.NavidromeLocatorResolver {
@@ -191,6 +198,7 @@ fun buildSharedGraph(
             deviceInfoGateway = runtimeServices.deviceInfoGateway,
             vlcPathPickerPlatformService = runtimeServices.vlcPathPickerPlatformService,
         ),
+        settingsRepository = settingsRepository,
         lyricsRepository = lyricsRepository,
         audioTagGateway = runtimeServices.audioTagGateway,
         logger = runtimeServices.logger,
