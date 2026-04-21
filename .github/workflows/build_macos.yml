@@ -15,8 +15,8 @@ jobs:
 
       - uses: actions/setup-java@v4
         with:
-          java-version: '21'
-          distribution: 'temurin'
+          java-version: '21.0.9'
+          distribution: 'oracle'
 
       - uses: gradle/actions/setup-gradle@v3
 
