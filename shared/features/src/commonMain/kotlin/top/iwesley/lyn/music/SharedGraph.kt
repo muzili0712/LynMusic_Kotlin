@@ -6,6 +6,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.AppStorageGateway
+import top.iwesley.lyn.music.core.model.AppDisplayPreferencesStore
+import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
@@ -25,6 +27,7 @@ import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedAppStorageGateway
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
+import top.iwesley.lyn.music.core.model.UnsupportedAppDisplayPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
@@ -58,6 +61,7 @@ data class SharedRuntimeServices(
     val secureCredentialStore: SecureCredentialStore,
     val sambaCachePreferencesStore: SambaCachePreferencesStore,
     val themePreferencesStore: ThemePreferencesStore,
+    val appDisplayPreferencesStore: AppDisplayPreferencesStore = UnsupportedAppDisplayPreferencesStore,
     val compactPlayerLyricsPreferencesStore: CompactPlayerLyricsPreferencesStore =
         UnsupportedCompactPlayerLyricsPreferencesStore,
     val desktopVlcPreferencesStore: DesktopVlcPreferencesStore = UnsupportedDesktopVlcPreferencesStore,
@@ -90,6 +94,7 @@ class SharedGraph(
     val settingsStore: SettingsStore,
     val lyricsRepository: LyricsRepository,
     val audioTagGateway: AudioTagGateway,
+    val appDisplayScalePreset: kotlinx.coroutines.flow.StateFlow<AppDisplayScalePreset>,
     val logger: DiagnosticLogger,
     val scope: CoroutineScope,
 )
@@ -111,6 +116,7 @@ fun buildSharedGraph(
         sambaCachePreferencesStore = runtimeServices.sambaCachePreferencesStore,
         themePreferencesStore = runtimeServices.themePreferencesStore,
         desktopVlcPreferencesStore = runtimeServices.desktopVlcPreferencesStore,
+        appDisplayPreferencesStore = runtimeServices.appDisplayPreferencesStore,
         compactPlayerLyricsPreferencesStore = runtimeServices.compactPlayerLyricsPreferencesStore,
     )
     NavidromeLocatorRuntime.install(
@@ -202,6 +208,7 @@ fun buildSharedGraph(
         ),
         lyricsRepository = lyricsRepository,
         audioTagGateway = runtimeServices.audioTagGateway,
+        appDisplayScalePreset = runtimeServices.appDisplayPreferencesStore.appDisplayScalePreset,
         logger = runtimeServices.logger,
         scope = scope,
     )

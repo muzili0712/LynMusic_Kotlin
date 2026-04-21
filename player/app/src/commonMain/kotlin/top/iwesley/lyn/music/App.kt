@@ -24,7 +24,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
+import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AppTab
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
@@ -58,6 +60,7 @@ class LynMusicAppComponent(
     val importStore: ImportStore,
     val playerStore: PlayerStore,
     val settingsStore: SettingsStore,
+    val appDisplayScalePreset: StateFlow<AppDisplayScalePreset>,
     private val scope: CoroutineScope,
     private val onDispose: suspend () -> Unit,
 ) {
@@ -103,6 +106,7 @@ fun buildPlayerAppComponent(
             logger = sharedGraph.logger,
         ),
         settingsStore = sharedGraph.settingsStore,
+        appDisplayScalePreset = sharedGraph.appDisplayScalePreset,
         scope = sharedGraph.scope,
         onDispose = {
             playbackRepository.close()

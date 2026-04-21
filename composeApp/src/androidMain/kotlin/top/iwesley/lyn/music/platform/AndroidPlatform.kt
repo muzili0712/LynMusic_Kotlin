@@ -36,6 +36,8 @@ import top.iwesley.lyn.music.SharedRuntimeServices
 import top.iwesley.lyn.music.buildPlayerAppComponent
 import top.iwesley.lyn.music.buildSharedGraph
 import top.iwesley.lyn.music.core.model.AndroidDiagnosticLogger
+import top.iwesley.lyn.music.core.model.AppDisplayPreferencesStore
+import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
@@ -68,6 +70,7 @@ import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.appDisplayScalePresetOrDefault
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
@@ -136,6 +139,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             supportsWebDavImport = true,
             supportsNavidromeImport = true,
             supportsSystemMediaControls = true,
+            supportsAppDisplayScaleAdjustment = true,
         ),
     )
     val sharedGraph = buildSharedGraph(
@@ -146,6 +150,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             secureCredentialStore = secureStore,
             sambaCachePreferencesStore = appPreferencesStore,
             themePreferencesStore = appPreferencesStore,
+            appDisplayPreferencesStore = appPreferencesStore,
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
@@ -278,8 +283,8 @@ private class AndroidCredentialStore(
 
 private class AndroidAppPreferencesStore(
     context: Context,
-) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, CompactPlayerLyricsPreferencesStore,
-    LibrarySourceFilterPreferencesStore, LyricsShareFontPreferencesStore {
+) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, AppDisplayPreferencesStore,
+    CompactPlayerLyricsPreferencesStore, LibrarySourceFilterPreferencesStore, LyricsShareFontPreferencesStore {
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.settings", Context.MODE_PRIVATE)
     private val mutableUseSambaCache = MutableStateFlow(
@@ -287,6 +292,9 @@ private class AndroidAppPreferencesStore(
     )
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(
         preferences.getBoolean(KEY_SHOW_COMPACT_PLAYER_LYRICS, false),
+    )
+    private val mutableAppDisplayScalePreset = MutableStateFlow(
+        readAppDisplayScalePreset(),
     )
     private val mutableLibrarySourceFilter = MutableStateFlow(
         readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER),
@@ -303,6 +311,7 @@ private class AndroidAppPreferencesStore(
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
+    override val appDisplayScalePreset: StateFlow<AppDisplayScalePreset> = mutableAppDisplayScalePreset.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
@@ -318,6 +327,11 @@ private class AndroidAppPreferencesStore(
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_SHOW_COMPACT_PLAYER_LYRICS, enabled).apply()
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setAppDisplayScalePreset(preset: AppDisplayScalePreset) {
+        preferences.edit().putString(KEY_APP_DISPLAY_SCALE_PRESET, preset.name).apply()
+        mutableAppDisplayScalePreset.value = preset
     }
 
     override suspend fun setSelectedLyricsShareFontKey(value: String?) {
@@ -363,6 +377,10 @@ private class AndroidAppPreferencesStore(
     private fun readSelectedTheme(): AppThemeId {
         val name = preferences.getString(KEY_SELECTED_THEME, null)
         return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Ocean
+    }
+
+    private fun readAppDisplayScalePreset(): AppDisplayScalePreset {
+        return appDisplayScalePresetOrDefault(preferences.getString(KEY_APP_DISPLAY_SCALE_PRESET, null))
     }
 
     private fun readCustomThemeTokens(): AppThemeTokens {
@@ -1754,6 +1772,7 @@ private const val SAMBA_LOG_TAG = "Samba"
 private const val METADATA_LOG_TAG = "Metadata"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
+private const val KEY_APP_DISPLAY_SCALE_PRESET = "app_display_scale_preset"
 private const val KEY_LYRICS_SHARE_FONT_KEY = "lyrics_share_font_key"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"

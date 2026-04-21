@@ -77,6 +77,7 @@ import lynmusic.player.app.generated.resources.Res
 import lynmusic.player.app.generated.resources.about_app_wechat_qr
 import org.jetbrains.compose.resources.imageResource
 import top.iwesley.lyn.music.core.model.AppStorageCategory
+import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
@@ -549,6 +550,8 @@ private fun GeneralSettingsPane(
 ) {
     val shellColors = mainShellColors
     val isMobilePlatform = currentPlatformDescriptor.isMobilePlatform()
+    val showAppDisplayScaleSetting =
+        currentPlatformDescriptor.capabilities.supportsAppDisplayScaleAdjustment
     val showCompactPlayerLyricsSetting = isMobilePlatform
     val showDesktopVlcSettings = !isMobilePlatform
     val manualPath = state.desktopVlcManualPath?.takeIf { it.isNotBlank() }
@@ -658,6 +661,55 @@ private fun GeneralSettingsPane(
                         },
                         colors = SwitchDefaults.colors(),
                     )
+                }
+            }
+        }
+        if (showAppDisplayScaleSetting) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "显示大小",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "仅影响应用内界面大小，不修改系统显示大小。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = shellColors.secondaryText,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AppDisplayScalePreset.entries.forEach { preset ->
+                            val selected = state.appDisplayScalePreset == preset
+                            if (selected) {
+                                Button(
+                                    onClick = {
+                                        onSettingsIntent(SettingsIntent.AppDisplayScalePresetChanged(preset))
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text(appDisplayScalePresetLabel(preset))
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = {
+                                        onSettingsIntent(SettingsIntent.AppDisplayScalePresetChanged(preset))
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text(appDisplayScalePresetLabel(preset))
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1835,6 +1887,14 @@ private fun storageCategoryDescription(category: AppStorageCategory): String {
         AppStorageCategory.PlaybackCache -> "包含 SMB 播放时落到本地的临时音频缓存。"
         AppStorageCategory.LyricsShareTemp -> "包含生成歌词分享图时写入的临时图片。"
         AppStorageCategory.TagEditTemp -> "包含编辑标签封面时写入的临时中转文件。"
+    }
+}
+
+private fun appDisplayScalePresetLabel(preset: AppDisplayScalePreset): String {
+    return when (preset) {
+        AppDisplayScalePreset.Compact -> "紧凑"
+        AppDisplayScalePreset.Default -> "默认"
+        AppDisplayScalePreset.Large -> "大号"
     }
 }
 

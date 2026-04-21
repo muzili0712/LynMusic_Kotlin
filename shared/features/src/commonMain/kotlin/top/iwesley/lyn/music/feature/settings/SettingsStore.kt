@@ -7,6 +7,7 @@ import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.AppStorageCategory
 import top.iwesley.lyn.music.core.model.AppStorageGateway
 import top.iwesley.lyn.music.core.model.AppStorageSnapshot
+import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
@@ -55,6 +56,7 @@ data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = false,
     val showCompactPlayerLyrics: Boolean = false,
+    val appDisplayScalePreset: AppDisplayScalePreset = AppDisplayScalePreset.Default,
     val supportsLyricsShareFontImport: Boolean = false,
     val importedLyricsShareFonts: List<LyricsShareFontOption> = emptyList(),
     val lyricsShareFontsLoading: Boolean = false,
@@ -96,6 +98,7 @@ data class SettingsState(
 sealed interface SettingsIntent {
     data class UseSambaCacheChanged(val value: Boolean) : SettingsIntent
     data class ShowCompactPlayerLyricsChanged(val value: Boolean) : SettingsIntent
+    data class AppDisplayScalePresetChanged(val value: AppDisplayScalePreset) : SettingsIntent
     data class ThemeSelected(val value: AppThemeId) : SettingsIntent
     data class ThemeTextPaletteSelected(val themeId: AppThemeId, val value: AppThemeTextPalette) : SettingsIntent
     data class CustomThemeColorUpdated(val role: CustomThemeColorRole, val argb: Int) : SettingsIntent
@@ -199,6 +202,11 @@ class SettingsStore(
             }
         }
         scope.launch {
+            repository.appDisplayScalePreset.collect { preset ->
+                updateState { state -> state.copy(appDisplayScalePreset = preset) }
+            }
+        }
+        scope.launch {
             repository.selectedTheme.collect { themeId ->
                 updateState { state -> state.copy(selectedTheme = themeId) }
             }
@@ -244,6 +252,11 @@ class SettingsStore(
             is SettingsIntent.ShowCompactPlayerLyricsChanged -> {
                 repository.setShowCompactPlayerLyrics(intent.value)
                 updateState { it.copy(showCompactPlayerLyrics = intent.value) }
+            }
+
+            is SettingsIntent.AppDisplayScalePresetChanged -> {
+                repository.setAppDisplayScalePreset(intent.value)
+                updateState { it.copy(appDisplayScalePreset = intent.value) }
             }
 
             is SettingsIntent.ThemeSelected -> {

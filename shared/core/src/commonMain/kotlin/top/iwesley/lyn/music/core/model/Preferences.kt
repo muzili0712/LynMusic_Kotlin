@@ -3,6 +3,26 @@ package top.iwesley.lyn.music.core.model
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
+enum class AppDisplayScalePreset(
+    val scale: Float,
+) {
+    Compact(0.9f),
+    Default(1.0f),
+    Large(1.1f),
+}
+
+fun appDisplayScalePresetOrDefault(name: String?): AppDisplayScalePreset {
+    return AppDisplayScalePreset.entries.firstOrNull { it.name == name } ?: AppDisplayScalePreset.Default
+}
+
+fun effectiveAppDisplayDensity(
+    baseDensity: Float,
+    preset: AppDisplayScalePreset,
+): Float {
+    if (!baseDensity.isFinite() || baseDensity <= 0f) return baseDensity
+    return baseDensity * preset.scale
+}
+
 interface SambaCachePreferencesStore {
     val useSambaCache: StateFlow<Boolean>
 
@@ -25,6 +45,12 @@ interface CompactPlayerLyricsPreferencesStore {
     suspend fun setShowCompactPlayerLyrics(enabled: Boolean)
 }
 
+interface AppDisplayPreferencesStore {
+    val appDisplayScalePreset: StateFlow<AppDisplayScalePreset>
+
+    suspend fun setAppDisplayScalePreset(preset: AppDisplayScalePreset)
+}
+
 interface LyricsShareFontPreferencesStore {
     val selectedLyricsShareFontKey: StateFlow<String?>
 
@@ -38,6 +64,16 @@ object UnsupportedCompactPlayerLyricsPreferencesStore : CompactPlayerLyricsPrefe
 
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+}
+
+object UnsupportedAppDisplayPreferencesStore : AppDisplayPreferencesStore {
+    private val mutableAppDisplayScalePreset = MutableStateFlow(AppDisplayScalePreset.Default)
+
+    override val appDisplayScalePreset: StateFlow<AppDisplayScalePreset> = mutableAppDisplayScalePreset
+
+    override suspend fun setAppDisplayScalePreset(preset: AppDisplayScalePreset) {
+        mutableAppDisplayScalePreset.value = preset
     }
 }
 

@@ -380,6 +380,7 @@ data class PlatformCapabilities(
     val supportsWebDavImport: Boolean,
     val supportsNavidromeImport: Boolean,
     val supportsSystemMediaControls: Boolean,
+    val supportsAppDisplayScaleAdjustment: Boolean = false,
 )
 
 data class PlatformDescriptor(

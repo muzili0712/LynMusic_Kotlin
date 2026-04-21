@@ -20,6 +20,7 @@ import top.iwesley.lyn.music.core.model.AppStorageCategory
 import top.iwesley.lyn.music.core.model.AppStorageCategoryUsage
 import top.iwesley.lyn.music.core.model.AppStorageGateway
 import top.iwesley.lyn.music.core.model.AppStorageSnapshot
+import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
@@ -288,6 +289,51 @@ class SettingsStoreTest {
         advanceUntilIdle()
         assertFalse(store.state.value.showCompactPlayerLyrics)
         assertFalse(repository.currentShowCompactPlayerLyrics())
+        scope.cancel()
+    }
+
+    @Test
+    fun `store loads persisted app display scale preset`() = runTest {
+        val repository = FakeSettingsRepository(appDisplayScalePreset = AppDisplayScalePreset.Large)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+
+        assertEquals(AppDisplayScalePreset.Large, store.state.value.appDisplayScalePreset)
+        scope.cancel()
+    }
+
+    @Test
+    fun `updating app display scale preset writes through immediately`() = runTest {
+        val repository = FakeSettingsRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        assertEquals(AppDisplayScalePreset.Default, store.state.value.appDisplayScalePreset)
+
+        store.dispatch(SettingsIntent.AppDisplayScalePresetChanged(AppDisplayScalePreset.Large))
+        advanceUntilIdle()
+
+        assertEquals(AppDisplayScalePreset.Large, store.state.value.appDisplayScalePreset)
+        assertEquals(AppDisplayScalePreset.Large, repository.currentAppDisplayScalePreset())
+        scope.cancel()
+    }
+
+    @Test
+    fun `app display scale preset flow updates store state`() = runTest {
+        val repository = FakeSettingsRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        assertEquals(AppDisplayScalePreset.Default, store.state.value.appDisplayScalePreset)
+
+        repository.setAppDisplayScalePreset(AppDisplayScalePreset.Compact)
+        advanceUntilIdle()
+
+        assertEquals(AppDisplayScalePreset.Compact, store.state.value.appDisplayScalePreset)
         scope.cancel()
     }
 
@@ -1065,6 +1111,7 @@ class SettingsStoreTest {
 private class FakeSettingsRepository(
     sources: List<LyricsSourceDefinition> = emptyList(),
     showCompactPlayerLyrics: Boolean = false,
+    appDisplayScalePreset: AppDisplayScalePreset = AppDisplayScalePreset.Default,
     selectedTheme: AppThemeId = AppThemeId.Ocean,
     customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
     textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
@@ -1074,6 +1121,7 @@ private class FakeSettingsRepository(
     private val mutableSources = MutableStateFlow(sources)
     private val mutableUseSambaCache = MutableStateFlow(false)
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(showCompactPlayerLyrics)
+    private val mutableAppDisplayScalePreset = MutableStateFlow(appDisplayScalePreset)
     private val mutableSelectedTheme = MutableStateFlow(selectedTheme)
     private val mutableCustomThemeTokens = MutableStateFlow(customThemeTokens)
     private val mutableTextPalettePreferences = MutableStateFlow(textPalettePreferences)
@@ -1086,6 +1134,7 @@ private class FakeSettingsRepository(
     override val lyricsSources: Flow<List<LyricsSourceDefinition>> = mutableSources.asStateFlow()
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
+    override val appDisplayScalePreset: StateFlow<AppDisplayScalePreset> = mutableAppDisplayScalePreset.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
@@ -1098,6 +1147,7 @@ private class FakeSettingsRepository(
 
     fun currentSources(): List<LyricsSourceDefinition> = mutableSources.value
     fun currentShowCompactPlayerLyrics(): Boolean = mutableShowCompactPlayerLyrics.value
+    fun currentAppDisplayScalePreset(): AppDisplayScalePreset = mutableAppDisplayScalePreset.value
     fun currentSelectedTheme(): AppThemeId = mutableSelectedTheme.value
     fun currentCustomThemeTokens(): AppThemeTokens = mutableCustomThemeTokens.value
     fun currentTextPalettePreferences(): AppThemeTextPalettePreferences = mutableTextPalettePreferences.value
@@ -1111,6 +1161,10 @@ private class FakeSettingsRepository(
 
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setAppDisplayScalePreset(preset: AppDisplayScalePreset) {
+        mutableAppDisplayScalePreset.value = preset
     }
 
     override suspend fun setSelectedTheme(themeId: AppThemeId) {
