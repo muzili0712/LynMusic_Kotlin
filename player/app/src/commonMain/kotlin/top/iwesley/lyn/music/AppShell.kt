@@ -454,7 +454,8 @@ private fun HeroHeader() {
         fontWeight = FontWeight.ExtraBold,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = if (desktopWindowChrome.immersiveTitleBarEnabled) 84.dp else 0.dp),
+            .padding(start = if (desktopWindowChrome.immersiveTitleBarEnabled) 0.dp else 0.dp,
+            top =  20.dp),
     )
 }
 
